@@ -4,8 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import settings
 
+
 from app.shared.presentation.health import router as health_router
 from app.modules.identity.presentation.auth import router as auth_router
+from app.modules.ingestion.presentation.api import router as ingestion_router
 
 
 app = FastAPI(
@@ -25,6 +27,8 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+
+app.include_router(ingestion_router, prefix="/ingestion", tags=["ingestion"])
 
 @app.get("/")
 def read_root():

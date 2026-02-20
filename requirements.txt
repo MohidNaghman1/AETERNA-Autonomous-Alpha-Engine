@@ -37,6 +37,12 @@ packaging==26.0
 pluggy==1.6.0
 pygments==2.19.2
 
+# --- Ingestion & Messaging ---
+feedparser==6.0.12
+pika==1.3.2
+redis==7.2.0
+requests==2.32.5
+
 # --- Utilities ---
 python-dotenv==1.2.1
 anyio==4.12.1
