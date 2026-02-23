@@ -12,10 +12,14 @@ import pika
 import os
 import requests
 import traceback
+import logging
 from dotenv import load_dotenv
 from datetime import datetime
 from app.modules.ingestion.domain.models import Event
 from app.shared.utils.deduplication import is_duplicate, mark_as_seen
+from app.shared.utils.entity_extraction import extract_crypto_mentions
+from app.shared.utils.rabbitmq_publisher import RabbitMQPublisher
+from app.shared.utils.monitoring import EVENTS_PROCESSED, EVENT_PROCESSING_TIME, start_metrics_server
 
 # RSS Feeds
 FEEDS = [
@@ -28,28 +32,39 @@ FEEDS = [
 # Load .env file
 load_dotenv()
 
+
 # RabbitMQ config (safe version)
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
-credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
-# Debug print for credentials
-print("USER:", RABBITMQ_USER)
-print("PASS:", RABBITMQ_PASSWORD)
+# RabbitMQ publisher utility
+publisher = RabbitMQPublisher(
+    host=RABBITMQ_HOST,
+    user=RABBITMQ_USER,
+    password=RABBITMQ_PASSWORD,
+    queue_name=RABBITMQ_QUEUE,
+    pool_size=2,
+    retry_attempts=3
+)
+
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("rss-collector")
+logger.info(f"USER: {RABBITMQ_USER}")
+logger.info(f"PASS: {RABBITMQ_PASSWORD}")
 
 RETRY_ATTEMPTS = 3
 POLL_INTERVAL = 60  # seconds
 
+# Start Prometheus metrics server (only once per process)
+try:
+    start_metrics_server(8001)
+except Exception:
+    pass
 
-def get_rabbitmq_connection():
-    parameters = pika.ConnectionParameters(
-        host=RABBITMQ_HOST,
-        port=5672,
-        credentials=credentials
-    )
-    return pika.BlockingConnection(parameters)
 
 def normalize_entry(entry, source):
     content = {
@@ -60,20 +75,32 @@ def normalize_entry(entry, source):
         "source": source
     }
     ts = datetime.utcnow()
+    # Entity extraction from title and summary
+    text = (entry.get("title") or "") + " " + (entry.get("summary") or "")
+    entities = extract_crypto_mentions(text)
     return Event.create(
         source=source,
         type_="news",
         timestamp=ts,
         content=content,
+        entities=entities,
         raw=entry
     )
 
-def publish_event(event, channel):
-    channel.basic_publish(
-        exchange='',
-        routing_key=RABBITMQ_QUEUE,
-        body=event.model_dump_json()
-    )
+def validate_event(event: Event) -> bool:
+    if not event.id or not event.timestamp or not event.content:
+        return False
+    if len(str(event.content)) < 10:
+        return False
+    return True
+
+def publish_event(event: Event, _=None):
+    if not validate_event(event):
+        logger.warning(f"[INVALID] Event {event.id} failed validation, not published.")
+        return
+    success = publisher.publish(event.model_dump_json())
+    if not success:
+        logger.error(f"[ERROR] Failed to publish event {event.id} after retries.")
 
 
 def run_collector():
@@ -81,28 +108,35 @@ def run_collector():
     while True:
         for feed_url in FEEDS:
             source = feed_url.split("//")[-1].split("/")[0]
+            logger.info(f"Fetching feed: {feed_url} (source: {source})")
             for attempt in range(RETRY_ATTEMPTS):
                 try:
                     response = requests.get(feed_url, headers=headers, timeout=10)
+                    logger.info(f"HTTP status for {feed_url}: {response.status_code}")
                     response.raise_for_status()
                     feed = feedparser.parse(response.content)
+                    logger.info(f"Feed '{source}' returned {len(feed.entries)} entries.")
                     if not feed.entries:
+                        logger.warning(f"No entries found in feed: {feed_url}")
                         continue
-                    with get_rabbitmq_connection() as conn:
-                        channel = conn.channel()
-                        channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
-                        for entry in feed.entries:
-                            event = normalize_entry(entry, source)
-                            if is_duplicate(event.id):
-                                continue
-                            publish_event(event, channel)
-                            mark_as_seen(event.id)
+                    for entry in feed.entries:
+                        event = normalize_entry(entry, source)
+                        if is_duplicate(event.id):
+                            logger.info(f"Duplicate event skipped: {event.id}")
+                            continue
+                        logger.info(f"Publishing event: {event.id} | Title: {event.content.get('title')}")
+                        with EVENT_PROCESSING_TIME.labels(collector="rss").time():
+                            publish_event(event, None)
+                        EVENTS_PROCESSED.labels(collector="rss").inc()
+                        mark_as_seen(event.id)
                     break  # Success, exit retry loop
                 except Exception as e:
-                    print(f"[ERROR] Failed to process {feed_url}: {str(e)}")
-                    traceback.print_exc()
+                    logger.error(f"[ERROR] Failed to process {feed_url}: {str(e)}")
+                    logger.error(traceback.format_exc())
                     if attempt != RETRY_ATTEMPTS - 1:
+                        logger.info(f"Retrying {feed_url} in {2 ** attempt} seconds...")
                         time.sleep(2 ** attempt)
+        logger.info(f"Sleeping for {POLL_INTERVAL} seconds before next poll.")
         time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":
