@@ -14,7 +14,8 @@ if config.config_file_name is not None:
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app')))
 
 from app.modules.alerting.infrastructure.models import Alert
-from app.modules.analytics.infrastructure.models import Event
+from app.modules.ingestion.infrastructure.models import EventORM
+
 import app.modules.identity.infrastructure.models
 from app.config.db import Base
 
