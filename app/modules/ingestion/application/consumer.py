@@ -57,6 +57,9 @@ def score_event(event: Event) -> int:
 def process_event(ch, method, properties, body):
     try:
         data = json.loads(body)
+        # Before creating EventORM
+        if 'event_type' in data:
+            data['type'] = data.pop('event_type')
         event = Event(**data)
         if not validate_event(event):
             logger.warning(f"[INVALID] Event {getattr(event, 'id', None)} failed validation.")
@@ -67,11 +70,12 @@ def process_event(ch, method, properties, body):
             try:
                 db = SessionLocal()
                 db_event = EventORM(
-                    event_id=event.id,
-                    event_type=getattr(event, 'type', None),
-                    content=event.content,
+                    id=event.id,
                     source=getattr(event, 'source', None),
-                    created_at=getattr(event, 'timestamp', None)
+                    type=getattr(event, 'type', None),
+                    timestamp=getattr(event, 'timestamp', None),
+                    content=event.content,
+                    raw=None  # or event.raw if available
                 )
                 db.add(db_event)
                 db.commit()
