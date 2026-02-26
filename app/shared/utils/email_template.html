@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AETERNA Alert</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6fb; color: #222; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; box-shadow: 0 4px 24px #e2e8f0; padding: 32px 24px; }
+        .header { background: linear-gradient(90deg, #2d3748 60%, #3182ce 100%); color: #fff; padding: 20px 0 16px 0; border-radius: 12px 12px 0 0; text-align: center; }
+        .header h2 { margin: 0; font-size: 2em; letter-spacing: 1px; }
+        .alert-title { font-size: 1.35em; margin: 28px 0 10px 0; color: #2d3748; font-weight: 600; }
+        .alert-body { font-size: 1.08em; margin-bottom: 28px; line-height: 1.6; }
+        .btn { display: inline-block; background: #3182ce; color: #fff; padding: 13px 28px; border-radius: 5px; text-decoration: none; font-weight: 600; margin-top: 18px; box-shadow: 0 2px 8px #e2e8f0; transition: background 0.2s; }
+        .btn:hover { background: #2563eb; }
+        .divider { border-top: 1px solid #e2e8f0; margin: 36px 0; }
+        .footer { font-size: 0.97em; color: #888; text-align: center; margin-top: 30px; }
+        .footer a { color: #3182ce; text-decoration: underline; }
+        @media (max-width: 650px) {
+            .container { padding: 12px 2vw; }
+            .header h2 { font-size: 1.3em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>AETERNA <span style="color:#90cdf4;">Alert</span></h2>
+        </div>
+        <div class="alert-title">{{ title }}</div>
+        <div class="alert-body">{{ body }}</div>
+        {% if link %}
+        <a href="{{ link }}" class="btn">View Details</a>
+        {% endif %}
+        <div class="divider"></div>
+        <div class="footer">
+            You are receiving this alert because you subscribed to <b>AETERNA</b>.<br>
+            If you wish to unsubscribe, <a href="{{ unsubscribe_link }}">click here</a>.<br>
+            <span style="color:#bbb;">&copy; 2026 AETERNA</span>
+        </div>
+    </div>
+</body>
+</html>
