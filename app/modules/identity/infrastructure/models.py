@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON,ForeignKey
 from datetime import datetime
 from app.config.db import Base
+from sqlalchemy import Index
+
 
 
 class User(Base):
@@ -30,6 +32,18 @@ class RefreshToken(Base):
     expires_at = Column(DateTime, nullable=False)
     revoked = Column(Boolean, default=False)
 
+
+
+# --- UserRole Model for RBAC ---
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    role = Column(String, nullable=False, default="viewer")  # e.g., admin, viewer
+
+# Add index for role
+Index('ix_user_roles_role', UserRole.role)
 
 # --- PasswordResetToken Model for Password Reset ---
 class PasswordResetToken(Base):
