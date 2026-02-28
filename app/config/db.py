@@ -1,7 +1,8 @@
 import os
 import urllib.parse
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -40,10 +41,20 @@ if not ASYNC_DATABASE_URL:
     else:
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL  # fallback
 
-# 4. Create async engine and session
-engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
+# 4. Create sync engine and session (for consumer, celery, etc.)
+sync_engine = create_engine(SYNC_DATABASE_URL, echo=True, future=True, pool_pre_ping=True)
+SessionLocal = sessionmaker(
+    bind=sync_engine,
+    class_=Session,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
+)
+
+# 5. Create async engine and session (for FastAPI)
+async_engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
 AsyncSessionLocal = sessionmaker(
-    bind=engine,
+    bind=async_engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False,
