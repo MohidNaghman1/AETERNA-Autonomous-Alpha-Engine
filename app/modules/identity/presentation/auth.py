@@ -1,4 +1,7 @@
+from fastapi.responses import HTMLResponse
+from app.modules.identity.application.services import get_user_by_email
 from fastapi import APIRouter, HTTPException, Depends, status, Body
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.db import AsyncSessionLocal
 from app.modules.identity.application import services
@@ -6,9 +9,10 @@ from app.modules.identity.presentation.schemas import (
     RegisterRequest, LoginRequest, TokenResponse, PasswordResetRequest, PasswordResetTokenResponse,
     PasswordResetConfirmRequest, PasswordResetConfirmResponse, UserProfileResponse, UserProfileUpdateRequest, RefreshRequest
 )
+from app.shared.utils.email_utils import send_password_reset_email
 from app.shared.application.dependencies import get_db, get_current_user
 
-router = APIRouter()
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 
@@ -22,8 +26,13 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    user = await services.authenticate_user(data.email, data.password, db)
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+    """
+    OAuth2 compatible token endpoint.
+    Accepts form data (username/password) from Swagger UI or form submissions.
+    Username should be the email address.
+    """
+    user = await services.authenticate_user(form_data.username, form_data.password, db)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     access_token, refresh_token = await services.issue_tokens(user, db)
@@ -40,11 +49,34 @@ async def refresh_token_endpoint(data: RefreshRequest, db: AsyncSession = Depend
 
 @router.post("/password-reset/request", response_model=PasswordResetTokenResponse)
 async def password_reset_request(data: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Request a password reset.
+    
+    P0 Security Fix: Response no longer contains the reset token!
+    The token is sent ONLY via email for security.
+    This prevents token interception via:
+    - HTTP request logs
+    - Browser history
+    - Network proxies
+    
+    Endpoint returns a generic success message to avoid user enumeration.
+    """
     token, expires_at = await services.generate_password_reset_token(data.email, db)
-    if not token:
-        raise HTTPException(status_code=404, detail="User not found")
-    # In production, send token via email instead of returning it!
-    return PasswordResetTokenResponse(reset_token=token, expires_at=expires_at)
+    
+    # Send token via email (NOT in response)
+    if token:
+        try:
+            await send_password_reset_email(data.email, token)
+            print(f"[AUTH] Password reset email sent to {data.email}")
+        except Exception as e:
+            print(f"[AUTH-ERROR] Failed to send password reset email to {data.email}: {e}")
+            # Continue even if email fails - user can try again
+    
+    # Return generic response (doesn't reveal if email exists)
+    return PasswordResetTokenResponse(
+        message="If an account with this email exists, a password reset link has been sent. Check your email.",
+        email=data.email
+    )
 
 @router.post("/password-reset/confirm", response_model=PasswordResetConfirmResponse)
 async def password_reset_confirm(data: PasswordResetConfirmRequest, db: AsyncSession = Depends(get_db)):
@@ -83,3 +115,18 @@ async def update_profile(
         created_at=current_user.created_at,
         email_verified=current_user.email_verified,
     )
+
+
+
+
+# Unsubscribe endpoint (public, by email)
+@router.get("/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe(email: str, db: AsyncSession = Depends(get_db)):
+    user = await get_user_by_email(db, email)
+    if not user:
+        return HTMLResponse("<h3>User not found.</h3>", status_code=404)
+    prefs = user.preferences or {}
+    prefs["unsubscribe"] = True
+    user.preferences = prefs
+    await db.commit()
+    return HTMLResponse("<h3>You have been unsubscribed from all emails.</h3>")

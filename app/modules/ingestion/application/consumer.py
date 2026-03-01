@@ -7,13 +7,14 @@ Event Consumer for RabbitMQ
 
 import pika
 import os
+import json as json_module
 import json
 import logging
 from dotenv import load_dotenv
 from app.modules.ingestion.domain.models import Event
 from app.shared.utils.monitoring import EVENTS_PROCESSED, EVENT_PROCESSING_TIME, start_metrics_server
 from app.modules.ingestion.infrastructure.models import EventORM
-from app.config.db import AsyncSessionLocal as SessionLocal
+from app.config.db import SessionLocal  # Use synchronous session for pika consumer
 
 # Start Prometheus metrics server (only once per process)
 try:
@@ -55,44 +56,104 @@ def score_event(event: Event) -> int:
 
 
 def process_event(ch, method, properties, body):
+    """
+    Process event message from RabbitMQ.
+    
+    P1 Fix: Only ACK message after successful database commit.
+    If database commit fails, message is NACKed and returned to queue.
+    
+    Flow:
+    1. Parse JSON
+    2. Validate event
+    3. Create EventORM
+    4. Commit to database
+    5. On success: ACK (message removed from queue)
+    6. On failure: NACK (message returned to queue for retry)
+    """
+    success = False
+    db = None
+    
     try:
         data = json.loads(body)
-        # Before creating EventORM
+        # Map event_type to type if needed
         if 'event_type' in data:
             data['type'] = data.pop('event_type')
+        
         event = Event(**data)
+        
+        # Validate event
         if not validate_event(event):
             logger.warning(f"[INVALID] Event {getattr(event, 'id', None)} failed validation.")
+            # Invalid events don't get retried - ACK and discard
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
+        
         score = score_event(event)
+        
+        # Process event and store in database
         with EVENT_PROCESSING_TIME.labels(collector="consumer").time():
             try:
                 db = SessionLocal()
+                # Prepare content
+                content = event.content or {}
+                if isinstance(content, str):
+                    content = json_module.loads(content)
+                content['event_hash'] = event.id  # For deduplication tracking
+                
+                logger.debug(f"[DEBUG] Creating EventORM with content keys: {list(content.keys())}")
+                
+                # Create ORM object
                 db_event = EventORM(
-                    id=event.id,
                     source=getattr(event, 'source', None),
                     type=getattr(event, 'type', None),
                     timestamp=getattr(event, 'timestamp', None),
-                    content=event.content,
-                    raw=None  # or event.raw if available
+                    content=content,
+                    raw=None
                 )
+                
+                # Save to database
                 db.add(db_event)
                 db.commit()
                 db.refresh(db_event)
-                logger.info(f"[PROCESSED] Event {event.id} | Type: {getattr(event, 'type', None)} | Entities: {getattr(event, 'entities', None)} | Score: {score} | Stored in DB.")
+                
+                logger.info(f"[✅ PROCESSED] Event {event.id} (DB ID: {db_event.id}) | Type: {getattr(event, 'type', None)} | Score: {score}")
+                
+                success = True
+                EVENTS_PROCESSED.labels(collector="consumer").inc()
+                
             except Exception as e:
-                logger.error(f"[ERROR] Failed to store event {getattr(event, 'id', None)}: {e}", exc_info=True)
+                # Database error - will be NACKed for retry
+                logger.error(f"[❌ DB ERROR] Failed to store event {getattr(event, 'id', None)}: {type(e).__name__}: {str(e)}")
+                if db:
+                    try:
+                        db.rollback()
+                    except Exception as rb_err:
+                        logger.error(f"[ERROR] Rollback failed: {rb_err}")
+                success = False
+                
             finally:
-                try:
-                    db.close()
-                except Exception:
-                    pass
-        EVENTS_PROCESSED.labels(collector="consumer").inc()
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+                if db:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
+        
+        # P1 Fix: ACK only on success, NACK on failure
+        if success:
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        else:
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            logger.warning(f"[⚠️  NACKED] Message returned to queue for retry")
+    
+    except json.JSONDecodeError as e:
+        # Bad JSON - NACK without requeue (permanent failure)
+        logger.error(f"[❌ JSON ERROR] Failed to parse JSON: {e}")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+        
     except Exception as e:
-        logger.error(f"[ERROR] Failed to process event: {e}", exc_info=True)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+        # Unexpected error - NACK with requeue
+        logger.error(f"[❌ UNEXPECTED ERROR] {type(e).__name__}: {str(e)}", exc_info=True)
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
 
 def run_consumer():

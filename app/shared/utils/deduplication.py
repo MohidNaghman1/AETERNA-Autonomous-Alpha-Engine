@@ -1,7 +1,7 @@
-"""
-Deduplication utility for event content using Redis.
-- Hashes event content
-- Checks/marks duplicates in Redis (1-hour window)
+"""Content deduplication utility using Redis.
+
+Uses SHA256 hashing and Redis with TTL to detect duplicate event content
+within a rolling 1-hour window. Prevents duplicate alerts from being sent.
 """
 import hashlib
 import redis
@@ -25,18 +25,36 @@ _redis = redis.StrictRedis(
 )
 
 def hash_content(content: str) -> str:
-    """Generate SHA256 hash for event content."""
+    """Generate SHA256 hash for event content.
+    
+    Args:
+        content: Event content string to hash
+        
+    Returns:
+        str: SHA256 hex digest of the content
+    """
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def is_duplicate(content: str) -> bool:
-    """Check if content hash exists in Redis (duplicate in 1-hour window)."""
+    """Check if content hash exists in Redis (duplicate in 1-hour window).
+    
+    Args:
+        content: Event content to check
+        
+    Returns:
+        bool: True if content was seen in the past hour, False otherwise
+    """
     h = hash_content(content)
     return _redis.exists(h) == 1
 
 
-def mark_as_seen(content: str):
-    """Store content hash in Redis with 1-hour TTL."""
+def mark_as_seen(content: str) -> None:
+    """Store content hash in Redis with 1-hour TTL.
+    
+    Args:
+        content: Event content to mark as seen
+    """
     h = hash_content(content)
     _redis.set(h, 1, ex=DEDUP_TTL_SECONDS)
 
