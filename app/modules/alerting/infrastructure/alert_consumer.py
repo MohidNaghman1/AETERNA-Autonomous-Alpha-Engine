@@ -1,3 +1,8 @@
+"""Alert consumer for RabbitMQ.
+
+Listens to the alerts queue and broadcasts alerts to connected users via WebSocket
+, filtering based on user preferences.
+"""
 import asyncio
 import json
 import os
@@ -11,8 +16,18 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 RABBITMQ_QUEUE = os.getenv("ALERT_QUEUE_NAME", "alerts")
 
 
-def alert_matches_user(alert, user_prefs=None):
-    # Example: filter by priority, entity, etc. (expand as needed)
+def alert_matches_user(alert, user_prefs=None) -> bool:
+    """Check if an alert matches user's preferences.
+    
+    Filters alerts based on priority and entity preferences.
+    
+    Args:
+        alert: Alert dict with 'priority' and 'entity' keys
+        user_prefs: User preferences dict, or None to accept all alerts
+        
+    Returns:
+        bool: True if alert matches user preferences, False otherwise
+    """
     if not user_prefs:
         return True
     if "priority" in user_prefs and alert.get("priority") not in user_prefs["priority"]:
@@ -22,14 +37,37 @@ def alert_matches_user(alert, user_prefs=None):
     return True
 
 class AlertConsumer(Thread):
+    """Consumer thread for processing alerts from RabbitMQ queue.
+    
+    Connects to RabbitMQ, listens for alert messages, applies user preference filters,
+    and broadcasts alerts to connected WebSocket clients.
+    
+    Attributes:
+        sio: AsyncServer instance for WebSocket communication
+        connection: RabbitMQ connection
+        channel: RabbitMQ channel
+        user_prefs_func: Callable that takes user_id and returns user preferences dict
+    """
+    
     def __init__(self, sio: AsyncServer, user_prefs_func=None):
+        """Initialize the AlertConsumer.
+        
+        Args:
+            sio: AsyncServer instance for WebSocket communication
+            user_prefs_func: Optional callable to get user preferences (user_id -> dict)
+        """
         super().__init__(daemon=True)
         self.sio = sio
         self.connection = None
         self.channel = None
-        self.user_prefs_func = user_prefs_func  # Callable: user_id -> prefs dict
+        self.user_prefs_func = user_prefs_func
 
     def run(self):
+        """Start consuming alerts from RabbitMQ queue.
+        
+        Establishes RabbitMQ connection and begins consuming messages from the alerts queue.
+        This method blocks indefinitely while consuming.
+        """
         creds = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
         params = pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=creds)
         self.connection = pika.BlockingConnection(params)
@@ -40,6 +78,17 @@ class AlertConsumer(Thread):
         self.channel.start_consuming()
 
     def on_message(self, ch, method, properties, body):
+        """Handle incoming alert message from RabbitMQ.
+        
+        Parses the alert, applies user preference filtering, and broadcasts to the user
+        via WebSocket if filters pass.
+        
+        Args:
+            ch: RabbitMQ channel
+            method: Message delivery method
+            properties: Message properties
+            body: Message body (JSON-encoded alert)
+        """
         try:
             alert = json.loads(body)
             user_id = str(alert.get("user_id"))
