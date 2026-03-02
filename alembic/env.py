@@ -16,7 +16,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'a
 from app.modules.alerting.infrastructure.models import Alert
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.modules.intelligence.infrastructure.models import ProcessedEvent
-from app.modules.identity.infrastructure.models import User, UserPreference, RefreshToken, UserRole, PasswordResetTokencls
+from app.modules.identity.infrastructure.models import (
+    User,
+    UserPreference,
+    RefreshToken,
+    UserRole,
+    PasswordResetToken,
+)
 
 from app.config.db import Base
 

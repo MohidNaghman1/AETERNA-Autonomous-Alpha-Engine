@@ -23,6 +23,31 @@ def generate_unsubscribe_link(user_email: str) -> str:
     return f"{base_url}/unsubscribe?email={user_email}"
 
 
+def send_password_reset_email(to_email: str, reset_token: str) -> bool:
+    """Send a password reset email to a user.
+
+    Args:
+        to_email: Recipient email address
+        reset_token: Password reset token for email verification
+
+    Returns:
+        bool: True if email sent successfully or logged, False on error
+    """
+    base_url = os.getenv("APP_BASE_URL", "https://app.aeterna.ai")
+    reset_link = f"{base_url}/reset-password?token={reset_token}"
+
+    subject = "Password Reset Request - AETERNA"
+    html_content = f"""
+    <h2>Password Reset Request</h2>
+    <p>You requested a password reset for your AETERNA account.</p>
+    <p>Click the link below to reset your password (valid for 24 hours):</p>
+    <p><a href="{reset_link}">Reset Password</a></p>
+    <p>If you didn't request this, please ignore this email.</p>
+    """
+
+    return send_email_alert(to_email, subject, html_content, reset_link)
+
+
 def send_email_alert(
     to_email: str, subject: str, html_content: str, link: str = None
 ) -> bool:

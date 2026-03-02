@@ -152,5 +152,9 @@ def run_collector():
         time.sleep(POLL_INTERVAL)
 
 
+# Alias for test compatibility
+collect_and_publish = run_collector
+
+
 if __name__ == "__main__":
     run_collector()

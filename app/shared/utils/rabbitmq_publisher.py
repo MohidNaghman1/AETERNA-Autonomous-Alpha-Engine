@@ -54,26 +54,35 @@ class RabbitMQPublisher:
         self.retry_attempts = retry_attempts
         self._pool = Queue(maxsize=pool_size)
         self._lock = threading.Lock()
-        self._setup_pool()
         self.logger = logging.getLogger("rabbitmq-publisher")
+        self._setup_pool()
 
     def _setup_pool(self) -> None:
         """Initialize connection pool with configured size.
 
         Creates and stores RabbitMQ connections in the pool for reuse.
+        Fails gracefully if RabbitMQ is unavailable during init.
         """
-        for _ in range(self.pool_size):
-            conn = pika.BlockingConnection(
-                pika.ConnectionParameters(
-                    host=self.host,
-                    credentials=pika.PlainCredentials(self.user, self.password),
-                    heartbeat=600,
-                    blocked_connection_timeout=300,
+        try:
+            for _ in range(self.pool_size):
+                conn = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=self.host,
+                        credentials=pika.PlainCredentials(
+                            self.user, self.password
+                        ),
+                        heartbeat=600,
+                        blocked_connection_timeout=300,
+                    )
                 )
+                channel = conn.channel()
+                channel.queue_declare(queue=self.queue_name, durable=True)
+                self._pool.put((conn, channel))
+        except pika.exceptions.AMQPConnectionError as e:
+            self.logger.warning(
+                f"Could not initialize RabbitMQ pool: {e}. "
+                f"Will attempt to connect on first publish."
             )
-            channel = conn.channel()
-            channel.queue_declare(queue=self.queue_name, durable=True)
-            self._pool.put((conn, channel))
 
     def publish(self, body: str) -> bool:
         """Publish message to queue with retries and auto-reconnection.
