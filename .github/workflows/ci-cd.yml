@@ -1,5 +1,14 @@
 name: CI/CD Pipeline
 
+# Triggers:
+# - Push to main/develop branches
+# - Pull requests to main/develop branches
+#
+# Jobs:
+# 1. Lint & Test: Code quality and unit tests
+# 2. Build: Docker image build and push
+# 3. Security Scan: Vulnerability scanning
+
 on:
   push:
     branches:
@@ -9,6 +18,10 @@ on:
     branches:
       - main
       - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
@@ -78,11 +91,13 @@ jobs:
           pip install flake8
           flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 app --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: false
 
       - name: Format check with black
         run: |
           pip install black
           black --check app
+        continue-on-error: false
 
       - name: Type check with mypy
         continue-on-error: true
@@ -100,7 +115,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: test-results.xml
@@ -108,7 +123,7 @@ jobs:
 
       - name: Upload coverage HTML report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-html-report
           path: htmlcov/
@@ -123,7 +138,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
@@ -201,7 +216,7 @@ jobs:
           output: "trivy-results.sarif"
 
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: "trivy-results.sarif"
         continue-on-error: true
@@ -219,3 +234,21 @@ jobs:
           echo "- **Trivy Scan**: Completed" >> $GITHUB_STEP_SUMMARY
           echo "- **Safety Check**: Completed" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+  workflow-summary:
+    name: Workflow Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint-and-test, build, security-scan]
+    steps:
+      - name: Generate workflow summary
+        run: |
+          echo "## CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint & Test | ${{ needs.lint-and-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Overall Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
