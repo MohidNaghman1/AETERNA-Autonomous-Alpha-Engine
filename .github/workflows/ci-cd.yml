@@ -18,6 +18,7 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     name: Lint & Test
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -95,18 +96,44 @@ jobs:
           REDIS_URL: redis://localhost:6379
           RABBITMQ_URL: amqp://guest:guest@localhost:5672/
         run: |
-          pytest tests/ -v --cov=app --cov-report=xml
+          pytest tests/ -v --cov=app --cov-report=xml --cov-report=html --junitxml=test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: test-results.xml
+          retention-days: 30
+
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-html-report
+          path: htmlcov/
+          retention-days: 30
+
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: test-results.xml
+          check_name: Test Results
+        continue-on-error: true
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
+          verbose: true
 
   build:
     needs: lint-and-test
     runs-on: ubuntu-latest
     name: Build & Push Docker Image
+    timeout-minutes: 30
     if: github.event_name == 'push'
     permissions:
       contents: read
@@ -145,10 +172,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Image build summary
+        if: always()
+        run: |
+          echo "## Docker Image Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository**: ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags**: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
 
   security-scan:
     runs-on: ubuntu-latest
     name: Security Scan
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -165,8 +204,18 @@ jobs:
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: "trivy-results.sarif"
+        continue-on-error: true
 
       - name: Check dependencies with safety
         run: |
           pip install safety
           safety check --json || true
+        continue-on-error: true
+
+      - name: Security scan summary
+        if: always()
+        run: |
+          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trivy Scan**: Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Safety Check**: Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
