@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="10.375" timestamp="2026-03-02T15:17:47.351666+05:00" hostname="Mohid-Naghman"><testcase classname="" name="tests.test_integration" time="0.000"><error message="collection failure">app\shared\utils\rabbitmq_publisher.py:68: in _setup_pool
+    conn = pika.BlockingConnection(
+venv\Lib\site-packages\pika\adapters\blocking_connection.py:360: in __init__
+    self._impl = self._create_connection(parameters, _impl_class)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\pika\adapters\blocking_connection.py:451: in _create_connection
+    raise self._reap_last_connection_workflow_error(error)
+E   pika.exceptions.AMQPConnectionError
+
+During handling of the above exception, another exception occurred:
+tests\test_integration.py:10: in &lt;module&gt;
+    from app.modules.ingestion.application.rss_collector import collect_and_publish
+app\modules\ingestion\application\rss_collector.py:47: in &lt;module&gt;
+    publisher = RabbitMQPublisher(
+app\shared\utils\rabbitmq_publisher.py:57: in __init__
+    self._setup_pool()
+app\shared\utils\rabbitmq_publisher.py:82: in _setup_pool
+    self.logger.warning(
+    ^^^^^^^^^^^
+E   AttributeError: 'RabbitMQPublisher' object has no attribute 'logger'</error></testcase></testsuite></testsuites>
