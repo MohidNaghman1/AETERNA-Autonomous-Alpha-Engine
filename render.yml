@@ -1,0 +1,128 @@
+# =====================================================================
+# Render.com Deployment Configuration
+# AETERNA - Autonomous Alpha Engine
+# =====================================================================
+
+services:
+  # Main FastAPI Application
+  - type: web
+    name: aeterna-api
+    runtime: docker
+    plan: pro
+    autoDeploy: true
+    branch: main
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PYTHONUNBUFFERED
+        value: 1
+
+      # Database Configuration
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aeterna_postgres
+          property: connectionString
+
+      # Redis Configuration
+      - key: REDIS_URL
+        fromService:
+          name: aeterna-redis
+          type: pserv
+          property: connectionString
+
+      # RabbitMQ Configuration
+      - key: RABBITMQ_URL
+        fromService:
+          name: aeterna-rabbitmq
+          type: pserv
+          property: connectionString
+
+  # PostgreSQL Database
+  - type: pserv
+    name: aeterna_postgres
+    runtime: postgres15
+    plan: pro
+    ipAllowList: []
+
+    envVars:
+      - key: POSTGRES_USER
+        value: ${POSTGRES_USER}
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: POSTGRES_DB
+        value: aeterna_db
+      - key: POSTGRES_INITDB_ARGS
+        value: -c log_statement=all
+
+  # Redis Cache Service
+  - type: pserv
+    name: aeterna-redis
+    runtime: redis7
+    plan: pro
+    ipAllowList: []
+
+    envVars:
+      - key: REDIS_PASSWORD
+        generateValue: true
+      - key: REDIS_EVICTION_POLICY
+        value: allkeys-lru
+
+  # RabbitMQ Message Broker
+  - type: pserv
+    name: aeterna-rabbitmq
+    runtime: rabbitmq3.12
+    plan: pro
+    ipAllowList: []
+
+    envVars:
+      - key: RABBITMQ_DEFAULT_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_DEFAULT_PASS
+        generateValue: true
+      - key: RABBITMQ_DEFAULT_VHOST
+        value: /
+
+  # Celery Worker for Async Tasks
+  - type: worker
+    name: aeterna-celery-worker
+    runtime: docker
+    plan: pro
+    autoDeploy: true
+    branch: main
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PYTHONUNBUFFERED
+        value: 1
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aeterna_postgres
+          property: connectionString
+
+      - key: REDIS_URL
+        fromService:
+          name: aeterna-redis
+          type: pserv
+          property: connectionString
+
+      - key: RABBITMQ_URL
+        fromService:
+          name: aeterna-rabbitmq
+          type: pserv
+          property: connectionString
+
+    startCommand: celery -A app.modules.ingestion.infrastructure.celery_app worker -l info
+
+databases:
+  - name: aeterna_postgres
+    databaseName: aeterna_db
+    user: postgres
+    plan: pro
+    postgresMajorVersion: 15

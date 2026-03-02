@@ -1,0 +1,47 @@
+# Development overrides for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.override.yml up
+
+# This file is automatically used when running `docker-compose` commands
+# It overrides specific settings for development environment
+
+version: "3.9"
+
+services:
+  app:
+    # Build from Dockerfile for quick changes
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Hot reload enabled
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      DEBUG: "true"
+      ENVIRONMENT: development
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      DEBUG: "true"
+      ENVIRONMENT: development
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      DEBUG: "true"
+      ENVIRONMENT: development

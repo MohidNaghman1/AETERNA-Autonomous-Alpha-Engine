@@ -1,17 +1,23 @@
-# --- FastAPI & Web ---
+# =====================================================================
+# AETERNA - Autonomous Alpha Engine
+# Requirements File
+# =====================================================================
+
+# Web Framework & HTTP Server
 fastapi==0.129.0
 uvicorn==0.41.0
 starlette==0.52.1
+python-multipart==0.0.22
 
-# --- Pydantic & Typing ---
+# Data Validation & Type Hints
 pydantic==2.12.5
+pydantic-core==2.41.5
 typing-extensions==4.15.0
 typing-inspection==0.4.2
 annotated-types==0.7.0
 annotated-doc==0.0.4
-pydantic-core==2.41.5
 
-# --- Database & ORM ---
+# Database & ORM
 SQLAlchemy==2.0.46
 alembic==1.18.4
 asyncpg==0.31.0
@@ -21,69 +27,75 @@ greenlet==3.3.1
 Mako==1.3.10
 MarkupSafe==3.0.3
 
-# --- Auth & Security ---
+# Authentication & Security
 passlib[bcrypt]==1.7.4
 PyJWT==2.8.0
 bcrypt==4.1.2
 
-
-# --- HTTP & Testing ---
+# HTTP & Network Communication
 httpx==0.28.1
-pytest==9.0.2
-pytest-asyncio==1.3.0
-iniconfig==2.3.0
-packaging==26.0
-pluggy==1.6.0
-pygments==2.19.2
-
-# --- Ingestion & Messaging ---
-feedparser==6.0.12
-pika==1.3.2
-redis==7.2.0
 requests==2.32.5
+anyio==4.12.1
+h11==0.16.0
+idna==3.11
+
+# Message Queue & Async Task Processing
+pika==1.3.2
 celery==5.6.2
-billiard==4.2.4
 kombu==5.6.2
+amqp==5.3.1
+billiard==4.2.4
 vine==5.1.0
+
+# Data Ingestion & Feed Processing
+feedparser==6.0.12
+redis==7.2.0
+
+# Date & Time Handling
 python-dateutil==2.9.0.post0
+tzdata==2025.3
+tzlocal==5.3.1
+
+# Command Line Interface & Utilities
+click==8.3.1
 click-didyoumean==0.3.1
 click-repl==0.3.0
 click-plugins==1.1.1.2
-tzlocal==5.3.1
 prompt-toolkit==3.0.52
-amqp==5.3.1
-tzdata==2025.3
-six==1.17.0
 wcwidth==0.6.0
-
-# --- Utilities ---
-python-dotenv==1.2.1
-anyio==4.12.1
-click==8.3.1
-h11==0.16.0
 colorama==0.4.6
-idna==3.11
+six==1.17.0
 
-# --- Email Validation ---
+# Runtime Configuration
+python-dotenv==1.2.1
+
+# Email Validation
 email-validator==2.3.0
 dnspython==2.8.0
 
-
-prometheus-client==0.24.1
-
-
-numpy==2.4.2
-
-jinja2==3.1.6
-
-python-telegram-bot==22.6
-
-# --- Socket.IO ---
+# Real-time Communication
 python-socketio==5.16.1
 python-engineio==4.13.1
 simple-websocket==1.1.0
 bidict==0.23.1
 wsproto==1.3.2
 
+# Messaging & Notifications
+python-telegram-bot==22.6
 
-python-multipart==0.0.22
+# Data Processing & Scientific Computing
+numpy==2.4.2
+
+# Template Engine
+jinja2==3.1.6
+
+# Monitoring & Observability
+prometheus-client==0.24.1
+
+# Testing & Quality Assurance
+pytest==9.0.2
+pytest-asyncio==1.3.0
+iniconfig==2.3.0
+packaging==26.0
+pluggy==1.6.0
+pygments==2.19.2

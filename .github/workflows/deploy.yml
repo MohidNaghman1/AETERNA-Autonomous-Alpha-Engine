@@ -1,0 +1,58 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches:
+      - main
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    name: Deploy to Render
+    environment:
+      name: production
+      url: https://aeterna-api.onrender.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger Render Deployment
+        run: |
+          curl --request POST \
+            --url https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID }}?key=${{ secrets.RENDER_API_KEY }}
+
+      - name: Wait for deployment
+        run: |
+          sleep 10
+          timeout 600 bash -c 'until curl -f https://aeterna-api.onrender.com/health 2>/dev/null; do sleep 10; done'
+
+      - name: Verify deployment
+        run: |
+          response=$(curl -s https://aeterna-api.onrender.com/health)
+          echo "Health check response: $response"
+          if [ $? -ne 0 ]; then
+            echo "❌ Deployment verification failed"
+            exit 1
+          fi
+          echo "✓ Deployment successful and verified"
+
+      - name: Notify deployment status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const status = context.job.status === 'success' ? '✅ Success' : '❌ Failed';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Production Deployment ${status}\n\n- **Environment**: Production\n- **Service**: aeterna-api\n- **URL**: https://aeterna-api.onrender.com`
+            });
