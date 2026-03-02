@@ -6,7 +6,11 @@ password reset, and refresh token rotation.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.modules.identity.infrastructure.models import User, RefreshToken, PasswordResetToken
+from app.modules.identity.infrastructure.models import (
+    User,
+    RefreshToken,
+    PasswordResetToken,
+)
 import secrets
 from app.shared.utils.auth_utils import (
     hash_password,
@@ -22,7 +26,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30"))
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30")
+)
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
 
@@ -41,7 +47,9 @@ async def generate_password_reset_token(email: str, db: AsyncSession) -> tuple:
         return None, None
     token = secrets.token_urlsafe(32)
     token_hash = hash_token(token)
-    expires_at = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES)
+    expires_at = datetime.utcnow() + timedelta(
+        minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+    )
     db_token = PasswordResetToken(
         user_id=user.id,
         token_hash=token_hash,
@@ -185,7 +193,9 @@ async def revoke_refresh_token(refresh_token, db: AsyncSession) -> int:
         int: 1 if revoked successfully, 0 if token not found
     """
     token_hash_val = hash_token(refresh_token)
-    result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash_val))
+    result = await db.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash_val)
+    )
     db_token = result.scalar_one_or_none()
     if db_token:
         db_token.revoked = True
@@ -194,7 +204,9 @@ async def revoke_refresh_token(refresh_token, db: AsyncSession) -> int:
     return 0
 
 
-async def reset_password_with_token(token: str, new_password: str, db: AsyncSession) -> tuple:
+async def reset_password_with_token(
+    token: str, new_password: str, db: AsyncSession
+) -> tuple:
     """Reset user password using a password reset token.
 
     Args:
@@ -208,7 +220,8 @@ async def reset_password_with_token(token: str, new_password: str, db: AsyncSess
     token_hash_val = hash_token(token)
     result = await db.execute(
         select(PasswordResetToken).where(
-            PasswordResetToken.token_hash == token_hash_val, PasswordResetToken.used == False
+            PasswordResetToken.token_hash == token_hash_val,
+            PasswordResetToken.used == False,
         )
     )
     db_token = result.scalar_one_or_none()

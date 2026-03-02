@@ -21,7 +21,14 @@ class User:
     """
 
     def __init__(
-        self, id, email, password_hash, telegram_id, preferences, created_at, email_verified
+        self,
+        id,
+        email,
+        password_hash,
+        telegram_id,
+        preferences,
+        created_at,
+        email_verified,
     ):
         """Initialize a User.
 

@@ -29,7 +29,9 @@ except Exception:
 load_dotenv()
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("event-consumer")
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
@@ -87,7 +89,9 @@ def process_event(ch, method, properties, body):
 
         # Validate event
         if not validate_event(event):
-            logger.warning(f"[INVALID] Event {getattr(event, 'id', None)} failed validation.")
+            logger.warning(
+                f"[INVALID] Event {getattr(event, 'id', None)} failed validation."
+            )
             # Invalid events don't get retried - ACK and discard
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
@@ -104,7 +108,9 @@ def process_event(ch, method, properties, body):
                     content = json_module.loads(content)
                 content["event_hash"] = event.id  # For deduplication tracking
 
-                logger.debug(f"[DEBUG] Creating EventORM with content keys: {list(content.keys())}")
+                logger.debug(
+                    f"[DEBUG] Creating EventORM with content keys: {list(content.keys())}"
+                )
 
                 # Create ORM object
                 db_event = EventORM(
@@ -160,13 +166,17 @@ def process_event(ch, method, properties, body):
 
     except Exception as e:
         # Unexpected error - NACK with requeue
-        logger.error(f"[❌ UNEXPECTED ERROR] {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(
+            f"[❌ UNEXPECTED ERROR] {type(e).__name__}: {str(e)}", exc_info=True
+        )
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
 
 def run_consumer():
     connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host=RABBITMQ_HOST, port=5672, credentials=credentials)
+        pika.ConnectionParameters(
+            host=RABBITMQ_HOST, port=5672, credentials=credentials
+        )
     )
     channel = connection.channel()
     channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)

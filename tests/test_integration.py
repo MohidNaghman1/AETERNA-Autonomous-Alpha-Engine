@@ -19,9 +19,7 @@ async def test_end_to_end_ingestion_with_mocked_collectors(db_session, mocker):
     # Mock external API calls (RSS/Price collectors)
     mock_rss_response = MagicMock()
     mock_rss_response.status_code = 200
-    mock_rss_response.content = (
-        b'<?xml version="1.0"?><rss><channel><item><title>Test</title></item></channel></rss>'
-    )
+    mock_rss_response.content = b'<?xml version="1.0"?><rss><channel><item><title>Test</title></item></channel></rss>'
 
     mocker.patch("requests.get", return_value=mock_rss_response)
 

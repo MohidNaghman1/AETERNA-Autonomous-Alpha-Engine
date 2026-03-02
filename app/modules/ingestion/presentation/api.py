@@ -81,7 +81,9 @@ async def list_events(
         query = query.where(and_(*filters))
 
     # Order by timestamp descending, apply pagination
-    result = await db.execute(query.order_by(desc(EventORM.timestamp)).offset(skip).limit(limit))
+    result = await db.execute(
+        query.order_by(desc(EventORM.timestamp)).offset(skip).limit(limit)
+    )
     events = result.scalars().all()
     return events
 

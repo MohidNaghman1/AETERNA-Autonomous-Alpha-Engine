@@ -12,14 +12,20 @@ from functools import lru_cache
 # --- Multi-source check ---
 def multi_source_check(event: Dict[str, Any], min_sources: int = 3) -> int:
     sources = event.get("sources", [])
-    return 100 if len(set(sources)) >= min_sources else int(100 * len(set(sources)) / min_sources)
+    return (
+        100
+        if len(set(sources)) >= min_sources
+        else int(100 * len(set(sources)) / min_sources)
+    )
 
 
 # --- Engagement analysis ---
 def engagement_analysis(event: Dict[str, Any]) -> int:
     engagement_rate = event.get("engagement_rate", 0)
     verified = event.get("verified", False)
-    score = 100 if engagement_rate > 0.05 else int(engagement_rate * 2000)  # 0.05*2000=100
+    score = (
+        100 if engagement_rate > 0.05 else int(engagement_rate * 2000)
+    )  # 0.05*2000=100
     if verified:
         score += 20
     return min(score, 120)
@@ -29,7 +35,14 @@ def engagement_analysis(event: Dict[str, Any]) -> int:
 def bot_detection(event: Dict[str, Any]) -> int:
     username = event.get("username", "")
     text = event.get("text", "")
-    spam_patterns = [r"http[s]?://", r"free", r"giveaway", r"win", r"\d{5,}", r"buy now"]
+    spam_patterns = [
+        r"http[s]?://",
+        r"free",
+        r"giveaway",
+        r"win",
+        r"\d{5,}",
+        r"buy now",
+    ]
     generic_usernames = [r"user\d+", r"crypto\d+"]
     score = 100
     # Penalize for spam patterns
@@ -47,7 +60,9 @@ def bot_detection(event: Dict[str, Any]) -> int:
 
 
 def semantic_similarity(
-    event_embedding: List[float], db_embeddings: List[List[float]], threshold: float = 0.9
+    event_embedding: List[float],
+    db_embeddings: List[List[float]],
+    threshold: float = 0.9,
 ) -> int:
     """
     Optimized: Uses numpy for batch cosine similarity.
@@ -86,7 +101,9 @@ def get_cached_embeddings(key: str) -> Optional[List[List[float]]]:
 # --- Weighted score calculation ---
 
 
-def score_event(event: Dict[str, Any], db_embeddings: List[List[float]]) -> Dict[str, Any]:
+def score_event(
+    event: Dict[str, Any], db_embeddings: List[List[float]]
+) -> Dict[str, Any]:
     ms_score = multi_source_check(event)
     eng_score = engagement_analysis(event)
     bot_score = bot_detection(event)
@@ -127,7 +144,9 @@ def score_events_batch(
             sims = np.dot(db_norm, v1_norm.T).flatten()
             max_sim = float(np.max(sims))
             dedup_score = 100 if max_sim < 0.9 else int(100 * (1 - max_sim))
-        weighted = 0.3 * ms_score + 0.2 * eng_score + 0.3 * bot_score + 0.2 * dedup_score
+        weighted = (
+            0.3 * ms_score + 0.2 * eng_score + 0.3 * bot_score + 0.2 * dedup_score
+        )
         priority = "HIGH" if weighted >= 80 else ("MEDIUM" if weighted >= 50 else "LOW")
         results.append(
             {

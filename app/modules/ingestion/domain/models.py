@@ -12,7 +12,9 @@ import hashlib
 
 class Event(BaseModel):
     id: str = Field(..., description="Unique event ID (hash)")
-    source: str = Field(..., description="Source system or feed (e.g., 'coindesk', 'coingecko')")
+    source: str = Field(
+        ..., description="Source system or feed (e.g., 'coindesk', 'coingecko')"
+    )
     type: str = Field(..., description="Event type (e.g., 'news', 'price')")
     timestamp: str = Field(..., description="UTC ISO8601 timestamp")
     content: Dict[str, Any] = Field(..., description="Normalized event payload")
@@ -23,7 +25,9 @@ class Event(BaseModel):
     raw: Optional[Any] = Field(None, description="Raw source data (optional)")
 
     @staticmethod
-    def generate_id(source: str, type_: str, timestamp: str, content: Dict[str, Any]) -> str:
+    def generate_id(
+        source: str, type_: str, timestamp: str, content: Dict[str, Any]
+    ) -> str:
         """Generate a unique hash for the event."""
         base = f"{source}|{type_}|{timestamp}|{str(content)}"
         return hashlib.sha256(base.encode("utf-8")).hexdigest()

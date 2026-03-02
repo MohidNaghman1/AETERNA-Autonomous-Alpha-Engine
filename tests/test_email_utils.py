@@ -107,12 +107,20 @@ def test_generate_unsubscribe_link():
     assert email in link or email.replace("@", "%40") in link
 
     # Verify it's a valid URL format
-    assert link.startswith("http://") or link.startswith("https://") or link.startswith("/")
+    assert (
+        link.startswith("http://")
+        or link.startswith("https://")
+        or link.startswith("/")
+    )
 
 
 def test_generate_unsubscribe_link_with_special_chars():
     """Test unsubscribe link generation with special characters in email."""
-    emails = ["user+test@example.com", "first.last@example.co.uk", "user_name@example.org"]
+    emails = [
+        "user+test@example.com",
+        "first.last@example.co.uk",
+        "user_name@example.org",
+    ]
 
     for email in emails:
         link = generate_unsubscribe_link(email)
@@ -149,7 +157,9 @@ async def test_send_bulk_emails(mocker):
     mock_smtp = AsyncMock()
     mocker.patch("smtplib.SMTP_SSL", return_value=mock_smtp)
 
-    recipients = [{"email": f"user{i}@example.com", "subject": f"Alert {i}"} for i in range(5)]
+    recipients = [
+        {"email": f"user{i}@example.com", "subject": f"Alert {i}"} for i in range(5)
+    ]
 
     results = []
     for recipient in recipients:

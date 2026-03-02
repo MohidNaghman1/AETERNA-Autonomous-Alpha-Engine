@@ -23,7 +23,9 @@ def generate_unsubscribe_link(user_email: str) -> str:
     return f"{base_url}/unsubscribe?email={user_email}"
 
 
-def send_email_alert(to_email: str, subject: str, html_content: str, link: str = None) -> bool:
+def send_email_alert(
+    to_email: str, subject: str, html_content: str, link: str = None
+) -> bool:
     """Send an alert email to a user.
 
     Uses Mailtrap SMTP if credentials are configured, otherwise logs to console in dev mode.
@@ -75,5 +77,7 @@ def send_email_alert(to_email: str, subject: str, html_content: str, link: str =
             return False
     else:
         # Dev mode: print to console
-        print(f"[EMAIL-DEV] To: {to_email} | Subject: {subject}\nContent: {rendered_html[:100]}...")
+        print(
+            f"[EMAIL-DEV] To: {to_email} | Subject: {subject}\nContent: {rendered_html[:100]}..."
+        )
         return True

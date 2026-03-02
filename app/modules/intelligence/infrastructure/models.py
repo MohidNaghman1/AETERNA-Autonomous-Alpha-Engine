@@ -21,7 +21,9 @@ class ProcessedEvent(Base):
     dedup = Column(Integer)
     event_data = Column(JSON)  # Store original event
 
-    __table_args__ = (Index("ix_priority_timestamp_user", "priority", "timestamp", "user_id"),)
+    __table_args__ = (
+        Index("ix_priority_timestamp_user", "priority", "timestamp", "user_id"),
+    )
 
 
 # Retention policy: To be enforced by a scheduled cleanup task (not in model)

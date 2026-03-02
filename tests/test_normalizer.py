@@ -81,7 +81,10 @@ def test_event_scoring_price_data():
 
 def test_event_with_multiple_entities():
     """Test Event scoring with multiple crypto entities mentioned."""
-    content = {"title": "BTC and ETH pump", "summary": "Bitcoin and Ethereum both surge"}
+    content = {
+        "title": "BTC and ETH pump",
+        "summary": "Bitcoin and Ethereum both surge",
+    }
     ts = datetime.utcnow()
     e = Event.create("coindesk", "news", ts, content, entities=["BTC", "ETH"])
     assert e.quality_score >= 30, "Multiple entities should increase score"
@@ -134,7 +137,11 @@ def test_event_content_structure():
     ts = datetime.utcnow()
 
     # News content
-    news_content = {"title": "News Title", "link": "https://example.com", "summary": "News summary"}
+    news_content = {
+        "title": "News Title",
+        "link": "https://example.com",
+        "summary": "News summary",
+    }
     e1 = Event.create("coindesk", "news", ts, news_content)
     assert e1.content["title"] == "News Title"
 

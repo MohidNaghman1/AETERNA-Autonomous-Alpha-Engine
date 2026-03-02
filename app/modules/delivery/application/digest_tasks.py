@@ -13,7 +13,9 @@ import json
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
-celery_app = Celery("digest_tasks", broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEND)
+celery_app = Celery(
+    "digest_tasks", broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEND
+)
 
 USER_DIGESTS = {}
 
@@ -44,6 +46,8 @@ def send_daily_digests() -> None:
         for alert in alerts:
             html_content += f"<div><b>{alert['title']}</b><br>{alert['body']}</div><hr>"
         send_email_alert(
-            to_email=user_email, subject="Your Daily Digest from AETERNA", html_content=html_content
+            to_email=user_email,
+            subject="Your Daily Digest from AETERNA",
+            html_content=html_content,
         )
         USER_DIGESTS[user_email] = []

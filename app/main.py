@@ -19,7 +19,9 @@ from app.modules.ingestion.presentation.api import router as ingestion_router
 from app.modules.alerting.presentation.alerts import router as alerts_router
 from app.modules.admin.presentation.dashboard import router as admin_dashboard_router
 from app.modules.admin.presentation.user_management import router as admin_user_router
-from app.modules.admin.presentation.admin_protected import router as admin_protected_router
+from app.modules.admin.presentation.admin_protected import (
+    router as admin_protected_router,
+)
 from app.modules.admin.presentation.security import RateLimitMiddleware
 
 load_dotenv()
@@ -37,7 +39,9 @@ app = FastAPI(
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 sio_app = ASGIApp(sio, other_asgi_app=app)
 
-REQUEST_COUNT = Counter("aeterna_api_requests_total", "Total API Requests", ["endpoint"])
+REQUEST_COUNT = Counter(
+    "aeterna_api_requests_total", "Total API Requests", ["endpoint"]
+)
 
 
 @app.middleware("http")
@@ -160,7 +164,11 @@ def get_user_prefs(user_id):
     try:
         db = SessionLocal()
         # Try UserPreference table first
-        pref = db.query(UserPreference).filter(UserPreference.user_id == int(user_id)).first()
+        pref = (
+            db.query(UserPreference)
+            .filter(UserPreference.user_id == int(user_id))
+            .first()
+        )
         if pref and pref.preferences:
             return pref.preferences
         # Fallback: check User.preferences

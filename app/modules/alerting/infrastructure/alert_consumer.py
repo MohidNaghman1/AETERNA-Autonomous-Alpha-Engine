@@ -97,7 +97,9 @@ class AlertConsumer(Thread):
             alert = json.loads(body)
             user_id = str(alert.get("user_id"))
             if user_id:
-                user_prefs = self.user_prefs_func(user_id) if self.user_prefs_func else None
+                user_prefs = (
+                    self.user_prefs_func(user_id) if self.user_prefs_func else None
+                )
                 if alert_matches_user(alert, user_prefs):
                     asyncio.run_coroutine_threadsafe(
                         self.sio.emit("alert", alert, room=user_id), self.sio.eio.loop

@@ -42,7 +42,9 @@ publisher = RabbitMQPublisher(
 )
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("price-collector")
 
 # Start Prometheus metrics server (only once per process)
@@ -65,7 +67,9 @@ def fetch_prices():
     while True:
         try:
             logger.info(f"Fetching prices from CoinGecko: {COINGECKO_API}")
-            resp = requests.get(COINGECKO_API, params=params, headers=headers, timeout=10)
+            resp = requests.get(
+                COINGECKO_API, params=params, headers=headers, timeout=10
+            )
             logger.info(f"HTTP status for CoinGecko: {resp.status_code}")
             resp.raise_for_status()
             data = resp.json()
@@ -91,8 +95,12 @@ def normalize_price_entry(entry):
         "symbol": entry["symbol"],
         "name": entry["name"],
         "current_price": entry["current_price"],
-        "price_change_percentage_1h": entry.get("price_change_percentage_1h_in_currency"),
-        "price_change_percentage_24h": entry.get("price_change_percentage_24h_in_currency"),
+        "price_change_percentage_1h": entry.get(
+            "price_change_percentage_1h_in_currency"
+        ),
+        "price_change_percentage_24h": entry.get(
+            "price_change_percentage_24h_in_currency"
+        ),
         "market_cap": entry["market_cap"],
         "last_updated": entry["last_updated"],
     }
@@ -154,7 +162,9 @@ def run_collector():
                 if attempt == RETRY_ATTEMPTS - 1:
                     logger.error(f"[ERROR] Failed to fetch/publish prices: {e}")
                 else:
-                    logger.info(f"Retrying CoinGecko fetch in {2 ** attempt} seconds...")
+                    logger.info(
+                        f"Retrying CoinGecko fetch in {2 ** attempt} seconds..."
+                    )
                     time.sleep(2**attempt)
         logger.info(f"Sleeping for {POLL_INTERVAL} seconds before next price poll.")
         time.sleep(POLL_INTERVAL)

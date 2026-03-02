@@ -14,7 +14,9 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-EVENTS_PROCESSED = Counter("events_processed_total", "Total events processed", ["collector"])
+EVENTS_PROCESSED = Counter(
+    "events_processed_total", "Total events processed", ["collector"]
+)
 EVENT_PROCESSING_TIME = Histogram(
     "event_processing_seconds", "Time spent processing event", ["collector"]
 )

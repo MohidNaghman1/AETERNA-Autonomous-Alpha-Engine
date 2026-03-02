@@ -18,7 +18,11 @@ USERS = [
         "password": "Testpass2!",
         "prefs": {"email_frequency": "daily_digest"},
     },
-    {"email": "user3@example.com", "password": "Testpass3!", "prefs": {"email_frequency": "off"}},
+    {
+        "email": "user3@example.com",
+        "password": "Testpass3!",
+        "prefs": {"email_frequency": "off"},
+    },
 ]
 
 
@@ -28,7 +32,8 @@ async def test_register_and_set_email_preferences(client):
     for user in USERS:
         # Register
         resp = await client.post(
-            "/auth/register", json={"email": user["email"], "password": user["password"]}
+            "/auth/register",
+            json={"email": user["email"], "password": user["password"]},
         )
         assert resp.status_code == 200, f"Failed to register {user['email']}"
         tokens = resp.json()
@@ -46,7 +51,10 @@ async def test_register_and_set_email_preferences(client):
         )
         assert resp.status_code == 200
         updated_profile = resp.json()
-        assert updated_profile["preferences"]["email_frequency"] == user["prefs"]["email_frequency"]
+        assert (
+            updated_profile["preferences"]["email_frequency"]
+            == user["prefs"]["email_frequency"]
+        )
 
 
 @pytest.mark.asyncio
@@ -54,7 +62,10 @@ async def test_email_frequency_preferences(client):
     """Test different email frequency preferences."""
     preferences = [
         {"email_frequency": "immediate", "expected_behavior": "Alert sent immediately"},
-        {"email_frequency": "daily_digest", "expected_behavior": "Alerts batched daily"},
+        {
+            "email_frequency": "daily_digest",
+            "expected_behavior": "Alerts batched daily",
+        },
         {"email_frequency": "off", "expected_behavior": "No emails sent"},
     ]
 
@@ -62,7 +73,9 @@ async def test_email_frequency_preferences(client):
         email = f"freq_test_{i}@example.com"
 
         # Register user
-        resp = await client.post("/auth/register", json={"email": email, "password": "password123"})
+        resp = await client.post(
+            "/auth/register", json={"email": email, "password": "password123"}
+        )
         assert resp.status_code == 200
         tokens = resp.json()
         headers = {"Authorization": f"Bearer {tokens['access_token']}"}
@@ -88,27 +101,35 @@ async def test_update_preferences_multiple_times(client):
     email = "update_test@example.com"
 
     # Register
-    resp = await client.post("/auth/register", json={"email": email, "password": "password123"})
+    resp = await client.post(
+        "/auth/register", json={"email": email, "password": "password123"}
+    )
     tokens = resp.json()
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     # Update to immediate
     resp = await client.patch(
-        "/auth/profile", json={"preferences": {"email_frequency": "immediate"}}, headers=headers
+        "/auth/profile",
+        json={"preferences": {"email_frequency": "immediate"}},
+        headers=headers,
     )
     assert resp.status_code == 200
     assert resp.json()["preferences"]["email_frequency"] == "immediate"
 
     # Update to daily_digest
     resp = await client.patch(
-        "/auth/profile", json={"preferences": {"email_frequency": "daily_digest"}}, headers=headers
+        "/auth/profile",
+        json={"preferences": {"email_frequency": "daily_digest"}},
+        headers=headers,
     )
     assert resp.status_code == 200
     assert resp.json()["preferences"]["email_frequency"] == "daily_digest"
 
     # Update to off
     resp = await client.patch(
-        "/auth/profile", json={"preferences": {"email_frequency": "off"}}, headers=headers
+        "/auth/profile",
+        json={"preferences": {"email_frequency": "off"}},
+        headers=headers,
     )
     assert resp.status_code == 200
     assert resp.json()["preferences"]["email_frequency"] == "off"

@@ -50,7 +50,9 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token_endpoint(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh_token_endpoint(
+    data: RefreshRequest, db: AsyncSession = Depends(get_db)
+):
     new_access_token, new_refresh_token, user = await services.rotate_refresh_token(
         data.refresh_token, db
     )
@@ -60,7 +62,9 @@ async def refresh_token_endpoint(data: RefreshRequest, db: AsyncSession = Depend
 
 
 @router.post("/password-reset/request", response_model=PasswordResetTokenResponse)
-async def password_reset_request(data: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
+async def password_reset_request(
+    data: PasswordResetRequest, db: AsyncSession = Depends(get_db)
+):
     """
     Request a password reset.
 
@@ -81,7 +85,9 @@ async def password_reset_request(data: PasswordResetRequest, db: AsyncSession = 
             await send_password_reset_email(data.email, token)
             print(f"[AUTH] Password reset email sent to {data.email}")
         except Exception as e:
-            print(f"[AUTH-ERROR] Failed to send password reset email to {data.email}: {e}")
+            print(
+                f"[AUTH-ERROR] Failed to send password reset email to {data.email}: {e}"
+            )
             # Continue even if email fails - user can try again
 
     # Return generic response (doesn't reveal if email exists)
@@ -95,7 +101,9 @@ async def password_reset_request(data: PasswordResetRequest, db: AsyncSession = 
 async def password_reset_confirm(
     data: PasswordResetConfirmRequest, db: AsyncSession = Depends(get_db)
 ):
-    success, message = await services.reset_password_with_token(data.token, data.new_password, db)
+    success, message = await services.reset_password_with_token(
+        data.token, data.new_password, db
+    )
     return PasswordResetConfirmResponse(success=success, message=message)
 
 

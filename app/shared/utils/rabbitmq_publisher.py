@@ -91,7 +91,9 @@ class RabbitMQPublisher:
             try:
                 conn, channel = self._pool.get(timeout=5)
                 try:
-                    channel.basic_publish(exchange="", routing_key=self.queue_name, body=body)
+                    channel.basic_publish(
+                        exchange="", routing_key=self.queue_name, body=body
+                    )
                     self._pool.put((conn, channel))
                     return True
                 except Exception as e:

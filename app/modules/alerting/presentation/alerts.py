@@ -137,7 +137,9 @@ async def alert_history(
 
 @router.get("/{alert_id}", response_model=Alert)
 async def get_alert(
-    alert_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)
+    alert_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Get a single alert by ID.
 
@@ -157,7 +159,9 @@ async def get_alert(
         alert = result.scalars().first()
 
         if not alert:
-            logger.warning(f"Alert {alert_id} not found or not owned by user {current_user.id}")
+            logger.warning(
+                f"Alert {alert_id} not found or not owned by user {current_user.id}"
+            )
             raise HTTPException(status_code=404, detail="Alert not found")
 
         return convert_alert_orm_to_schema(alert)
@@ -171,7 +175,9 @@ async def get_alert(
 
 @router.patch("/{alert_id}", response_model=Alert)
 async def mark_alert_read(
-    alert_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)
+    alert_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Mark an alert as read.
 
@@ -191,7 +197,9 @@ async def mark_alert_read(
         alert = result.scalars().first()
 
         if not alert:
-            logger.warning(f"Alert {alert_id} not found or not owned by user {current_user.id}")
+            logger.warning(
+                f"Alert {alert_id} not found or not owned by user {current_user.id}"
+            )
             raise HTTPException(status_code=404, detail="Alert not found")
 
         # Update status
@@ -214,7 +222,9 @@ async def mark_alert_read(
 
 @router.delete("/{alert_id}", response_model=AlertDismissResponse)
 async def dismiss_alert(
-    alert_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)
+    alert_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """
     Dismiss/delete an alert.
@@ -237,7 +247,9 @@ async def dismiss_alert(
         alert = result.scalars().first()
 
         if not alert:
-            logger.warning(f"Alert {alert_id} not found or not owned by user {current_user.id}")
+            logger.warning(
+                f"Alert {alert_id} not found or not owned by user {current_user.id}"
+            )
             raise HTTPException(status_code=404, detail="Alert not found")
 
         # Delete
@@ -294,7 +306,9 @@ async def export_alert_history_csv(
                 writer.writerow(
                     {
                         "alert_id": alert.id,
-                        "created_at": alert.created_at.isoformat() if alert.created_at else "",
+                        "created_at": (
+                            alert.created_at.isoformat() if alert.created_at else ""
+                        ),
                         "title": alert.alert_id,
                         "priority": alert.priority,
                         "status": alert.status,

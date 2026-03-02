@@ -20,7 +20,9 @@ class Event:
         timestamp: When the event occurred
     """
 
-    def __init__(self, id, event_type, source, content, metadata, score, priority, timestamp):
+    def __init__(
+        self, id, event_type, source, content, metadata, score, priority, timestamp
+    ):
         """Initialize an Event.
 
         Args:

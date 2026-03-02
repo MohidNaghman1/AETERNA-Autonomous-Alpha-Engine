@@ -15,7 +15,9 @@ from app.config.db import SessionLocal
 user_alert_times = collections.defaultdict(list)
 
 
-def filter_channels_by_prefs(user_prefs: Dict[str, Any], channels: List[str]) -> List[str]:
+def filter_channels_by_prefs(
+    user_prefs: Dict[str, Any], channels: List[str]
+) -> List[str]:
     """Filter alert delivery channels based on user preferences.
 
     Args:

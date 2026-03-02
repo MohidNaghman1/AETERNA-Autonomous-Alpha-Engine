@@ -25,10 +25,13 @@ def test_rss_collector_throughput():
     """
     num_events = 1000
 
-    with patch("app.modules.ingestion.application.rss_collector.requests.get") as mock_get, patch(
+    with patch(
+        "app.modules.ingestion.application.rss_collector.requests.get"
+    ) as mock_get, patch(
         "app.modules.ingestion.application.rss_collector.publish_event"
     ) as mock_publish, patch(
-        "app.modules.ingestion.application.rss_collector.is_duplicate", return_value=False
+        "app.modules.ingestion.application.rss_collector.is_duplicate",
+        return_value=False,
     ), patch(
         "app.modules.ingestion.application.rss_collector.mark_as_seen"
     ), patch(
@@ -43,7 +46,12 @@ def test_rss_collector_throughput():
 
         # Generate fake feed entries
         mock_parse.return_value.entries = [
-            {"id": str(i), "title": f"Test {i}", "link": f"url{i}", "summary": f"desc{i}"}
+            {
+                "id": str(i),
+                "title": f"Test {i}",
+                "link": f"url{i}",
+                "summary": f"desc{i}",
+            }
             for i in range(num_events)
         ]
         mock_get.return_value.status_code = 200
@@ -76,9 +84,17 @@ def test_event_processing_latency():
     """Test individual event processing latency."""
 
     # Simulate generating an alert
-    event = {"id": "test_event", "priority": "HIGH", "score": 85, "channels": ["email", "telegram"]}
+    event = {
+        "id": "test_event",
+        "priority": "HIGH",
+        "score": 85,
+        "channels": ["email", "telegram"],
+    }
 
-    prefs = {"channels": ["email", "telegram"], "quiet_hours": {"start": "22:00", "end": "07:00"}}
+    prefs = {
+        "channels": ["email", "telegram"],
+        "quiet_hours": {"start": "22:00", "end": "07:00"},
+    }
 
     start = time.perf_counter()
 
@@ -120,7 +136,8 @@ def test_deduplication_performance():
 
     # Simulate checking/marking duplicates with mocked functions
     with patch(
-        "app.modules.ingestion.application.rss_collector.is_duplicate", return_value=False
+        "app.modules.ingestion.application.rss_collector.is_duplicate",
+        return_value=False,
     ), patch("app.modules.ingestion.application.rss_collector.mark_as_seen"):
         try:
             for i in range(num_checks):
@@ -134,7 +151,9 @@ def test_deduplication_performance():
 
     # 1000 Redis operations should be fast
     # Allow very loose bound (10 seconds) for CI/CD
-    assert elapsed < 10.0, f"Deduplication too slow: {elapsed:.2f}s for {num_checks} ops"
+    assert (
+        elapsed < 10.0
+    ), f"Deduplication too slow: {elapsed:.2f}s for {num_checks} ops"
 
 
 def test_rss_parser_performance():

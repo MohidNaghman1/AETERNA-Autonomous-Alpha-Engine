@@ -43,7 +43,9 @@ def deliver_email_alert(alert: dict, user_prefs: dict) -> bool:
     if email_frequency == "immediate":
         try:
             send_email_alert(
-                to_email=email, subject=alert["title"], html_content=alert.get("body", "")
+                to_email=email,
+                subject=alert["title"],
+                html_content=alert.get("body", ""),
             )
             logger.info(f"[EMAIL] Alert sent to {email}")
             return True
@@ -53,13 +55,17 @@ def deliver_email_alert(alert: dict, user_prefs: dict) -> bool:
 
     elif email_frequency == "daily_digest":
         try:
-            from app.modules.delivery.application.digest_tasks import add_alert_to_digest
+            from app.modules.delivery.application.digest_tasks import (
+                add_alert_to_digest,
+            )
 
             add_alert_to_digest(email, alert)
             logger.info(f"[EMAIL-DIGEST] Alert added to digest for {email}")
             return True
         except Exception as e:
-            logger.error(f"[EMAIL-ERROR][Digest] Failed to add alert to digest for {email}: {e}")
+            logger.error(
+                f"[EMAIL-ERROR][Digest] Failed to add alert to digest for {email}: {e}"
+            )
             return False
     return False
 

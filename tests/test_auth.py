@@ -27,11 +27,14 @@ async def test_refresh_token(client):
     """Test refresh token endpoint."""
     # Register
     resp = await client.post(
-        "/auth/register", json={"email": "refresh@example.com", "password": "refreshpass123"}
+        "/auth/register",
+        json={"email": "refresh@example.com", "password": "refreshpass123"},
     )
     tokens = resp.json()
     # Refresh
-    resp = await client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    resp = await client.post(
+        "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data and "refresh_token" in data
@@ -46,7 +49,8 @@ async def test_password_reset(client, mocker):
     """
     # Register
     resp = await client.post(
-        "/auth/register", json={"email": "reset@example.com", "password": "resetpass123"}
+        "/auth/register",
+        json={"email": "reset@example.com", "password": "resetpass123"},
     )
     assert resp.status_code == 200
 
@@ -61,11 +65,14 @@ async def test_password_reset(client, mocker):
         return True
 
     mocker.patch(
-        "app.shared.utils.email_utils.send_password_reset_email", side_effect=mock_send_email
+        "app.shared.utils.email_utils.send_password_reset_email",
+        side_effect=mock_send_email,
     )
 
     # Request reset
-    resp = await client.post("/auth/password-reset/request", json={"email": "reset@example.com"})
+    resp = await client.post(
+        "/auth/password-reset/request", json={"email": "reset@example.com"}
+    )
     assert resp.status_code == 200
     reset_data = resp.json()
 
@@ -79,7 +86,8 @@ async def test_password_reset(client, mocker):
 
     # Confirm reset with captured token
     resp = await client.post(
-        "/auth/password-reset/confirm", json={"token": captured_token, "new_password": "newpass123"}
+        "/auth/password-reset/confirm",
+        json={"token": captured_token, "new_password": "newpass123"},
     )
     assert resp.status_code == 200
     assert resp.json()["success"] is True
@@ -97,7 +105,8 @@ async def test_profile_flow(client):
     """Test user profile retrieval and update."""
     # Register
     resp = await client.post(
-        "/auth/register", json={"email": "profile@example.com", "password": "profilepass123"}
+        "/auth/register",
+        json={"email": "profile@example.com", "password": "profilepass123"},
     )
     tokens = resp.json()
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
@@ -125,7 +134,8 @@ async def test_invalid_login_credentials(client):
     """Test login with invalid credentials."""
     # Try to login without registering
     resp = await client.post(
-        "/auth/login", data={"username": "nonexistent@example.com", "password": "wrongpassword"}
+        "/auth/login",
+        data={"username": "nonexistent@example.com", "password": "wrongpassword"},
     )
     assert resp.status_code == 401
     assert "Invalid credentials" in resp.json()["detail"]
@@ -136,13 +146,15 @@ async def test_duplicate_email_registration(client):
     """Test registration with duplicate email."""
     # Register first user
     resp = await client.post(
-        "/auth/register", json={"email": "duplicate@example.com", "password": "password123"}
+        "/auth/register",
+        json={"email": "duplicate@example.com", "password": "password123"},
     )
     assert resp.status_code == 200
 
     # Try to register with same email
     resp = await client.post(
-        "/auth/register", json={"email": "duplicate@example.com", "password": "password123"}
+        "/auth/register",
+        json={"email": "duplicate@example.com", "password": "password123"},
     )
     assert resp.status_code == 400
     assert "already registered" in resp.json()["detail"].lower()

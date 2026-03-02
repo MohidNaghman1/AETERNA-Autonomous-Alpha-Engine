@@ -31,9 +31,13 @@ if not SYNC_DATABASE_URL:
 # 3. Build ASYNC_DATABASE_URL if not set, using conversion logic
 if not ASYNC_DATABASE_URL:
     if SYNC_DATABASE_URL.startswith("postgres://"):
-        ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+        ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace(
+            "postgres://", "postgresql+asyncpg://", 1
+        )
     elif SYNC_DATABASE_URL.startswith("postgresql://"):
-        ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
     elif SYNC_DATABASE_URL.startswith("postgresql+psycopg2://"):
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace(
             "postgresql+psycopg2://", "postgresql+asyncpg://", 1
@@ -42,7 +46,9 @@ if not ASYNC_DATABASE_URL:
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL  # fallback
 
 # 4. Create sync engine and session (for consumer, celery, etc.)
-sync_engine = create_engine(SYNC_DATABASE_URL, echo=True, future=True, pool_pre_ping=True)
+sync_engine = create_engine(
+    SYNC_DATABASE_URL, echo=True, future=True, pool_pre_ping=True
+)
 SessionLocal = sessionmaker(
     bind=sync_engine,
     class_=Session,

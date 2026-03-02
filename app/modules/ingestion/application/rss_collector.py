@@ -55,7 +55,9 @@ publisher = RabbitMQPublisher(
 
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("rss-collector")
 logger.info(f"USER: {RABBITMQ_USER}")
 logger.info(f"PASS: {RABBITMQ_PASSWORD}")
@@ -83,7 +85,12 @@ def normalize_entry(entry, source):
     text = (entry.get("title") or "") + " " + (entry.get("summary") or "")
     entities = extract_crypto_mentions(text)
     return Event.create(
-        source=source, type_="news", timestamp=ts, content=content, entities=entities, raw=entry
+        source=source,
+        type_="news",
+        timestamp=ts,
+        content=content,
+        entities=entities,
+        raw=entry,
     )
 
 
@@ -116,7 +123,9 @@ def run_collector():
                     logger.info(f"HTTP status for {feed_url}: {response.status_code}")
                     response.raise_for_status()
                     feed = feedparser.parse(response.content)
-                    logger.info(f"Feed '{source}' returned {len(feed.entries)} entries.")
+                    logger.info(
+                        f"Feed '{source}' returned {len(feed.entries)} entries."
+                    )
                     if not feed.entries:
                         logger.warning(f"No entries found in feed: {feed_url}")
                         continue

@@ -29,7 +29,9 @@ def require_role(role: str):
         user_role = db.query(UserRole).filter(UserRole.user_id == int(user_id)).first()
         db.close()
         if not user_role or user_role.role != role:
-            raise HTTPException(status_code=403, detail=f"{role.capitalize()} role required")
+            raise HTTPException(
+                status_code=403, detail=f"{role.capitalize()} role required"
+            )
         return True
 
     return Depends(dependency)

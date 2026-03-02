@@ -3,7 +3,16 @@
 Defines database schemas for users, preferences, refresh tokens, roles, and password resets.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, ForeignKey, Index
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Boolean,
+    JSON,
+    ForeignKey,
+    Index,
+)
 from datetime import datetime
 from app.config.db import Base
 

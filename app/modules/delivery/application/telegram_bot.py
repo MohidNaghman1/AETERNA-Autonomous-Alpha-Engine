@@ -56,7 +56,9 @@ async def link_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                     "❌ Email not found in user database. Please register first or check your email."
                 )
     else:
-        await update.message.reply_text("❌ Invalid email address. Please send a valid email.")
+        await update.message.reply_text(
+            "❌ Invalid email address. Please send a valid email."
+        )
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -66,7 +68,9 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         update: Telegram update object
         context: Command context
     """
-    await update.message.reply_text("✅ AETERNA bot is running. Alerts will be sent as they occur.")
+    await update.message.reply_text(
+        "✅ AETERNA bot is running. Alerts will be sent as they occur."
+    )
 
 
 async def alerts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -88,11 +92,15 @@ async def demoalert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     chat_id = update.message.chat_id
     async with AsyncSessionLocal() as session:
-        result = await session.execute(session.query(User).filter_by(telegram_id=str(chat_id)))
+        result = await session.execute(
+            session.query(User).filter_by(telegram_id=str(chat_id))
+        )
         user = result.scalars().first()
         email = user.email if user else None
     if email:
-        await send_alert_to_user(email, f"🚨 Demo alert for {email}! This is how alerts will look.")
+        await send_alert_to_user(
+            email, f"🚨 Demo alert for {email}! This is how alerts will look."
+        )
         await update.message.reply_text(f"✅ Demo alert sent to {email}!")
     else:
         await update.message.reply_text(
