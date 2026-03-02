@@ -2,6 +2,7 @@
 
 Defines request/response models for alert-related API operations.
 """
+
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -9,7 +10,7 @@ from datetime import datetime
 
 class Alert(BaseModel):
     """Alert response schema.
-    
+
     Attributes:
         alert_id: Unique alert identifier
         created_at: ISO format creation timestamp
@@ -19,6 +20,7 @@ class Alert(BaseModel):
         status: Alert status (pending, sent, failed)
         read_at: ISO format timestamp when read, or None if unread
     """
+
     alert_id: str
     created_at: str
     title: str
@@ -30,8 +32,9 @@ class Alert(BaseModel):
 
 class AlertDismissResponse(BaseModel):
     """Response when alert is dismissed.
-    
+
     Attributes:
         detail: Status message
     """
+
     detail: str

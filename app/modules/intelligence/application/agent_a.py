@@ -3,16 +3,17 @@ Agent A - The Sieve (Noise Filter)
 Scoring logic for event filtering and prioritization.
 """
 
-
 from typing import Dict, Any, List, Optional
 import re
 import numpy as np
 from functools import lru_cache
 
+
 # --- Multi-source check ---
 def multi_source_check(event: Dict[str, Any], min_sources: int = 3) -> int:
     sources = event.get("sources", [])
     return 100 if len(set(sources)) >= min_sources else int(100 * len(set(sources)) / min_sources)
+
 
 # --- Engagement analysis ---
 def engagement_analysis(event: Dict[str, Any]) -> int:
@@ -22,6 +23,7 @@ def engagement_analysis(event: Dict[str, Any]) -> int:
     if verified:
         score += 20
     return min(score, 120)
+
 
 # --- Bot detection ---
 def bot_detection(event: Dict[str, Any]) -> int:
@@ -40,9 +42,13 @@ def bot_detection(event: Dict[str, Any]) -> int:
             score -= 20
     return max(score, 0)
 
+
 # --- Semantic similarity detection ---
 
-def semantic_similarity(event_embedding: List[float], db_embeddings: List[List[float]], threshold: float = 0.9) -> int:
+
+def semantic_similarity(
+    event_embedding: List[float], db_embeddings: List[List[float]], threshold: float = 0.9
+) -> int:
     """
     Optimized: Uses numpy for batch cosine similarity.
     """
@@ -76,19 +82,16 @@ def get_cached_embeddings(key: str) -> Optional[List[List[float]]]:
     # Placeholder: Replace with actual DB/cache fetch if needed
     return None
 
+
 # --- Weighted score calculation ---
+
 
 def score_event(event: Dict[str, Any], db_embeddings: List[List[float]]) -> Dict[str, Any]:
     ms_score = multi_source_check(event)
     eng_score = engagement_analysis(event)
     bot_score = bot_detection(event)
     dedup_score = semantic_similarity(event.get("embedding", []), db_embeddings)
-    weighted = (
-        0.3 * ms_score +
-        0.2 * eng_score +
-        0.3 * bot_score +
-        0.2 * dedup_score
-    )
+    weighted = 0.3 * ms_score + 0.2 * eng_score + 0.3 * bot_score + 0.2 * dedup_score
     priority = "HIGH" if weighted >= 80 else ("MEDIUM" if weighted >= 50 else "LOW")
     return {
         "multi_source": ms_score,
@@ -96,12 +99,14 @@ def score_event(event: Dict[str, Any], db_embeddings: List[List[float]]) -> Dict
         "bot": bot_score,
         "dedup": dedup_score,
         "score": weighted,
-        "priority": priority
+        "priority": priority,
     }
 
 
 # --- Batch scoring for performance ---
-def score_events_batch(events: List[Dict[str, Any]], db_embeddings: List[List[float]]) -> List[Dict[str, Any]]:
+def score_events_batch(
+    events: List[Dict[str, Any]], db_embeddings: List[List[float]]
+) -> List[Dict[str, Any]]:
     """
     Efficiently score a batch of events. Semantic similarity is vectorized.
     """
@@ -122,19 +127,16 @@ def score_events_batch(events: List[Dict[str, Any]], db_embeddings: List[List[fl
             sims = np.dot(db_norm, v1_norm.T).flatten()
             max_sim = float(np.max(sims))
             dedup_score = 100 if max_sim < 0.9 else int(100 * (1 - max_sim))
-        weighted = (
-            0.3 * ms_score +
-            0.2 * eng_score +
-            0.3 * bot_score +
-            0.2 * dedup_score
-        )
+        weighted = 0.3 * ms_score + 0.2 * eng_score + 0.3 * bot_score + 0.2 * dedup_score
         priority = "HIGH" if weighted >= 80 else ("MEDIUM" if weighted >= 50 else "LOW")
-        results.append({
-            "multi_source": ms_score,
-            "engagement": eng_score,
-            "bot": bot_score,
-            "dedup": dedup_score,
-            "score": weighted,
-            "priority": priority
-        })
+        results.append(
+            {
+                "multi_source": ms_score,
+                "engagement": eng_score,
+                "bot": bot_score,
+                "dedup": dedup_score,
+                "score": weighted,
+                "priority": priority,
+            }
+        )
     return results

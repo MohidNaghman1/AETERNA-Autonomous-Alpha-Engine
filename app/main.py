@@ -25,21 +25,20 @@ from app.modules.admin.presentation.security import RateLimitMiddleware
 load_dotenv()
 
 
-
-
 app = FastAPI(
     title="AETERNA Autonomous Alpha Engine",
     description="AI-powered cryptocurrency alert and analysis engine with multi-channel delivery",
     version="0.1.0",
     openapi_url="/openapi.json",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 sio_app = ASGIApp(sio, other_asgi_app=app)
 
-REQUEST_COUNT = Counter('aeterna_api_requests_total', 'Total API Requests', ['endpoint'])
+REQUEST_COUNT = Counter("aeterna_api_requests_total", "Total API Requests", ["endpoint"])
+
 
 @app.middleware("http")
 async def prometheus_middleware(request, call_next):
@@ -47,9 +46,11 @@ async def prometheus_middleware(request, call_next):
     REQUEST_COUNT.labels(endpoint=request.url.path).inc()
     return response
 
+
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,47 +73,49 @@ app.include_router(admin_protected_router)
 
 @app.get("/")
 def read_root():
-	return {"message": "Welcome to AETERNA Autonomous Alpha Engine API"}
+    return {"message": "Welcome to AETERNA Autonomous Alpha Engine API"}
 
 
 # --- DIAGNOSTIC ENDPOINTS ---
 @app.get("/health/system")
 def system_health():
-	"""Comprehensive system health check."""
-	diagnostics = {}
-	
-	# Check RabbitMQ
-	rabbitmq_host = os.getenv("RABBITMQ_HOST", "localhost")
-	rabbitmq_user = os.getenv("RABBITMQ_USER", "guest")
-	rabbitmq_password = os.getenv("RABBITMQ_PASSWORD", "guest")
-	try:
-		credentials = pika.PlainCredentials(rabbitmq_user, rabbitmq_password)
-		connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-		connection.close()
-		diagnostics["rabbitmq"] = "✅ Connected"
-	except Exception as e:
-		diagnostics["rabbitmq"] = f"❌ Error: {str(e)}"
-	
-	# Check Redis
-	redis_host = os.getenv("REDIS_HOST", "localhost")
-	redis_port = os.getenv("REDIS_PORT", 6379)
-	try:
-		r = redis.Redis(host=redis_host, port=int(redis_port), decode_responses=True)
-		r.ping()
-		diagnostics["redis"] = "✅ Connected"
-	except Exception as e:
-		diagnostics["redis"] = f"❌ Error: {str(e)}"
-	
-	# Check PostgreSQL
-	try:
-		db = SessionLocal()
-		db.execute("SELECT 1")
-		db.close()
-		diagnostics["postgresql"] = "✅ Connected"
-	except Exception as e:
-		diagnostics["postgresql"] = f"❌ Error: {str(e)}"
-	
-	return diagnostics
+    """Comprehensive system health check."""
+    diagnostics = {}
+
+    # Check RabbitMQ
+    rabbitmq_host = os.getenv("RABBITMQ_HOST", "localhost")
+    rabbitmq_user = os.getenv("RABBITMQ_USER", "guest")
+    rabbitmq_password = os.getenv("RABBITMQ_PASSWORD", "guest")
+    try:
+        credentials = pika.PlainCredentials(rabbitmq_user, rabbitmq_password)
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials)
+        )
+        connection.close()
+        diagnostics["rabbitmq"] = "✅ Connected"
+    except Exception as e:
+        diagnostics["rabbitmq"] = f"❌ Error: {str(e)}"
+
+    # Check Redis
+    redis_host = os.getenv("REDIS_HOST", "localhost")
+    redis_port = os.getenv("REDIS_PORT", 6379)
+    try:
+        r = redis.Redis(host=redis_host, port=int(redis_port), decode_responses=True)
+        r.ping()
+        diagnostics["redis"] = "✅ Connected"
+    except Exception as e:
+        diagnostics["redis"] = f"❌ Error: {str(e)}"
+
+    # Check PostgreSQL
+    try:
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+        diagnostics["postgresql"] = "✅ Connected"
+    except Exception as e:
+        diagnostics["postgresql"] = f"❌ Error: {str(e)}"
+
+    return diagnostics
 
 
 alert_consumer = None
@@ -153,36 +156,36 @@ async def ping(sid):
     await sio.emit("pong", room=sid)
 
 
-
 def get_user_prefs(user_id):
-	try:
-		db = SessionLocal()
-		# Try UserPreference table first
-		pref = db.query(UserPreference).filter(UserPreference.user_id == int(user_id)).first()
-		if pref and pref.preferences:
-			return pref.preferences
-		# Fallback: check User.preferences
-		user = db.query(User).filter(User.id == int(user_id)).first()
-		if user and user.preferences:
-			return user.preferences
-		return None
-	except Exception as e:
-		print(f"[get_user_prefs] DB error: {e}")
-		return None
-	finally:
-		try:
-			db.close()
-		except Exception:
-			pass
+    try:
+        db = SessionLocal()
+        # Try UserPreference table first
+        pref = db.query(UserPreference).filter(UserPreference.user_id == int(user_id)).first()
+        if pref and pref.preferences:
+            return pref.preferences
+        # Fallback: check User.preferences
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if user and user.preferences:
+            return user.preferences
+        return None
+    except Exception as e:
+        print(f"[get_user_prefs] DB error: {e}")
+        return None
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 # --- Startup: Launch alert consumer thread ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-	global alert_consumer
-	if not alert_consumer:
-		alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
-		alert_consumer.start()
-	yield
+    global alert_consumer
+    if not alert_consumer:
+        alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
+        alert_consumer.start()
+    yield
+
 
 app.lifespan = lifespan

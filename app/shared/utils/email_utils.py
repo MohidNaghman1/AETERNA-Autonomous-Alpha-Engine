@@ -1,4 +1,3 @@
-
 """Email sending utilities via Mailtrap SMTP.
 
 Handles alert email delivery using Mailtrap for development/testing and console output for dev mode.
@@ -10,29 +9,31 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+
 def generate_unsubscribe_link(user_email: str) -> str:
     """Generate an unsubscribe link for the user.
-    
+
     Args:
         user_email: User's email address
-        
+
     Returns:
         str: Unsubscribe URL with email as query parameter
     """
     base_url = os.getenv("APP_BASE_URL", "https://app.aeterna.ai")
     return f"{base_url}/unsubscribe?email={user_email}"
 
+
 def send_email_alert(to_email: str, subject: str, html_content: str, link: str = None) -> bool:
     """Send an alert email to a user.
-    
+
     Uses Mailtrap SMTP if credentials are configured, otherwise logs to console in dev mode.
-    
+
     Args:
         to_email: Recipient email address
         subject: Email subject line
         html_content: HTML content for email body
         link: Optional link to include in email
-        
+
     Returns:
         bool: True if email sent successfully or logged, False on error
     """
@@ -51,10 +52,7 @@ def send_email_alert(to_email: str, subject: str, html_content: str, link: str =
 
     unsubscribe_link = generate_unsubscribe_link(to_email)
     rendered_html = template.render(
-        title=subject,
-        body=html_content,
-        link=link,
-        unsubscribe_link=unsubscribe_link
+        title=subject, body=html_content, link=link, unsubscribe_link=unsubscribe_link
     )
 
     if MAILTRAP_USERNAME and MAILTRAP_PASSWORD:

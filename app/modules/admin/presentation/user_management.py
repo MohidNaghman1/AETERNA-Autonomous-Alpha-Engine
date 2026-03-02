@@ -3,7 +3,10 @@ from app.modules.admin.middleware import admin_auth_required
 from app.modules.identity.infrastructure.models import User
 from app.config.db import AsyncSessionLocal as SessionLocal
 
-router = APIRouter(prefix="/api/admin/users", tags=["admin-users"], dependencies=[Depends(admin_auth_required)])
+router = APIRouter(
+    prefix="/api/admin/users", tags=["admin-users"], dependencies=[Depends(admin_auth_required)]
+)
+
 
 @router.get("/")
 def list_users():
@@ -11,8 +14,10 @@ def list_users():
     users = db.query(User).all()
     db.close()
     return [
-        {"id": u.id, "email": u.email, "active": u.email_verified, "created_at": u.created_at} for u in users
+        {"id": u.id, "email": u.email, "active": u.email_verified, "created_at": u.created_at}
+        for u in users
     ]
+
 
 @router.get("/{user_id}")
 def view_user_details(user_id: int):
@@ -27,8 +32,9 @@ def view_user_details(user_id: int):
         "active": user.email_verified,
         "created_at": user.created_at,
         "telegram_id": user.telegram_id,
-        "preferences": user.preferences
+        "preferences": user.preferences,
     }
+
 
 @router.patch("/{user_id}/toggle")
 def toggle_user_status(user_id: int):

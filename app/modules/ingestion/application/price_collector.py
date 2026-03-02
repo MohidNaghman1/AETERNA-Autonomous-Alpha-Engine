@@ -7,7 +7,6 @@ Price Data Collector for CoinGecko API.
 - Deduplication and retry logic included
 """
 
-
 import time
 import requests
 import os
@@ -17,7 +16,11 @@ from app.modules.ingestion.domain.models import Event
 from app.shared.utils.deduplication import is_duplicate, mark_as_seen
 from app.shared.utils.entity_extraction import extract_crypto_mentions
 from app.shared.utils.rabbitmq_publisher import RabbitMQPublisher
-from app.shared.utils.monitoring import EVENTS_PROCESSED, EVENT_PROCESSING_TIME, start_metrics_server
+from app.shared.utils.monitoring import (
+    EVENTS_PROCESSED,
+    EVENT_PROCESSING_TIME,
+    start_metrics_server,
+)
 
 COINGECKO_API = "https://api.coingecko.com/api/v3/coins/markets"
 POLL_INTERVAL = 60  # seconds
@@ -35,7 +38,7 @@ publisher = RabbitMQPublisher(
     password=RABBITMQ_PASS,
     queue_name=RABBITMQ_QUEUE,
     pool_size=2,
-    retry_attempts=3
+    retry_attempts=3,
 )
 
 # Set up logging
@@ -48,17 +51,16 @@ try:
 except Exception:
     pass
 
+
 def fetch_prices():
     params = {
         "vs_currency": "usd",
         "order": "market_cap_desc",
         "per_page": 100,
         "page": 1,
-        "price_change_percentage": "1h,24h"
+        "price_change_percentage": "1h,24h",
     }
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
     backoff = 10
     while True:
         try:
@@ -82,6 +84,7 @@ def fetch_prices():
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
 
+
 def normalize_price_entry(entry):
     content = {
         "id": entry["id"],
@@ -91,7 +94,7 @@ def normalize_price_entry(entry):
         "price_change_percentage_1h": entry.get("price_change_percentage_1h_in_currency"),
         "price_change_percentage_24h": entry.get("price_change_percentage_24h_in_currency"),
         "market_cap": entry["market_cap"],
-        "last_updated": entry["last_updated"]
+        "last_updated": entry["last_updated"],
     }
     ts = datetime.utcnow()
     # Entity extraction from symbol and name
@@ -103,8 +106,9 @@ def normalize_price_entry(entry):
         timestamp=ts,
         content=content,
         entities=entities,
-        raw=entry
+        raw=entry,
     )
+
 
 def validate_event(event: Event) -> bool:
     if not event.id or not event.timestamp or not event.content:
@@ -113,6 +117,7 @@ def validate_event(event: Event) -> bool:
         return False
     return True
 
+
 def publish_event(event: Event, _metadata=None):
     if not validate_event(event):
         logger.warning(f"[INVALID] Event {event.id} failed validation, not published.")
@@ -120,6 +125,7 @@ def publish_event(event: Event, _metadata=None):
     success = publisher.publish(event.model_dump_json())
     if not success:
         logger.error(f"[ERROR] Failed to publish event {event.id} after retries.")
+
 
 def run_collector():
     while True:
@@ -136,7 +142,9 @@ def run_collector():
                     if is_duplicate(event.id):
                         logger.info(f"Duplicate price event skipped: {event.id}")
                         continue
-                    logger.info(f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | 1h%: {p1h}")
+                    logger.info(
+                        f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | 1h%: {p1h}"
+                    )
                     publish_event(event, None)
                     mark_as_seen(event.id)
                     published += 1
@@ -147,9 +155,10 @@ def run_collector():
                     logger.error(f"[ERROR] Failed to fetch/publish prices: {e}")
                 else:
                     logger.info(f"Retrying CoinGecko fetch in {2 ** attempt} seconds...")
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
         logger.info(f"Sleeping for {POLL_INTERVAL} seconds before next price poll.")
         time.sleep(POLL_INTERVAL)
+
 
 if __name__ == "__main__":
     run_collector()

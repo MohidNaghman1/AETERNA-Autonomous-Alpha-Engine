@@ -14,25 +14,27 @@ from app.config.db import SessionLocal
 
 user_alert_times = collections.defaultdict(list)
 
+
 def filter_channels_by_prefs(user_prefs: Dict[str, Any], channels: List[str]) -> List[str]:
     """Filter alert delivery channels based on user preferences.
-    
+
     Args:
         user_prefs: User preferences dict with 'channels' key
         channels: List of available channels to filter
-        
+
     Returns:
         List of channels allowed by user preferences
     """
     allowed = user_prefs.get("channels", channels)
     return [ch for ch in channels if ch in allowed]
 
+
 def is_within_quiet_hours(user_prefs: Dict[str, Any]) -> bool:
     """Check if current time is within user's quiet hours.
-    
+
     Args:
         user_prefs: User preferences dict with 'quiet_hours' key ({"start": "HH:MM", "end": "HH:MM"})
-        
+
     Returns:
         bool: True if current time is within quiet hours, False otherwise
     """
@@ -47,15 +49,16 @@ def is_within_quiet_hours(user_prefs: Dict[str, Any]) -> bool:
     else:
         return now >= start or now < end
 
+
 def is_rate_limited(user_id: str, max_alerts: int = 10) -> bool:
     """Check if user has exceeded alert rate limit.
-    
+
     Tracks alerts per user in a sliding 1-hour window.
-    
+
     Args:
         user_id: User ID to check
         max_alerts: Maximum alerts allowed per hour
-        
+
     Returns:
         bool: True if user has exceeded rate limit, False otherwise
     """
@@ -64,31 +67,33 @@ def is_rate_limited(user_id: str, max_alerts: int = 10) -> bool:
     user_alert_times[user_id] = [t for t in times if (now - t).total_seconds() < 3600]
     return len(user_alert_times[user_id]) >= max_alerts
 
+
 def record_alert_time(user_id: str) -> None:
     """Record when an alert was sent to a user.
-    
+
     Args:
         user_id: User ID who received the alert
     """
     user_alert_times[user_id].append(datetime.utcnow())
 
+
 def save_alert(alert: dict) -> Alert:
     """Save alert to database.
-    
+
     Args:
         alert: Alert dict with user_id, event_id, channels, status
-        
+
     Returns:
         Alert: Saved alert model or None if save failed
     """
     db = SessionLocal()
     try:
         db_alert = Alert(
-            user_id=int(alert.get('user_id', 0)),
-            event_id=int(alert.get('event_id', 0)),
-            channels=alert.get('channels', []),
-            status=alert.get('status', 'pending'),
-            created_at=datetime.utcnow()
+            user_id=int(alert.get("user_id", 0)),
+            event_id=int(alert.get("event_id", 0)),
+            channels=alert.get("channels", []),
+            status=alert.get("status", "pending"),
+            created_at=datetime.utcnow(),
         )
         db.add(db_alert)
         db.commit()
@@ -102,16 +107,19 @@ def save_alert(alert: dict) -> Alert:
     finally:
         db.close()
 
-def generate_alert(event: Dict[str, Any], user_prefs: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+
+def generate_alert(
+    event: Dict[str, Any], user_prefs: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
     """Generate an alert from an event if it meets filters.
-    
+
     Applies priority, rate limiting, quiet hours, and channel preference filters.
     Saves alert to database and triggers email delivery if configured.
-    
+
     Args:
         event: Event dict with id, priority, score, title, summary/text, user_id
         user_prefs: User preferences dict for filtering, or None
-        
+
     Returns:
         dict: Generated alert or None if filtered out
     """
@@ -137,7 +145,7 @@ def generate_alert(event: Dict[str, Any], user_prefs: Optional[Dict[str, Any]] =
         "title": event.get("title", "New Event Alert"),
         "body": event.get("summary", event.get("text", "")),
         "raw_event": event,
-        "status": "pending"
+        "status": "pending",
     }
     save_alert(alert)
     if user_id:

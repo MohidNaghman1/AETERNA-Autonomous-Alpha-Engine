@@ -6,9 +6,9 @@ Defines the core Alert entity with business logic, independent of any persistenc
 
 class Alert:
     """Domain model representing an alert.
-    
+
     Contains all data and behavior related to an alert without any ORM or database specifics.
-    
+
     Attributes:
         id: Unique alert identifier
         user_id: User who owns this alert
@@ -18,10 +18,10 @@ class Alert:
         sent_at: Timestamp when alert was sent
         created_at: Timestamp when alert was created
     """
-    
+
     def __init__(self, id, user_id, event_id, channels, status, sent_at, created_at):
         """Initialize an Alert.
-        
+
         Args:
             id: Alert ID
             user_id: User ID

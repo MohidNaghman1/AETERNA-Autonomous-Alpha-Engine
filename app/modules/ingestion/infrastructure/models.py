@@ -2,11 +2,13 @@
 SQLAlchemy Event ORM model for ingestion infrastructure.
 Maps to the 'events' table in the database.
 """
-from sqlalchemy import Column, String, DateTime, JSON,Integer
+
+from sqlalchemy import Column, String, DateTime, JSON, Integer
 from app.config.db import Base
 
+
 class EventORM(Base):
-    __tablename__ = 'events'
+    __tablename__ = "events"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     source = Column(String, nullable=False, index=True)

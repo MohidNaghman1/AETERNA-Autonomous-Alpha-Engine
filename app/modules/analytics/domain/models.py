@@ -6,9 +6,9 @@ Defines the core Event entity with business logic, independent of any persistenc
 
 class Event:
     """Domain model representing an event.
-    
+
     Contains event data and behavior without any ORM or database specifics.
-    
+
     Attributes:
         id: Unique event identifier
         event_type: Type or category of the event
@@ -19,10 +19,10 @@ class Event:
         priority: Priority level (LOW, MEDIUM, HIGH)
         timestamp: When the event occurred
     """
-    
+
     def __init__(self, id, event_type, source, content, metadata, score, priority, timestamp):
         """Initialize an Event.
-        
+
         Args:
             id: Event ID
             event_type: Event type

@@ -31,11 +31,11 @@ async def get_alerts_query(
     priority: Optional[str] = None,
     entity: Optional[str] = None,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 50,
 ):
     """
     Build and execute alert query with filters.
-    
+
     Args:
         db: Database session
         user_id: Filter by user ID
@@ -45,13 +45,13 @@ async def get_alerts_query(
         entity: Filter by entity
         skip: Offset for pagination
         limit: Number of results (max 100)
-        
+
     Returns:
         List of Alert ORM objects
     """
     # Start with base query
     query = select(AlertORM).where(AlertORM.user_id == user_id)
-    
+
     # Apply filters
     filters = []
     if start_date:
@@ -60,16 +60,16 @@ async def get_alerts_query(
         filters.append(AlertORM.created_at <= end_date)
     if priority:
         filters.append(AlertORM.priority == priority)
-    
+
     if filters:
         query = query.where(and_(*filters))
-    
+
     # Order by creation time (newest first)
     query = query.order_by(desc(AlertORM.created_at))
-    
+
     # Apply pagination
     query = query.offset(skip).limit(min(limit, 100))
-    
+
     # Execute
     result = await db.execute(query)
     return result.scalars().all()
@@ -77,10 +77,10 @@ async def get_alerts_query(
 
 def convert_alert_orm_to_schema(alert: AlertORM) -> Alert:
     """Convert Alert ORM model to Pydantic schema for API response.
-    
+
     Args:
         alert: Alert ORM model instance
-        
+
     Returns:
         Alert: Pydantic schema object
     """
@@ -91,7 +91,7 @@ def convert_alert_orm_to_schema(alert: AlertORM) -> Alert:
         priority=alert.priority,
         entity=None,  # Not in ORM model yet
         status=alert.status,
-        read_at=alert.sent_at.isoformat() if alert.sent_at else None
+        read_at=alert.sent_at.isoformat() if alert.sent_at else None,
     )
 
 
@@ -103,17 +103,17 @@ async def alert_history(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
     """Get alert history with filters and pagination.
-    
+
     Query Parameters:
     - skip: Offset for pagination (default: 0)
     - limit: Number of alerts to return (default: 20, max: 50)
     - start_date: Filter alerts after this date (ISO format)
     - end_date: Filter alerts before this date (ISO format)
     - priority: Filter by priority (HIGH, MEDIUM, LOW)
-    
+
     Returns:
         List of alerts for the current authenticated user
     """
@@ -125,11 +125,11 @@ async def alert_history(
             end_date=end_date,
             priority=priority,
             skip=skip,
-            limit=limit
+            limit=limit,
         )
-        
+
         return [convert_alert_orm_to_schema(alert) for alert in alerts]
-        
+
     except Exception as e:
         logger.error(f"Error fetching alert history for user {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Error fetching alert history")
@@ -137,15 +137,13 @@ async def alert_history(
 
 @router.get("/{alert_id}", response_model=Alert)
 async def get_alert(
-    alert_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user)
+    alert_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)
 ):
     """Get a single alert by ID.
-    
+
     Args:
         alert_id: Alert ID to retrieve
-        
+
     Returns:
         Alert object or 404 if not found or not owned by user
     """
@@ -153,20 +151,17 @@ async def get_alert(
         # Query and verify ownership
         result = await db.execute(
             select(AlertORM).where(
-                and_(
-                    AlertORM.id == alert_id,
-                    AlertORM.user_id == current_user.id
-                )
+                and_(AlertORM.id == alert_id, AlertORM.user_id == current_user.id)
             )
         )
         alert = result.scalars().first()
-        
+
         if not alert:
             logger.warning(f"Alert {alert_id} not found or not owned by user {current_user.id}")
             raise HTTPException(status_code=404, detail="Alert not found")
-            
+
         return convert_alert_orm_to_schema(alert)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -176,15 +171,13 @@ async def get_alert(
 
 @router.patch("/{alert_id}", response_model=Alert)
 async def mark_alert_read(
-    alert_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user)
+    alert_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)
 ):
     """Mark an alert as read.
-    
+
     Args:
         alert_id: Alert ID to mark as read
-        
+
     Returns:
         Updated alert object
     """
@@ -192,28 +185,25 @@ async def mark_alert_read(
         # Query and verify ownership
         result = await db.execute(
             select(AlertORM).where(
-                and_(
-                    AlertORM.id == alert_id,
-                    AlertORM.user_id == current_user.id
-                )
+                and_(AlertORM.id == alert_id, AlertORM.user_id == current_user.id)
             )
         )
         alert = result.scalars().first()
-        
+
         if not alert:
             logger.warning(f"Alert {alert_id} not found or not owned by user {current_user.id}")
             raise HTTPException(status_code=404, detail="Alert not found")
-        
+
         # Update status
         alert.status = "read"
         alert.sent_at = datetime.utcnow()
-        
+
         await db.commit()
         await db.refresh(alert)
-        
+
         logger.info(f"Alert {alert_id} marked as read by user {current_user.id}")
         return convert_alert_orm_to_schema(alert)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -224,18 +214,16 @@ async def mark_alert_read(
 
 @router.delete("/{alert_id}", response_model=AlertDismissResponse)
 async def dismiss_alert(
-    alert_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user)
+    alert_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)
 ):
     """
     Dismiss/delete an alert.
-    
+
     P0 Security Fix: Verifies the alert belongs to the authenticated user
-    
+
     Args:
         alert_id: Alert ID to dismiss
-        
+
     Returns:
         Confirmation message
     """
@@ -243,25 +231,22 @@ async def dismiss_alert(
         # Query and verify ownership
         result = await db.execute(
             select(AlertORM).where(
-                and_(
-                    AlertORM.id == alert_id,
-                    AlertORM.user_id == current_user.id
-                )
+                and_(AlertORM.id == alert_id, AlertORM.user_id == current_user.id)
             )
         )
         alert = result.scalars().first()
-        
+
         if not alert:
             logger.warning(f"Alert {alert_id} not found or not owned by user {current_user.id}")
             raise HTTPException(status_code=404, detail="Alert not found")
-        
+
         # Delete
         await db.delete(alert)
         await db.commit()
-        
+
         logger.info(f"Alert {alert_id} dismissed by user {current_user.id}")
         return AlertDismissResponse(detail="Alert dismissed successfully")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -276,13 +261,13 @@ async def export_alert_history_csv(
     end_date: Optional[datetime] = Query(None),
     priority: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
     """
     Export alert history as CSV.
-    
+
     P0 Security Fix: Exports only alerts belonging to the authenticated user
-    
+
     Returns:
         CSV file download with alert history
     """
@@ -293,9 +278,9 @@ async def export_alert_history_csv(
             start_date=start_date,
             end_date=end_date,
             priority=priority,
-            limit=10000  # Allow larger export
+            limit=10000,  # Allow larger export
         )
-        
+
         # Build CSV
         def generate_csv():
             # Header
@@ -303,27 +288,29 @@ async def export_alert_history_csv(
             output = StringIO()
             writer = csv.DictWriter(output, fieldnames=fieldnames)
             writer.writeheader()
-            
+
             # Data
             for alert in alerts:
-                writer.writerow({
-                    "alert_id": alert.id,
-                    "created_at": alert.created_at.isoformat() if alert.created_at else "",
-                    "title": alert.alert_id,
-                    "priority": alert.priority,
-                    "status": alert.status
-                })
-            
+                writer.writerow(
+                    {
+                        "alert_id": alert.id,
+                        "created_at": alert.created_at.isoformat() if alert.created_at else "",
+                        "title": alert.alert_id,
+                        "priority": alert.priority,
+                        "status": alert.status,
+                    }
+                )
+
             output.seek(0)
             yield output.read()
-        
+
         logger.info(f"Alert history exported by user {current_user.id}")
         return StreamingResponse(
             generate_csv(),
             media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=alerts_export.csv"}
+            headers={"Content-Disposition": "attachment; filename=alerts_export.csv"},
         )
-        
+
     except Exception as e:
         logger.error(f"Error exporting alerts for user {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Error exporting alerts")

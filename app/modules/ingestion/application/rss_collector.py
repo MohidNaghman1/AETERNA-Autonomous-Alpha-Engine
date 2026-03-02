@@ -19,13 +19,17 @@ from app.modules.ingestion.domain.models import Event
 from app.shared.utils.deduplication import is_duplicate, mark_as_seen
 from app.shared.utils.entity_extraction import extract_crypto_mentions
 from app.shared.utils.rabbitmq_publisher import RabbitMQPublisher
-from app.shared.utils.monitoring import EVENTS_PROCESSED, EVENT_PROCESSING_TIME, start_metrics_server
+from app.shared.utils.monitoring import (
+    EVENTS_PROCESSED,
+    EVENT_PROCESSING_TIME,
+    start_metrics_server,
+)
 
 # RSS Feeds
 FEEDS = [
     "https://www.coindesk.com/arc/outboundfeeds/rss/",
     "https://cointelegraph.com/rss",
-    "https://decrypt.co/feed"
+    "https://decrypt.co/feed",
 ]
 
 
@@ -46,7 +50,7 @@ publisher = RabbitMQPublisher(
     password=RABBITMQ_PASSWORD,
     queue_name=RABBITMQ_QUEUE,
     pool_size=2,
-    retry_attempts=3
+    retry_attempts=3,
 )
 
 
@@ -72,20 +76,16 @@ def normalize_entry(entry, source):
         "summary": entry.get("summary"),
         "link": entry.get("link"),
         "published": entry.get("published"),
-        "source": source
+        "source": source,
     }
     ts = datetime.utcnow()
     # Entity extraction from title and summary
     text = (entry.get("title") or "") + " " + (entry.get("summary") or "")
     entities = extract_crypto_mentions(text)
     return Event.create(
-        source=source,
-        type_="news",
-        timestamp=ts,
-        content=content,
-        entities=entities,
-        raw=entry
+        source=source, type_="news", timestamp=ts, content=content, entities=entities, raw=entry
     )
+
 
 def validate_event(event: Event) -> bool:
     if not event.id or not event.timestamp or not event.content:
@@ -93,6 +93,7 @@ def validate_event(event: Event) -> bool:
     if len(str(event.content)) < 10:
         return False
     return True
+
 
 def publish_event(event: Event, _=None):
     if not validate_event(event):
@@ -124,7 +125,9 @@ def run_collector():
                         if is_duplicate(event.id):
                             logger.info(f"Duplicate event skipped: {event.id}")
                             continue
-                        logger.info(f"Publishing event: {event.id} | Title: {event.content.get('title')}")
+                        logger.info(
+                            f"Publishing event: {event.id} | Title: {event.content.get('title')}"
+                        )
                         with EVENT_PROCESSING_TIME.labels(collector="rss").time():
                             publish_event(event, None)
                         EVENTS_PROCESSED.labels(collector="rss").inc()
@@ -135,9 +138,10 @@ def run_collector():
                     logger.error(traceback.format_exc())
                     if attempt != RETRY_ATTEMPTS - 1:
                         logger.info(f"Retrying {feed_url} in {2 ** attempt} seconds...")
-                        time.sleep(2 ** attempt)
+                        time.sleep(2**attempt)
         logger.info(f"Sleeping for {POLL_INTERVAL} seconds before next poll.")
         time.sleep(POLL_INTERVAL)
+
 
 if __name__ == "__main__":
     run_collector()

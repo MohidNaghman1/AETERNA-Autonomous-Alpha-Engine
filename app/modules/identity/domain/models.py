@@ -7,9 +7,9 @@ independent of any persistence layer.
 
 class User:
     """Domain model representing a user.
-    
+
     Contains user data and behavior without any ORM or database specifics.
-    
+
     Attributes:
         id: Unique user identifier
         email: User email address
@@ -19,10 +19,12 @@ class User:
         created_at: Account creation timestamp
         email_verified: Whether email has been verified
     """
-    
-    def __init__(self, id, email, password_hash, telegram_id, preferences, created_at, email_verified):
+
+    def __init__(
+        self, id, email, password_hash, telegram_id, preferences, created_at, email_verified
+    ):
         """Initialize a User.
-        
+
         Args:
             id: User ID
             email: Email address
@@ -43,18 +45,18 @@ class User:
 
 class UserPreference:
     """Domain model for user preferences.
-    
+
     Encapsulates user-specific alert and delivery preferences.
-    
+
     Attributes:
         id: Unique preference record ID
         user_id: Associated user ID
         preferences: Preferences dict (channels, quiet_hours, etc.)
     """
-    
+
     def __init__(self, id, user_id, preferences):
         """Initialize UserPreference.
-        
+
         Args:
             id: Preference record ID
             user_id: User ID

@@ -3,6 +3,7 @@ from app.modules.admin.middleware import admin_auth_required
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+
 @router.get("/metrics", dependencies=[Depends(admin_auth_required)])
 def get_system_metrics():
     # Stub: Replace with real metrics aggregation
@@ -13,5 +14,5 @@ def get_system_metrics():
         "alerts_generated": 500,
         "active_users": 42,
         "system_uptime": "3 days, 4 hours",
-        "error_rate": 0.01
+        "error_rate": 0.01,
     }

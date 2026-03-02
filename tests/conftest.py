@@ -24,13 +24,14 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 BASE_DIR = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = BASE_DIR / "alembic.ini"
 
+
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def apply_migrations():
     """Apply database migrations before running tests."""
     db_path = Path(TEST_DB_PATH)
     if db_path.exists():
         db_path.unlink()
-    
+
     try:
         alembic_cfg = Config(str(ALEMBIC_INI))
         alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{TEST_DB_PATH}")
@@ -38,12 +39,13 @@ async def apply_migrations():
     except Exception as e:
         print(f"Warning: Migration failed: {e}")
         pass
-    
+
     yield
-    
+
     # Cleanup after all tests
     if db_path.exists():
         db_path.unlink()
+
 
 # Create async engine and sessionmaker for test DB
 engine = create_async_engine(
@@ -60,19 +62,23 @@ AsyncTestingSessionLocal = sessionmaker(
     autocommit=False,
 )
 
+
 # Dependency override for FastAPI
 async def override_get_db():
     """Override database dependency for testing."""
     async with AsyncTestingSessionLocal() as session:
         yield session
 
+
 fastapi_app.dependency_overrides[get_db] = override_get_db
+
 
 @pytest_asyncio.fixture
 async def db_session():
     """Provide a database session for tests."""
     async with AsyncTestingSessionLocal() as session:
         yield session
+
 
 @pytest_asyncio.fixture
 async def client():
@@ -81,13 +87,12 @@ async def client():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
+
 @pytest_asyncio.fixture
 async def test_user_data():
     """Provide common test user data."""
-    return {
-        "email": "testuser@example.com",
-        "password": "TestPassword123!"
-    }
+    return {"email": "testuser@example.com", "password": "TestPassword123!"}
+
 
 @pytest_asyncio.fixture
 async def authenticated_user(client, test_user_data):
@@ -95,12 +100,11 @@ async def authenticated_user(client, test_user_data):
     # Register
     resp = await client.post("/auth/register", json=test_user_data)
     assert resp.status_code == 200
-    
+
     tokens = resp.json()
     return {
         "email": test_user_data["email"],
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
-        "headers": {"Authorization": f"Bearer {tokens['access_token']}"}
+        "headers": {"Authorization": f"Bearer {tokens['access_token']}"},
     }
-

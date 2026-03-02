@@ -3,6 +3,7 @@
 Listens to the alerts queue and broadcasts alerts to connected users via WebSocket
 , filtering based on user preferences.
 """
+
 import asyncio
 import json
 import os
@@ -18,13 +19,13 @@ RABBITMQ_QUEUE = os.getenv("ALERT_QUEUE_NAME", "alerts")
 
 def alert_matches_user(alert, user_prefs=None) -> bool:
     """Check if an alert matches user's preferences.
-    
+
     Filters alerts based on priority and entity preferences.
-    
+
     Args:
         alert: Alert dict with 'priority' and 'entity' keys
         user_prefs: User preferences dict, or None to accept all alerts
-        
+
     Returns:
         bool: True if alert matches user preferences, False otherwise
     """
@@ -36,22 +37,23 @@ def alert_matches_user(alert, user_prefs=None) -> bool:
         return False
     return True
 
+
 class AlertConsumer(Thread):
     """Consumer thread for processing alerts from RabbitMQ queue.
-    
+
     Connects to RabbitMQ, listens for alert messages, applies user preference filters,
     and broadcasts alerts to connected WebSocket clients.
-    
+
     Attributes:
         sio: AsyncServer instance for WebSocket communication
         connection: RabbitMQ connection
         channel: RabbitMQ channel
         user_prefs_func: Callable that takes user_id and returns user preferences dict
     """
-    
+
     def __init__(self, sio: AsyncServer, user_prefs_func=None):
         """Initialize the AlertConsumer.
-        
+
         Args:
             sio: AsyncServer instance for WebSocket communication
             user_prefs_func: Optional callable to get user preferences (user_id -> dict)
@@ -64,7 +66,7 @@ class AlertConsumer(Thread):
 
     def run(self):
         """Start consuming alerts from RabbitMQ queue.
-        
+
         Establishes RabbitMQ connection and begins consuming messages from the alerts queue.
         This method blocks indefinitely while consuming.
         """
@@ -73,16 +75,18 @@ class AlertConsumer(Thread):
         self.connection = pika.BlockingConnection(params)
         self.channel = self.connection.channel()
         self.channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
-        self.channel.basic_consume(queue=RABBITMQ_QUEUE, on_message_callback=self.on_message, auto_ack=True)
+        self.channel.basic_consume(
+            queue=RABBITMQ_QUEUE, on_message_callback=self.on_message, auto_ack=True
+        )
         print("[AlertConsumer] Started listening for alerts...")
         self.channel.start_consuming()
 
     def on_message(self, ch, method, properties, body):
         """Handle incoming alert message from RabbitMQ.
-        
+
         Parses the alert, applies user preference filtering, and broadcasts to the user
         via WebSocket if filters pass.
-        
+
         Args:
             ch: RabbitMQ channel
             method: Message delivery method
@@ -96,8 +100,7 @@ class AlertConsumer(Thread):
                 user_prefs = self.user_prefs_func(user_id) if self.user_prefs_func else None
                 if alert_matches_user(alert, user_prefs):
                     asyncio.run_coroutine_threadsafe(
-                        self.sio.emit("alert", alert, room=user_id),
-                        self.sio.eio.loop
+                        self.sio.emit("alert", alert, room=user_id), self.sio.eio.loop
                     )
                     print(f"[AlertConsumer] Alert sent to user {user_id}")
                 else:

@@ -3,6 +3,7 @@
 Provides database session management and JWT token-based user authentication.
 Includes OAuth2 security setup and current user extraction.
 """
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from app.shared.utils.auth_utils import decode_token
@@ -16,13 +17,14 @@ logger = logging.getLogger("auth-deps")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
+
 # Database session dependency
 async def get_db() -> AsyncSession:
     """Get an async database session.
-    
+
     Provides a SQLAlchemy AsyncSession for use in endpoints.
     Session is automatically closed after use.
-    
+
     Yields:
         AsyncSession: Database session
     """
@@ -32,22 +34,23 @@ async def get_db() -> AsyncSession:
         finally:
             await session.close()
 
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Extract and validate current authenticated user from JWT token.
-    
+
     Decodes JWT token, validates format, retrieves user from database.
     Must be used as a dependency in protected endpoints.
-    
+
     Args:
         token: JWT bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         User: Authenticated user object
-        
+
     Raises:
         HTTPException: 401 if token invalid, expired, or user not found
         HTTPException: 500 if unexpected error during authentication

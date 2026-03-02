@@ -13,38 +13,43 @@ from app.config.db import SessionLocal  # Use synchronous session for pika consu
 # Optionally load .env for local dev
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
 
-RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'localhost')
-QUEUE_NAME = os.environ.get('RABBITMQ_QUEUE', 'events')
+RABBITMQ_HOST = os.environ.get("RABBITMQ_HOST", "localhost")
+QUEUE_NAME = os.environ.get("RABBITMQ_QUEUE", "events")
+
 
 # Dummy function for DB embeddings lookup (to be replaced with real DB call)
 def get_recent_event_embeddings():
     # Return a list of embeddings from recent events (last 30 min)
     return []
 
+
 def save_processed_event(event: dict, scores: dict):
     """Save processed event with scores to database."""
     db = SessionLocal()
     try:
         processed_event = ProcessedEvent(
-            id=event.get('id'),
-            user_id=event.get('user_id'),
-            priority=scores.get('priority', 'LOW'),
-            score=scores.get('score', 0),
-            multi_source=scores.get('multi_source', 0),
-            engagement=scores.get('engagement', 0),
-            bot=scores.get('bot', 0),
-            dedup=scores.get('dedup', 0),
+            id=event.get("id"),
+            user_id=event.get("user_id"),
+            priority=scores.get("priority", "LOW"),
+            score=scores.get("score", 0),
+            multi_source=scores.get("multi_source", 0),
+            engagement=scores.get("engagement", 0),
+            bot=scores.get("bot", 0),
+            dedup=scores.get("dedup", 0),
             event_data=event,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.utcnow(),
         )
         db.add(processed_event)
         db.commit()
         db.refresh(processed_event)
-        print(f"[DB] ✅ Saved processed event {event['id']} | Priority: {scores.get('priority')} | Score: {scores.get('score'):.2f}")
+        print(
+            f"[DB] ✅ Saved processed event {event['id']} | Priority: {scores.get('priority')} | Score: {scores.get('score'):.2f}"
+        )
         return processed_event
     except Exception as e:
         db.rollback()
@@ -53,13 +58,14 @@ def save_processed_event(event: dict, scores: dict):
     finally:
         db.close()
 
+
 def process_event(ch, method, properties, body):
     """
     Process event message from RabbitMQ queue.
-    
+
     P1 Fix: Only ACK message after successful database commit.
     If processing fails, message is NACKed and returned to queue for retry.
-    
+
     Flow:
     1. Parse JSON message
     2. Score event using Agent A
@@ -72,24 +78,28 @@ def process_event(ch, method, properties, body):
         db_embeddings = get_recent_event_embeddings()
         result = score_event(event, db_embeddings)
         event.update(result)
-        
+
         # Save to DB (raises exception on failure)
         processed = save_processed_event(event, result)
-        
+
         if processed:
             # P1 Fix: Only ACK after successful DB save
             ch.basic_ack(delivery_tag=method.delivery_tag)
-            print(f"[✅ PROCESSED] Event {event.get('id', 'N/A')} | Priority: {result.get('priority')} | Score: {result.get('score'):.2f}")
+            print(
+                f"[✅ PROCESSED] Event {event.get('id', 'N/A')} | Priority: {result.get('priority')} | Score: {result.get('score'):.2f}"
+            )
         else:
             # DB save failed - NACK to retry
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-            print(f"[⚠️  NACKED] Event {event.get('id', 'N/A')} - Database save failed, returning to queue")
-            
+            print(
+                f"[⚠️  NACKED] Event {event.get('id', 'N/A')} - Database save failed, returning to queue"
+            )
+
     except json.JSONDecodeError as e:
         # Bad JSON - NACK without requeue (permanent failure)
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
         print(f"[❌ ERROR] Failed to parse JSON: {e}")
-        
+
     except Exception as e:
         # Other errors - NACK with requeue (might recover)
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
@@ -104,6 +114,7 @@ def start_consumer():
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=QUEUE_NAME, on_message_callback=process_event)
     channel.start_consuming()
+
 
 if __name__ == "__main__":
     start_consumer()

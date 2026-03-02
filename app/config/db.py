@@ -26,9 +26,7 @@ if not SYNC_DATABASE_URL:
         POSTGRES_DB = os.getenv("POSTGRES_DB", "postgres")
         POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
         POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-        SYNC_DATABASE_URL = (
-            f"postgresql+psycopg2://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-        )
+        SYNC_DATABASE_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 # 3. Build ASYNC_DATABASE_URL if not set, using conversion logic
 if not ASYNC_DATABASE_URL:
@@ -37,7 +35,9 @@ if not ASYNC_DATABASE_URL:
     elif SYNC_DATABASE_URL.startswith("postgresql://"):
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
     elif SYNC_DATABASE_URL.startswith("postgresql+psycopg2://"):
-        ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+        ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace(
+            "postgresql+psycopg2://", "postgresql+asyncpg://", 1
+        )
     else:
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL  # fallback
 
