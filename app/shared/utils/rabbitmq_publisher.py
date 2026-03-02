@@ -68,9 +68,7 @@ class RabbitMQPublisher:
                 conn = pika.BlockingConnection(
                     pika.ConnectionParameters(
                         host=self.host,
-                        credentials=pika.PlainCredentials(
-                            self.user, self.password
-                        ),
+                        credentials=pika.PlainCredentials(self.user, self.password),
                         heartbeat=600,
                         blocked_connection_timeout=300,
                     )
