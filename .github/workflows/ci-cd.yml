@@ -112,6 +112,7 @@ jobs:
           RABBITMQ_URL: amqp://guest:guest@localhost:5672/
           PYTHONPATH: ${{ github.workspace }}
         run: |
+          pip install pytest-cov
           pytest tests/ -v --cov=app --cov-report=xml --cov-report=html --junitxml=test-results.xml
 
       - name: Upload test results
