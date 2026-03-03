@@ -11,7 +11,7 @@ services:
     plan: free
     autoDeploy: true
     branch: main
-    preDeployCommand: alembic upgrade head
+    preDeployCommand: sh -c 'cd /app && /usr/local/bin/python -m alembic upgrade head'
 
     envVars:
       - key: ENVIRONMENT
