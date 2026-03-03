@@ -1,4 +1,12 @@
 venv
 .env
 __pycache__/
-*.pyc   
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+.DS_Store   
