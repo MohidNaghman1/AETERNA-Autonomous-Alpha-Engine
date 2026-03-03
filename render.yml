@@ -27,10 +27,20 @@ services:
       # Redis Configuration (using Redis Cloud free tier)
       - key: REDIS_URL
         value: ${REDIS_URL}
+      - key: CELERY_BROKER_URL
+        value: ${REDIS_URL}
+      - key: CELERY_RESULT_BACKEND
+        value: ${REDIS_URL}
 
       # RabbitMQ Configuration (using CloudAMQP free tier)
       - key: RABBITMQ_URL
         value: ${RABBITMQ_URL}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASSWORD
+        value: ${RABBITMQ_PASSWORD}
 
   # PostgreSQL Database (removed - using external Aeterna database via render.yml databases section)
 
@@ -58,11 +68,93 @@ services:
 
       - key: REDIS_URL
         value: ${REDIS_URL}
+      - key: CELERY_BROKER_URL
+        value: ${REDIS_URL}
+      - key: CELERY_RESULT_BACKEND
+        value: ${REDIS_URL}
 
       - key: RABBITMQ_URL
         value: ${RABBITMQ_URL}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASSWORD
+        value: ${RABBITMQ_PASSWORD}
 
-    startCommand: celery -A app.modules.ingestion.infrastructure.celery_app worker -l info
+    startCommand: celery -A app.modules.ingestion.application.celery_app worker -l info
+
+  # Celery Beat for Scheduling Collectors
+  - type: worker
+    name: aeterna-celery-beat
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    branch: main
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PYTHONUNBUFFERED
+        value: 1
+
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+
+      - key: REDIS_URL
+        value: ${REDIS_URL}
+      - key: CELERY_BROKER_URL
+        value: ${REDIS_URL}
+      - key: CELERY_RESULT_BACKEND
+        value: ${REDIS_URL}
+
+      - key: RABBITMQ_URL
+        value: ${RABBITMQ_URL}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASSWORD
+        value: ${RABBITMQ_PASSWORD}
+
+    startCommand: celery -A app.modules.ingestion.application.celery_app beat -l info
+
+  # Event Consumer from RabbitMQ
+  - type: worker
+    name: aeterna-consumer
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    branch: main
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PYTHONUNBUFFERED
+        value: 1
+
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+
+      - key: REDIS_URL
+        value: ${REDIS_URL}
+
+      - key: RABBITMQ_URL
+        value: ${RABBITMQ_URL}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASSWORD
+        value: ${RABBITMQ_PASSWORD}
+      - key: RABBITMQ_QUEUE
+        value: events
+
+    startCommand: python -m app.modules.ingestion.application.consumer
 
 databases:
   - name: Aeterna
