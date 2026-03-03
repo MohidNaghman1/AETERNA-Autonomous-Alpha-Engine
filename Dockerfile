@@ -48,6 +48,9 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 # Copy application code
 COPY --chown=appuser:appuser . .
 
+# Make startup script executable
+RUN chmod +x /app/start.sh
+
 # Switch to non-root user
 USER appuser
 
@@ -58,5 +61,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expose port
 EXPOSE ${PORT}
 
-# Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run application with migrations
+CMD ["/app/start.sh"]
