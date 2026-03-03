@@ -11,6 +11,7 @@ services:
     plan: free
     autoDeploy: true
     branch: main
+    preDeployCommand: alembic upgrade head
 
     envVars:
       - key: ENVIRONMENT
