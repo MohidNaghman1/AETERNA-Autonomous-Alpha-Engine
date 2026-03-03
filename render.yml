@@ -40,22 +40,7 @@ services:
           type: pserv
           property: connectionString
 
-  # PostgreSQL Database
-  - type: pserv
-    name: aeterna_postgres
-    runtime: postgres15
-    plan: pro
-    ipAllowList: []
-
-    envVars:
-      - key: POSTGRES_USER
-        value: ${POSTGRES_USER}
-      - key: POSTGRES_PASSWORD
-        generateValue: true
-      - key: POSTGRES_DB
-        value: aeterna_db
-      - key: POSTGRES_INITDB_ARGS
-        value: -c log_statement=all
+  # PostgreSQL Database (removed - using external Aeterna database via render.yml databases section)
 
   # Redis Cache Service
   - type: pserv
