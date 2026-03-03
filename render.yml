@@ -22,9 +22,7 @@ services:
 
       # Database Configuration
       - key: DATABASE_URL
-        fromDatabase:
-          name: Aeterna
-          property: connectionString
+        value: ${DATABASE_URL}
 
       # Redis Configuration (using Redis Cloud free tier)
       - key: REDIS_URL
@@ -56,9 +54,7 @@ services:
         value: 1
 
       - key: DATABASE_URL
-        fromDatabase:
-          name: Aeterna
-          property: connectionString
+        value: ${DATABASE_URL}
 
       - key: REDIS_URL
         value: ${REDIS_URL}
