@@ -26,49 +26,18 @@ services:
           name: Aeterna
           property: connectionString
 
-      # Redis Configuration
+      # Redis Configuration (using Redis Cloud free tier)
       - key: REDIS_URL
-        fromService:
-          name: aeterna-redis
-          type: pserv
-          property: connectionString
+        value: ${REDIS_URL}
 
-      # RabbitMQ Configuration
+      # RabbitMQ Configuration (using CloudAMQP free tier)
       - key: RABBITMQ_URL
-        fromService:
-          name: aeterna-rabbitmq
-          type: pserv
-          property: connectionString
+        value: ${RABBITMQ_URL}
 
   # PostgreSQL Database (removed - using external Aeterna database via render.yml databases section)
 
-  # Redis Cache Service
-  - type: pserv
-    name: aeterna-redis
-    runtime: redis7
-    plan: free
-    ipAllowList: []
-
-    envVars:
-      - key: REDIS_PASSWORD
-        generateValue: true
-      - key: REDIS_EVICTION_POLICY
-        value: allkeys-lru
-
-  # RabbitMQ Message Broker
-  - type: pserv
-    name: aeterna-rabbitmq
-    runtime: rabbitmq3.12
-    plan: free
-    ipAllowList: []
-
-    envVars:
-      - key: RABBITMQ_DEFAULT_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_DEFAULT_PASS
-        generateValue: true
-      - key: RABBITMQ_DEFAULT_VHOST
-        value: /
+  # Redis Cache Service (removed - using Aeterna_RebbitMq service instead)
+  # RabbitMQ Message Broker (removed - using Aeterna_RebbitMq service instead)
 
   # Celery Worker for Async Tasks
   - type: worker
@@ -92,16 +61,10 @@ services:
           property: connectionString
 
       - key: REDIS_URL
-        fromService:
-          name: aeterna-redis
-          type: pserv
-          property: connectionString
+        value: ${REDIS_URL}
 
       - key: RABBITMQ_URL
-        fromService:
-          name: aeterna-rabbitmq
-          type: pserv
-          property: connectionString
+        value: ${RABBITMQ_URL}
 
     startCommand: celery -A app.modules.ingestion.infrastructure.celery_app worker -l info
 
