@@ -11,6 +11,7 @@ import json as json_module
 import json
 import logging
 from dotenv import load_dotenv
+from datetime import datetime
 from app.modules.ingestion.domain.models import Event
 from app.shared.utils.monitoring import (
     EVENTS_PROCESSED,
@@ -112,11 +113,22 @@ def process_event(ch, method, properties, body):
                     f"[DEBUG] Creating EventORM with content keys: {list(content.keys())}"
                 )
 
+                # Parse timestamp string to datetime object
+                # Event.timestamp is ISO8601 string (e.g., "2026-03-04T12:27:02Z")
+                # EventORM.timestamp expects datetime object
+                timestamp_str = getattr(event, "timestamp", None)
+                if timestamp_str:
+                    # Remove 'Z' suffix and parse
+                    ts_clean = timestamp_str.rstrip('Z')
+                    timestamp_dt = datetime.fromisoformat(ts_clean)
+                else:
+                    timestamp_dt = None
+
                 # Create ORM object
                 db_event = EventORM(
                     source=getattr(event, "source", None),
                     type=getattr(event, "type", None),
-                    timestamp=getattr(event, "timestamp", None),
+                    timestamp=timestamp_dt,
                     content=content,
                     raw=None,
                 )
