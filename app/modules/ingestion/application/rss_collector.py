@@ -112,42 +112,74 @@ def publish_event(event: Event, _=None):
 
 
 def run_collector():
+    """Single collection run - fetches all feeds once and returns.
+    
+    This is suitable for being called by Celery Beat which handles scheduling.
+    Do NOT use this as an infinite loop - let Celery Beat manage the schedule.
+    """
     headers = {"User-Agent": "Mozilla/5.0"}
-    while True:
-        for feed_url in FEEDS:
-            source = feed_url.split("//")[-1].split("/")[0]
-            logger.info(f"Fetching feed: {feed_url} (source: {source})")
-            for attempt in range(RETRY_ATTEMPTS):
-                try:
-                    response = requests.get(feed_url, headers=headers, timeout=10)
-                    logger.info(f"HTTP status for {feed_url}: {response.status_code}")
-                    response.raise_for_status()
-                    feed = feedparser.parse(response.content)
-                    logger.info(
-                        f"Feed '{source}' returned {len(feed.entries)} entries."
-                    )
-                    if not feed.entries:
-                        logger.warning(f"No entries found in feed: {feed_url}")
+    
+    for feed_url in FEEDS:
+        source = feed_url.split("//")[-1].split("/")[0]
+        logger.info(f"Fetching feed: {feed_url} (source: {source})")
+        
+        for attempt in range(RETRY_ATTEMPTS):
+            try:
+                response = requests.get(feed_url, headers=headers, timeout=10)
+                logger.info(f"HTTP status for {feed_url}: {response.status_code}")
+                response.raise_for_status()
+                feed = feedparser.parse(response.content)
+                logger.info(
+                    f"Feed '{source}' returned {len(feed.entries)} entries."
+                )
+                
+                if not feed.entries:
+                    logger.warning(f"No entries found in feed: {feed_url}")
+                    continue
+                
+                for entry in feed.entries:
+                    event = normalize_entry(entry, source)
+                    
+                    if is_duplicate(event.id):
+                        logger.info(f"Duplicate event skipped: {event.id}")
                         continue
-                    for entry in feed.entries:
-                        event = normalize_entry(entry, source)
-                        if is_duplicate(event.id):
-                            logger.info(f"Duplicate event skipped: {event.id}")
-                            continue
-                        logger.info(
-                            f"Publishing event: {event.id} | Title: {event.content.get('title')}"
-                        )
-                        with EVENT_PROCESSING_TIME.labels(collector="rss").time():
-                            publish_event(event, None)
-                        EVENTS_PROCESSED.labels(collector="rss").inc()
-                        mark_as_seen(event.id)
-                    break  # Success, exit retry loop
-                except Exception as e:
-                    logger.error(f"[ERROR] Failed to process {feed_url}: {str(e)}")
-                    logger.error(traceback.format_exc())
-                    if attempt != RETRY_ATTEMPTS - 1:
-                        logger.info(f"Retrying {feed_url} in {2 ** attempt} seconds...")
-                        time.sleep(2**attempt)
+                    
+                    logger.info(
+                        f"Publishing event: {event.id} | Title: {event.content.get('title')}"
+                    )
+                    
+                    with EVENT_PROCESSING_TIME.labels(collector="rss").time():
+                        publish_event(event, None)
+                    
+                    EVENTS_PROCESSED.labels(collector="rss").inc()
+                    mark_as_seen(event.id)
+                
+                break  # Success, exit retry loop
+                
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to process {feed_url}: {str(e)}")
+                logger.error(traceback.format_exc())
+                
+                if attempt != RETRY_ATTEMPTS - 1:
+                    logger.info(f"Retrying {feed_url} in {2 ** attempt} seconds...")
+                    time.sleep(2**attempt)
+    
+    logger.info("RSS collection cycle completed.")
+
+
+def run_collector_loop():
+    """Infinite loop version for standalone execution.
+    
+    Use this if running the collector as a standalone script, not via Celery.
+    For Celery, use run_collector() and let Celery Beat handle scheduling.
+    """
+    while True:
+        try:
+            run_collector()
+        except Exception as e:
+            logger.error(f"[ERROR] Collection cycle failed: {str(e)}")
+            logger.error(traceback.format_exc())
+        
         logger.info(f"Sleeping for {POLL_INTERVAL} seconds before next poll.")
         time.sleep(POLL_INTERVAL)
 
@@ -157,4 +189,5 @@ collect_and_publish = run_collector
 
 
 if __name__ == "__main__":
-    run_collector()
+    # Use the loop version when running standalone
+    run_collector_loop()
