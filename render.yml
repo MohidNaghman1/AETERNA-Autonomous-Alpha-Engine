@@ -13,6 +13,8 @@ services:
     branch: main
 
     envVars:
+      - key: SERVICE_TYPE
+        value: api
       - key: ENVIRONMENT
         value: production
       - key: DEBUG
@@ -53,6 +55,8 @@ services:
     branch: main
 
     envVars:
+      - key: SERVICE_TYPE
+        value: celery-worker
       - key: ENVIRONMENT
         value: production
       - key: DEBUG
@@ -74,8 +78,6 @@ services:
         value: ${RABBITMQ_URL}
       - key: RABBITMQ_QUEUE
         value: events
-
-    startCommand: celery -A app.modules.ingestion.application.celery_app worker -l info
 
   # Celery Beat for Scheduling Collectors
   - type: worker
@@ -86,6 +88,8 @@ services:
     branch: main
 
     envVars:
+      - key: SERVICE_TYPE
+        value: celery-beat
       - key: ENVIRONMENT
         value: production
       - key: DEBUG
@@ -108,8 +112,6 @@ services:
       - key: RABBITMQ_QUEUE
         value: events
 
-    startCommand: celery -A app.modules.ingestion.application.celery_app beat -l info
-
   # Event Consumer from RabbitMQ
   - type: worker
     name: aeterna-consumer
@@ -119,6 +121,8 @@ services:
     branch: main
 
     envVars:
+      - key: SERVICE_TYPE
+        value: consumer
       - key: ENVIRONMENT
         value: production
       - key: DEBUG
@@ -137,11 +141,8 @@ services:
       - key: RABBITMQ_QUEUE
         value: events
 
-    startCommand: python -m app.modules.ingestion.application.consumer
-
 databases:
   - name: Aeterna
     databaseName: aeterna_db
-    user: postgres
     plan: free
     postgresMajorVersion: 15
