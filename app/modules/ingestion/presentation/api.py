@@ -2,7 +2,7 @@
 Ingestion module API router with enhanced filtering.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import desc, and_, func
@@ -148,39 +148,47 @@ async def create_test_event(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/trigger-rss-collection")
-async def trigger_rss_collection():
-    """Manually trigger RSS collection (for testing/debugging)."""
+async def trigger_rss_collection(background_tasks: BackgroundTasks):
+    """Manually trigger RSS collection (for testing/debugging).
+    
+    Runs in background tasks queue without blocking the response.
+    """
     try:
         from app.modules.ingestion.application.rss_collector import run_collector
 
-        logger.info("[🔄] Triggering RSS collection...")
-        run_collector()
+        logger.info("[🔄] Queuing RSS collection...")
+        background_tasks.add_task(run_collector)
+        
         return {
             "status": "success",
-            "message": "RSS collection triggered",
+            "message": "RSS collection queued",
             "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
-        logger.error(f"[❌] RSS collection failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"RSS collection failed: {e}")
+        logger.error(f"[❌] Failed to queue RSS collection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue RSS collection: {e}")
 
 
 @router.post("/trigger-price-collection")
-async def trigger_price_collection():
-    """Manually trigger price collection (for testing/debugging)."""
+async def trigger_price_collection(background_tasks: BackgroundTasks):
+    """Manually trigger price collection (for testing/debugging).
+    
+    Runs in background tasks queue without blocking the response.
+    """
     try:
         from app.modules.ingestion.application.price_collector import run_collector
 
-        logger.info("[🔄] Triggering price collection...")
-        run_collector()
+        logger.info("[🔄] Queuing price collection...")
+        background_tasks.add_task(run_collector)
+        
         return {
             "status": "success",
-            "message": "Price collection triggered",
+            "message": "Price collection queued",
             "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
-        logger.error(f"[❌] Price collection failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Price collection failed: {e}")
+        logger.error(f"[❌] Failed to queue price collection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue price collection: {e}")
 
 
 @router.get("/events/{event_id}", response_model=EventOut)
