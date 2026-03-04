@@ -125,4 +125,4 @@ def mark_as_seen(content: str) -> None:
     # Fallback to in-memory cache
     expiry = datetime.utcnow() + timedelta(seconds=DEDUP_TTL_SECONDS)
     _memory_cache[h] = expiry
-    _redis.set(h, 1, ex=DEDUP_TTL_SECONDS)
+
