@@ -9,6 +9,7 @@ import threading
 import time
 import logging
 from queue import Queue, Empty
+import os
 
 
 class RabbitMQPublisher:
@@ -18,10 +19,14 @@ class RabbitMQPublisher:
     Implements automatic reconnection and exponential backoff retry logic.
     Thread-safe for concurrent publishing.
 
+    Supports both URL-based (CloudAMQP) and credential-based connections.
+
     Attributes:
-        host: RabbitMQ server hostname
-        user: RabbitMQ username
-        password: RabbitMQ password
+        url: Optional RabbitMQ URL (CloudAMQP format)
+        host: RabbitMQ server hostname (used if URL not provided)
+        user: RabbitMQ username (used if URL not provided)
+        password: RabbitMQ password (used if URL not provided)
+        vhost: Virtual host name (used if URL not provided)
         queue_name: Target queue name
         pool_size: Maximum number of pooled connections
         retry_attempts: Number of retry attempts for failed publishes
@@ -29,26 +34,33 @@ class RabbitMQPublisher:
 
     def __init__(
         self,
-        host: str,
-        user: str,
-        password: str,
         queue_name: str,
+        url: str = None,
+        host: str = None,
+        user: str = "guest",
+        password: str = "guest",
+        vhost: str = "/",
         pool_size: int = 2,
         retry_attempts: int = 3,
     ):
         """Initialize RabbitMQ publisher with connection pool.
 
         Args:
-            host: RabbitMQ server hostname
-            user: RabbitMQ username
-            password: RabbitMQ password
             queue_name: Target queue name
+            url: Optional RabbitMQ URL (CloudAMQP format: amqps://user:pass@host/vhost)
+            host: RabbitMQ server hostname (fallback if URL not provided)
+            user: RabbitMQ username (used if URL not provided)
+            password: RabbitMQ password (used if URL not provided)
+            vhost: Virtual host (used if URL not provided, default: "/")
             pool_size: Maximum connections in pool (default: 2)
             retry_attempts: Max retry attempts (default: 3)
         """
-        self.host = host
-        self.user = user
-        self.password = password
+        self.url = url or os.getenv("RABBITMQ_URL")
+        self.host = host or os.getenv("RABBITMQ_HOST", "localhost")
+        self.port = int(os.getenv("RABBITMQ_PORT", "5672"))
+        self.user = user or os.getenv("RABBITMQ_USER", "guest")
+        self.password = password or os.getenv("RABBITMQ_PASSWORD", "guest")
+        self.vhost = vhost or os.getenv("RABBITMQ_VHOST", "/")
         self.queue_name = queue_name
         self.pool_size = pool_size
         self.retry_attempts = retry_attempts
@@ -56,6 +68,30 @@ class RabbitMQPublisher:
         self._lock = threading.Lock()
         self.logger = logging.getLogger("rabbitmq-publisher")
         self._setup_pool()
+
+    def _create_connection(self):
+        """Create a RabbitMQ connection using either URL or credentials."""
+        if self.url:
+            try:
+                self.logger.debug("Creating connection via URL")
+                conn_params = pika.URLParameters(self.url)
+                return pika.BlockingConnection([conn_params])
+            except Exception as e:
+                self.logger.warning(f"URL connection failed: {e}, falling back to host-based")
+        
+        # Fallback to host-based connection
+        self.logger.debug(f"Creating connection to {self.host}:{self.port} vhost={self.vhost}")
+        conn = pika.BlockingConnection(
+            pika.ConnectionParameters(
+                host=self.host,
+                port=self.port,
+                virtual_host=self.vhost,
+                credentials=pika.PlainCredentials(self.user, self.password),
+                heartbeat=600,
+                blocked_connection_timeout=300,
+            )
+        )
+        return conn
 
     def _setup_pool(self) -> None:
         """Initialize connection pool with configured size.
@@ -65,17 +101,11 @@ class RabbitMQPublisher:
         """
         try:
             for _ in range(self.pool_size):
-                conn = pika.BlockingConnection(
-                    pika.ConnectionParameters(
-                        host=self.host,
-                        credentials=pika.PlainCredentials(self.user, self.password),
-                        heartbeat=600,
-                        blocked_connection_timeout=300,
-                    )
-                )
+                conn = self._create_connection()
                 channel = conn.channel()
                 channel.queue_declare(queue=self.queue_name, durable=True)
                 self._pool.put((conn, channel))
+            self.logger.info(f"Connection pool initialized with {self.pool_size} connections")
         except pika.exceptions.AMQPConnectionError as e:
             self.logger.warning(
                 f"Could not initialize RabbitMQ pool: {e}. "
@@ -109,17 +139,14 @@ class RabbitMQPublisher:
                         conn.close()
                     except Exception:
                         pass
-                    new_conn = pika.BlockingConnection(
-                        pika.ConnectionParameters(
-                            host=self.host,
-                            credentials=pika.PlainCredentials(self.user, self.password),
-                            heartbeat=600,
-                            blocked_connection_timeout=300,
-                        )
-                    )
-                    new_channel = new_conn.channel()
-                    new_channel.queue_declare(queue=self.queue_name, durable=True)
-                    self._pool.put((new_conn, new_channel))
+                    # Create new connection to replace the failed one
+                    try:
+                        new_conn = self._create_connection()
+                        new_channel = new_conn.channel()
+                        new_channel.queue_declare(queue=self.queue_name, durable=True)
+                        self._pool.put((new_conn, new_channel))
+                    except Exception as create_err:
+                        self.logger.error(f"Failed to create replacement connection: {create_err}")
                     time.sleep(2**attempt)
             except Empty:
                 self.logger.error("No available RabbitMQ connections in pool.")

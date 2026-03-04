@@ -33,14 +33,11 @@ services:
         value: ${REDIS_URL}
 
       # RabbitMQ Configuration (using CloudAMQP free tier)
+      # IMPORTANT: Use the full RABBITMQ_URL which includes vhost
       - key: RABBITMQ_URL
         value: ${RABBITMQ_URL}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASSWORD
-        value: ${RABBITMQ_PASSWORD}
+      - key: RABBITMQ_QUEUE
+        value: events
 
   # PostgreSQL Database (removed - using external Aeterna database via render.yml databases section)
 
@@ -75,12 +72,8 @@ services:
 
       - key: RABBITMQ_URL
         value: ${RABBITMQ_URL}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASSWORD
-        value: ${RABBITMQ_PASSWORD}
+      - key: RABBITMQ_QUEUE
+        value: events
 
     startCommand: celery -A app.modules.ingestion.application.celery_app worker -l info
 
@@ -112,12 +105,8 @@ services:
 
       - key: RABBITMQ_URL
         value: ${RABBITMQ_URL}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASSWORD
-        value: ${RABBITMQ_PASSWORD}
+      - key: RABBITMQ_QUEUE
+        value: events
 
     startCommand: celery -A app.modules.ingestion.application.celery_app beat -l info
 
@@ -145,12 +134,6 @@ services:
 
       - key: RABBITMQ_URL
         value: ${RABBITMQ_URL}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASSWORD
-        value: ${RABBITMQ_PASSWORD}
       - key: RABBITMQ_QUEUE
         value: events
 

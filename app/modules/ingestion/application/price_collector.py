@@ -26,20 +26,10 @@ COINGECKO_API = "https://api.coingecko.com/api/v3/coins/markets"
 POLL_INTERVAL = 60  # seconds
 RETRY_ATTEMPTS = 3
 
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
 # RabbitMQ publisher utility
-publisher = RabbitMQPublisher(
-    host=RABBITMQ_HOST,
-    user=RABBITMQ_USER,
-    password=RABBITMQ_PASS,
-    queue_name=RABBITMQ_QUEUE,
-    pool_size=2,
-    retry_attempts=3,
-)
+publisher = RabbitMQPublisher(queue_name=RABBITMQ_QUEUE)
 
 # Set up logging
 logging.basicConfig(

@@ -70,20 +70,34 @@ async def diagnostic_check(db: AsyncSession = Depends(get_db)):
     try:
         import pika
 
+        rabbitmq_url = os.getenv("RABBITMQ_URL")
         host = os.getenv("RABBITMQ_HOST", "localhost")
+        port = int(os.getenv("RABBITMQ_PORT", "5672"))
         user = os.getenv("RABBITMQ_USER", "guest")
         password = os.getenv("RABBITMQ_PASSWORD", "guest")
+        vhost = os.getenv("RABBITMQ_VHOST", "/")
 
-        credentials = pika.PlainCredentials(user, password)
-        conn = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host=host, credentials=credentials, connection_attempts=1
+        # Try URL-based connection first
+        if rabbitmq_url:
+            conn_params = pika.URLParameters(rabbitmq_url)
+            conn = pika.BlockingConnection([conn_params])
+            diagnostics["rabbitmq"]["status"] = "✅ Connected (URL)"
+            diagnostics["rabbitmq"]["host"] = "CloudAMQP"
+        else:
+            credentials = pika.PlainCredentials(user, password)
+            conn = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=host, 
+                    port=port,
+                    virtual_host=vhost,
+                    credentials=credentials, 
+                    connection_attempts=1
+                )
             )
-        )
-        channel = conn.channel()
+            diagnostics["rabbitmq"]["status"] = "✅ Connected"
+            diagnostics["rabbitmq"]["host"] = host
+        
         conn.close()
-        diagnostics["rabbitmq"]["status"] = "✅ Connected"
-        diagnostics["rabbitmq"]["host"] = host
     except Exception as e:
         diagnostics["rabbitmq"]["status"] = f"❌ Error: {str(e)}"
         diagnostics["rabbitmq"]["host"] = os.getenv("RABBITMQ_HOST", "localhost")

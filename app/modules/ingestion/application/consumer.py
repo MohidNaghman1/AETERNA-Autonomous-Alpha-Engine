@@ -35,10 +35,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("event-consumer")
 
+RABBITMQ_URL = os.getenv("RABBITMQ_URL")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
 
 credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
@@ -185,11 +188,34 @@ def process_event(ch, method, properties, body):
 
 
 def run_consumer():
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(
-            host=RABBITMQ_HOST, port=5672, credentials=credentials
+    # Prefer URL-based connection (CloudAMQP format)
+    if RABBITMQ_URL:
+        try:
+            logger.info(f"[CONSUMER] Connecting via URL...")
+            conn_params = pika.URLParameters(RABBITMQ_URL)
+            connection = pika.BlockingConnection([conn_params])
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to connect via URL: {e}")
+            logger.info(f"[CONSUMER] Falling back to host-based connection...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    port=RABBITMQ_PORT,
+                    virtual_host=RABBITMQ_VHOST,
+                    credentials=credentials,
+                )
+            )
+    else:
+        logger.info(f"[CONSUMER] Connecting via host/user/password...")
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(
+                host=RABBITMQ_HOST,
+                port=RABBITMQ_PORT,
+                virtual_host=RABBITMQ_VHOST,
+                credentials=credentials,
+            )
         )
-    )
+    
     channel = connection.channel()
     channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
     channel.basic_qos(prefetch_count=1)

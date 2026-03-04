@@ -38,20 +38,10 @@ load_dotenv()
 
 
 # RabbitMQ config (safe version)
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
 
 # RabbitMQ publisher utility
-publisher = RabbitMQPublisher(
-    host=RABBITMQ_HOST,
-    user=RABBITMQ_USER,
-    password=RABBITMQ_PASSWORD,
-    queue_name=RABBITMQ_QUEUE,
-    pool_size=2,
-    retry_attempts=3,
-)
+publisher = RabbitMQPublisher(queue_name=RABBITMQ_QUEUE)
 
 
 # Set up logging
