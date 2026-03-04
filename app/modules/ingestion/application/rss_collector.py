@@ -49,8 +49,6 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger("rss-collector")
-logger.info(f"USER: {RABBITMQ_USER}")
-logger.info(f"PASS: {RABBITMQ_PASSWORD}")
 
 RETRY_ATTEMPTS = 3
 POLL_INTERVAL = 60  # seconds
