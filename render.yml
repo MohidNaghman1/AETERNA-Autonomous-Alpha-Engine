@@ -1,10 +1,11 @@
 # =====================================================================
 # Render.com Deployment Configuration
 # AETERNA - Autonomous Alpha Engine
+# Option 2: Single Web Service with Background Tasks (Free Tier Compatible)
 # =====================================================================
 
 services:
-  # Main FastAPI Application
+  # Main FastAPI Application (with background consumer + collectors)
   - type: web
     name: aeterna-api
     runtime: docker
@@ -36,106 +37,6 @@ services:
 
       # RabbitMQ Configuration (using CloudAMQP free tier)
       # IMPORTANT: Use the full RABBITMQ_URL which includes vhost
-      - key: RABBITMQ_URL
-        value: ${RABBITMQ_URL}
-      - key: RABBITMQ_QUEUE
-        value: events
-
-  # PostgreSQL Database (removed - using external Aeterna database via render.yml databases section)
-
-  # Redis Cache Service (removed - using Aeterna_RebbitMq service instead)
-  # RabbitMQ Message Broker (removed - using Aeterna_RebbitMq service instead)
-
-  # Celery Worker for Async Tasks
-  - type: worker
-    name: aeterna-celery-worker
-    runtime: docker
-    plan: free
-    autoDeploy: true
-    branch: main
-
-    envVars:
-      - key: SERVICE_TYPE
-        value: celery-worker
-      - key: ENVIRONMENT
-        value: production
-      - key: DEBUG
-        value: false
-      - key: PYTHONUNBUFFERED
-        value: 1
-
-      - key: DATABASE_URL
-        value: ${DATABASE_URL}
-
-      - key: REDIS_URL
-        value: ${REDIS_URL}
-      - key: CELERY_BROKER_URL
-        value: ${REDIS_URL}
-      - key: CELERY_RESULT_BACKEND
-        value: ${REDIS_URL}
-
-      - key: RABBITMQ_URL
-        value: ${RABBITMQ_URL}
-      - key: RABBITMQ_QUEUE
-        value: events
-
-  # Celery Beat for Scheduling Collectors
-  - type: worker
-    name: aeterna-celery-beat
-    runtime: docker
-    plan: free
-    autoDeploy: true
-    branch: main
-
-    envVars:
-      - key: SERVICE_TYPE
-        value: celery-beat
-      - key: ENVIRONMENT
-        value: production
-      - key: DEBUG
-        value: false
-      - key: PYTHONUNBUFFERED
-        value: 1
-
-      - key: DATABASE_URL
-        value: ${DATABASE_URL}
-
-      - key: REDIS_URL
-        value: ${REDIS_URL}
-      - key: CELERY_BROKER_URL
-        value: ${REDIS_URL}
-      - key: CELERY_RESULT_BACKEND
-        value: ${REDIS_URL}
-
-      - key: RABBITMQ_URL
-        value: ${RABBITMQ_URL}
-      - key: RABBITMQ_QUEUE
-        value: events
-
-  # Event Consumer from RabbitMQ
-  - type: worker
-    name: aeterna-consumer
-    runtime: docker
-    plan: free
-    autoDeploy: true
-    branch: main
-
-    envVars:
-      - key: SERVICE_TYPE
-        value: consumer
-      - key: ENVIRONMENT
-        value: production
-      - key: DEBUG
-        value: false
-      - key: PYTHONUNBUFFERED
-        value: 1
-
-      - key: DATABASE_URL
-        value: ${DATABASE_URL}
-
-      - key: REDIS_URL
-        value: ${REDIS_URL}
-
       - key: RABBITMQ_URL
         value: ${RABBITMQ_URL}
       - key: RABBITMQ_QUEUE
