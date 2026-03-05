@@ -26,7 +26,7 @@ from app.modules.admin.presentation.user_management import router as admin_user_
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
-from app.modules.ingestion.application.consumer import run_consumer as consumer_runner
+from app.modules.ingestion.application.consumer import run_consumer_poll
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
@@ -205,13 +205,12 @@ async def lifespan(app: FastAPI):
         print("[STARTUP] ✅ Alert consumer started")
     
     # Start RabbitMQ Event Consumer (background thread)
-    # NOTE: Removed consumer from lifespan - it's too blocking.
-    # The API has trigger endpoints for manual testing instead.
-    print("[STARTUP] ⏭️  Skipping RabbitMQ consumer (use /ingestion/trigger-rss-collection endpoint)")
+    # Using polling consumer that checks queue every 5 seconds (non-blocking)
+    print("[STARTUP] ⏭️  Preparing RabbitMQ consumer polling...")
     
-    # Start Scheduled Collectors (RSS, Price, etc.)
+    # Start Scheduled Collectors (RSS, Price, and Consumer)
     def start_collectors():
-        print("[STARTUP] Starting scheduled collectors...")
+        print("[STARTUP] Starting scheduled collectors and consumer...")
         try:
             scheduler = BackgroundScheduler()
             
@@ -229,10 +228,20 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     print(f"[COLLECTORS] Price error: {e}")
             
+            # RabbitMQ Consumer Polling - every 5 seconds
+            def run_consumer_polling():
+                try:
+                    count = run_consumer_poll(batch_size=10)
+                    if count > 0:
+                        print(f"[CONSUMER-POLL] Processed {count} events")
+                except Exception as e:
+                    print(f"[COLLECTORS] Consumer poll error: {e}")
+            
             scheduler.add_job(run_rss_collector, 'interval', seconds=60, id='rss_collector')
             scheduler.add_job(run_price_collector, 'interval', seconds=120, id='price_collector')
+            scheduler.add_job(run_consumer_polling, 'interval', seconds=5, id='consumer_poller')
             scheduler.start()
-            print("[STARTUP] ✅ Collectors scheduled (RSS: 60s, Price: 120s)")
+            print("[STARTUP] ✅ Collectors scheduled (RSS: 60s, Price: 120s, Consumer: 5s)")
         except Exception as e:
             print(f"[STARTUP] ❌ Scheduler error: {e}")
     

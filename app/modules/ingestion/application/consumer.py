@@ -224,5 +224,84 @@ def run_consumer():
     channel.start_consuming()
 
 
+def run_consumer_poll(batch_size: int = 10) -> int:
+    """
+    Non-blocking consumer that polls RabbitMQ queue.
+    
+    Returns number of messages processed.
+    Safe to call repeatedly without blocking.
+    """
+    processed_count = 0
+    connection = None
+    channel = None
+    
+    try:
+        # Prefer URL-based connection (CloudAMQP format)
+        if RABBITMQ_URL:
+            try:
+                logger.debug(f"[CONSUMER-POLL] Connecting via URL...")
+                conn_params = pika.URLParameters(RABBITMQ_URL)
+                connection = pika.BlockingConnection([conn_params])
+            except Exception as e:
+                logger.error(f"[CONSUMER-POLL] Failed to connect via URL: {e}")
+                logger.debug(f"[CONSUMER-POLL] Falling back to host-based connection...")
+                connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=RABBITMQ_HOST,
+                        port=RABBITMQ_PORT,
+                        virtual_host=RABBITMQ_VHOST,
+                        credentials=credentials,
+                    )
+                )
+        else:
+            logger.debug(f"[CONSUMER-POLL] Connecting via host/user/password...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    port=RABBITMQ_PORT,
+                    virtual_host=RABBITMQ_VHOST,
+                    credentials=credentials,
+                )
+            )
+        
+        channel = connection.channel()
+        channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
+        channel.basic_qos(prefetch_count=1)
+        
+        # Poll up to batch_size messages without blocking
+        for _ in range(batch_size):
+            method, properties, body = channel.basic_get(queue=RABBITMQ_QUEUE, auto_ack=False)
+            
+            if method:
+                # Message received, process it
+                try:
+                    process_event(channel, method, properties, body)
+                    processed_count += 1
+                except Exception as e:
+                    logger.error(f"[CONSUMER-POLL] Error processing message: {e}", exc_info=True)
+            else:
+                # No more messages available, exit loop
+                break
+        
+        if processed_count > 0:
+            logger.info(f"[CONSUMER-POLL] Processed {processed_count} messages from queue")
+        
+        return processed_count
+        
+    except Exception as e:
+        logger.error(f"[CONSUMER-POLL] Connection error: {type(e).__name__}: {str(e)}", exc_info=True)
+        return 0
+    
+    finally:
+        # Close connection
+        try:
+            if channel and channel.is_open:
+                channel.close()
+            if connection and connection.is_open:
+                connection.close()
+        except Exception as e:
+            logger.error(f"[CONSUMER-POLL] Error closing connection: {e}")
+
+
 if __name__ == "__main__":
     run_consumer()
