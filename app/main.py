@@ -4,10 +4,13 @@ from contextlib import asynccontextmanager
 import pika
 import redis
 import os
+import threading
+import time
 from dotenv import load_dotenv
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 import socketio
 from socketio import ASGIApp
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.shared.utils.auth_utils import decode_token
 from app.modules.alerting.infrastructure.alert_consumer import AlertConsumer
@@ -23,6 +26,9 @@ from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
 from app.modules.admin.presentation.security import RateLimitMiddleware
+from app.modules.ingestion.application.price_collector import run_collector as price_run
+from app.modules.ingestion.application.rss_collector import run_collector                    
+from app.modules.ingestion.application.consumer import main as consumer_main
 
 load_dotenv()
 
@@ -190,10 +196,62 @@ def get_user_prefs(user_id):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global alert_consumer
+    
+    # Start Alert Consumer
     if not alert_consumer:
         alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
         alert_consumer.start()
+        print("[STARTUP] ✅ Alert consumer started")
+    
+    # Start RabbitMQ Event Consumer (background thread)
+    def start_event_consumer():
+        print("[STARTUP] Starting RabbitMQ event consumer...")
+        try:
+            consumer_main()
+        except Exception as e:
+            print(f"[STARTUP] ❌ Event consumer error: {e}")
+    
+    consumer_thread = threading.Thread(target=start_event_consumer, daemon=True)
+    consumer_thread.start()
+    print("[STARTUP] ✅ Event consumer thread spawned")
+    
+    # Start Scheduled Collectors (RSS, Price, etc.)
+    def start_collectors():
+        print("[STARTUP] Starting scheduled collectors...")
+        try:
+            scheduler = BackgroundScheduler()
+            
+            # RSS Collector - every 60 seconds
+            def run_rss_collector():
+                try:
+                    run_collector()
+                except Exception as e:
+                    print(f"[COLLECTORS] RSS error: {e}")
+            
+            # Price Collector - every 120 seconds
+            def run_price_collector():
+                try:
+                    price_run()
+                except Exception as e:
+                    print(f"[COLLECTORS] Price error: {e}")
+            
+            scheduler.add_job(run_rss_collector, 'interval', seconds=60, id='rss_collector')
+            scheduler.add_job(run_price_collector, 'interval', seconds=120, id='price_collector')
+            scheduler.start()
+            print("[STARTUP] ✅ Collectors scheduled (RSS: 60s, Price: 120s)")
+        except Exception as e:
+            print(f"[STARTUP] ❌ Scheduler error: {e}")
+    
+    collector_thread = threading.Thread(target=start_collectors, daemon=True)
+    collector_thread.start()
+    print("[STARTUP] ✅ Collector scheduler spawned")
+    
     yield
+    
+    # Cleanup on shutdown
+    print("[SHUTDOWN] Stopping background services...")
+    if alert_consumer:
+        alert_consumer.stop()
 
 
 app.lifespan = lifespan
