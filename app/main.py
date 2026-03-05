@@ -5,6 +5,7 @@ import pika
 import redis
 import os
 import threading
+import traceback
 import time
 from dotenv import load_dotenv
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
@@ -25,10 +26,10 @@ from app.modules.admin.presentation.user_management import router as admin_user_
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
+from app.modules.ingestion.application.consumer import run_consumer as consumer_runner
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
-from app.modules.ingestion.application.rss_collector import run_collector                    
-from app.modules.ingestion.application.consumer import run_consumer
+from app.modules.ingestion.application.rss_collector import run_collector
 
 load_dotenv()
 
@@ -207,13 +208,20 @@ async def lifespan(app: FastAPI):
     def start_event_consumer():
         print("[STARTUP] Starting RabbitMQ event consumer...")
         try:
-            run_consumer()
+            from app.modules.ingestion.application.consumer import run_consumer as consumer_runner
+            print("[STARTUP] Imported consumer, now running...")
+            consumer_runner()
+            print("[STARTUP] Consumer stopped")
+        except KeyboardInterrupt:
+            print("[STARTUP] Event consumer interrupted")
         except Exception as e:
-            print(f"[STARTUP] ❌ Event consumer error: {e}")
+            print(f"[STARTUP] ❌ Event consumer error: {type(e).__name__}: {e}")
+            traceback.print_exc()
     
-    consumer_thread = threading.Thread(target=start_event_consumer, daemon=True)
+    print("[STARTUP] Spawning consumer thread...")
+    consumer_thread = threading.Thread(target=start_event_consumer, daemon=True, name="consumer")
     consumer_thread.start()
-    print("[STARTUP] ✅ Event consumer thread spawned")
+    print(f"[STARTUP] ✅ Event consumer thread spawned: {consumer_thread.name} (daemon={consumer_thread.daemon})")
     
     # Start Scheduled Collectors (RSS, Price, etc.)
     def start_collectors():
