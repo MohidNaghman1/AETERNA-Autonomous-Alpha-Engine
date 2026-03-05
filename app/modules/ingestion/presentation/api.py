@@ -303,3 +303,73 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
     types = {row[0]: row[1] for row in type_result.all()}
 
     return {"total_events": total, "by_source": sources, "by_type": types}
+
+
+@router.get("/diagnostic/rabbitmq-queue-depth")
+async def diagnostic_rabbitmq_queue_depth():
+    """Check RabbitMQ queue depth (diagnostic endpoint)."""
+    import pika
+    import os
+    from dotenv import load_dotenv
+    
+    load_dotenv()
+    
+    RABBITMQ_URL = os.getenv("RABBITMQ_URL")
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+    RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
+    RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")
+    RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+    RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+    RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
+    
+    try:
+        # Connect to RabbitMQ
+        if RABBITMQ_URL:
+            try:
+                conn_params = pika.URLParameters(RABBITMQ_URL)
+                connection = pika.BlockingConnection([conn_params])
+            except Exception as e:
+                credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+                connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=RABBITMQ_HOST,
+                        port=RABBITMQ_PORT,
+                        virtual_host=RABBITMQ_VHOST,
+                        credentials=credentials,
+                    )
+                )
+        else:
+            credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    port=RABBITMQ_PORT,
+                    virtual_host=RABBITMQ_VHOST,
+                    credentials=credentials,
+                )
+            )
+        
+        channel = connection.channel()
+        channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
+        
+        # Get queue info using passive declaration
+        method = channel.queue_declare(queue=RABBITMQ_QUEUE, passive=True)
+        message_count = method.method.message_count
+        consumer_count = method.method.consumer_count
+        
+        connection.close()
+        
+        return {
+            "status": "success",
+            "queue_name": RABBITMQ_QUEUE,
+            "message_count": message_count,
+            "consumer_count": consumer_count,
+            "rabbitmq_url_set": bool(RABBITMQ_URL),
+        }
+    except Exception as e:
+        logger.error(f"[DIAGNOSTIC] RabbitMQ queue depth check failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "queue_name": RABBITMQ_QUEUE,
+        }
