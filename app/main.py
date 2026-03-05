@@ -28,7 +28,7 @@ from app.modules.admin.presentation.admin_protected import (
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector                    
-from app.modules.ingestion.application.consumer import main as consumer_main
+from app.modules.ingestion.application.consumer import run_consumer
 
 load_dotenv()
 
@@ -207,7 +207,7 @@ async def lifespan(app: FastAPI):
     def start_event_consumer():
         print("[STARTUP] Starting RabbitMQ event consumer...")
         try:
-            consumer_main()
+            run_consumer()
         except Exception as e:
             print(f"[STARTUP] ❌ Event consumer error: {e}")
     
