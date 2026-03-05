@@ -305,6 +305,51 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
     return {"total_events": total, "by_source": sources, "by_type": types}
 
 
+@router.get("/diagnostic/test-rss-sync")
+async def diagnostic_test_rss_sync():
+    """Test RSS collection SYNCHRONOUSLY (for debugging). Blocks until complete."""
+    try:
+        from app.modules.ingestion.application.rss_collector import run_collector
+        
+        logger.info("[DIAGNOSTIC] Starting synchronous RSS collection...")
+        run_collector()
+        logger.info("[DIAGNOSTIC] RSS collection finished")
+        
+        return {
+            "status": "success",
+            "message": "RSS collection completed synchronously"
+        }
+    except Exception as e:
+        logger.error(f"[DIAGNOSTIC] Sync RSS collection failed: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@router.get("/diagnostic/test-consumer-poll")
+async def diagnostic_test_consumer_poll():
+    """Test consumer polling SYNCHRONOUSLY (for debugging). Processes up to 10 messages."""
+    try:
+        from app.modules.ingestion.application.consumer import run_consumer_poll
+        
+        logger.info("[DIAGNOSTIC] Starting synchronous consumer polling...")
+        count = run_consumer_poll(batch_size=10)
+        logger.info(f"[DIAGNOSTIC] Consumer polling finished, processed {count} messages")
+        
+        return {
+            "status": "success",
+            "message": f"Consumer polling completed, processed {count} messages",
+            "processed_count": count
+        }
+    except Exception as e:
+        logger.error(f"[DIAGNOSTIC] Sync consumer polling failed: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 @router.get("/diagnostic/rabbitmq-queue-depth")
 async def diagnostic_rabbitmq_queue_depth():
     """Check RabbitMQ queue depth (diagnostic endpoint)."""

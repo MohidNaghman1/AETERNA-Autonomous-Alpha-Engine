@@ -68,11 +68,23 @@ def test_consumer_manually():
         # Store in DB
         print(f"4️⃣  Storing in database...")
         db = SessionLocal()
+        
+        # Parse timestamp string to datetime object
+        # Event.timestamp is ISO8601 string (e.g., "2026-03-04T12:27:02Z")
+        # EventORM.timestamp expects datetime object
+        from datetime import datetime
+        timestamp_str = getattr(event, "timestamp", None)
+        if timestamp_str:
+            # Remove 'Z' suffix and parse
+            ts_clean = timestamp_str.rstrip('Z')
+            timestamp_dt = datetime.fromisoformat(ts_clean)
+        else:
+            timestamp_dt = None
+        
         db_event = EventORM(
-            id=event.id,
             source=getattr(event, 'source', None),
             type=getattr(event, 'type', None),
-            timestamp=getattr(event, 'timestamp', None),
+            timestamp=timestamp_dt,
             content=event.content,
             raw=None
         )
