@@ -205,23 +205,9 @@ async def lifespan(app: FastAPI):
         print("[STARTUP] ✅ Alert consumer started")
     
     # Start RabbitMQ Event Consumer (background thread)
-    def start_event_consumer():
-        print("[STARTUP] Starting RabbitMQ event consumer...")
-        try:
-            from app.modules.ingestion.application.consumer import run_consumer as consumer_runner
-            print("[STARTUP] Imported consumer, now running...")
-            consumer_runner()
-            print("[STARTUP] Consumer stopped")
-        except KeyboardInterrupt:
-            print("[STARTUP] Event consumer interrupted")
-        except Exception as e:
-            print(f"[STARTUP] ❌ Event consumer error: {type(e).__name__}: {e}")
-            traceback.print_exc()
-    
-    print("[STARTUP] Spawning consumer thread...")
-    consumer_thread = threading.Thread(target=start_event_consumer, daemon=True, name="consumer")
-    consumer_thread.start()
-    print(f"[STARTUP] ✅ Event consumer thread spawned: {consumer_thread.name} (daemon={consumer_thread.daemon})")
+    # NOTE: Removed consumer from lifespan - it's too blocking.
+    # The API has trigger endpoints for manual testing instead.
+    print("[STARTUP] ⏭️  Skipping RabbitMQ consumer (use /ingestion/trigger-rss-collection endpoint)")
     
     # Start Scheduled Collectors (RSS, Price, etc.)
     def start_collectors():
