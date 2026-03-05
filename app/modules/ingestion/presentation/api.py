@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from sqlalchemy import desc, and_, func
 from app.shared.application.dependencies import get_db
 from app.modules.ingestion.infrastructure.models import EventORM
-from .schemas import EventIn, EventOut
+from app.modules.ingestion.presentation.schemas import EventIn, EventOut
 from typing import List, Optional
 from datetime import datetime
 import os
