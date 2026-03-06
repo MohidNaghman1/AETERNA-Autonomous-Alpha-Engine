@@ -235,7 +235,7 @@ async def lifespan(app: FastAPI):
         # RabbitMQ Consumer Polling - every 5 seconds
         def run_consumer_polling():
             try:
-                count = run_consumer_poll(batch_size=10)
+                count = run_consumer_poll(batch_size=50)  # Process up to 50 messages per cycle
                 if count > 0:
                     print(f"[CONSUMER-POLL] Processed {count} events at {time.strftime('%H:%M:%S')}")
             except Exception as e:
