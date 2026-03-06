@@ -90,13 +90,15 @@ def validate_event(event: Event) -> bool:
     return True
 
 
-def publish_event(event: Event, _=None):
+def publish_event(event: Event, _=None) -> bool:
+    """Publish event to RabbitMQ. Returns True if successful, False otherwise."""
     if not validate_event(event):
         logger.warning(f"[INVALID] Event {event.id} failed validation, not published.")
-        return
+        return False
     success = publisher.publish(event.model_dump_json())
     if not success:
         logger.error(f"[ERROR] Failed to publish event {event.id} after retries.")
+    return success
 
 
 def run_collector():
@@ -136,13 +138,14 @@ def run_collector():
                         continue
                     
                     logger.info(
-                        f"Publishing event: {event.id} | Title: {event.content.get('title')}"
+                        f"Publishing event: {event.id} | Source: {source} | Title: {event.content.get('title', 'N/A')[:50]}"
                     )
                     
                     with EVENT_PROCESSING_TIME.labels(collector="rss").time():
-                        publish_event(event, None)
+                        success = publish_event(event, None)
+                        if success:
+                            entries_added += 1
                     
-                    entries_added += 1
                     EVENTS_PROCESSED.labels(collector="rss").inc()
                     mark_as_seen(event.id)
                 
