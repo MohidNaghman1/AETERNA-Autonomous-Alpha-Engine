@@ -23,6 +23,8 @@ from app.modules.ingestion.presentation.api import router as ingestion_router
 from app.modules.alerting.presentation.alerts import router as alerts_router
 from app.modules.admin.presentation.dashboard import router as admin_dashboard_router
 from app.modules.admin.presentation.user_management import router as admin_user_router
+from app.modules.admin.presentation.role_management import router as admin_role_router
+from app.modules.admin.presentation.bootstrap import router as bootstrap_router
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
@@ -134,11 +136,13 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health_router)
+app.include_router(bootstrap_router)
 app.include_router(auth_router)
 app.include_router(ingestion_router, prefix="/ingestion", tags=["ingestion"])
 app.include_router(alerts_router)
 app.include_router(admin_dashboard_router)
 app.include_router(admin_user_router)
+app.include_router(admin_role_router)
 app.include_router(admin_protected_router)
 
 
