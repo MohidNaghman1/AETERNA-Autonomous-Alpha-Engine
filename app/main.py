@@ -235,7 +235,7 @@ async def lifespan(app: FastAPI):
         # RabbitMQ Consumer Polling - every 5 seconds
         def run_consumer_polling():
             try:
-                count = run_consumer_poll(batch_size=50)  # Process up to 50 messages per cycle
+                count = run_consumer_poll(batch_size=100)  # Process up to 100 messages per cycle
                 if count > 0:
                     print(f"[CONSUMER-POLL] Processed {count} events at {time.strftime('%H:%M:%S')}")
             except Exception as e:
@@ -245,9 +245,10 @@ async def lifespan(app: FastAPI):
         
         background_scheduler.add_job(run_rss_collector, 'interval', seconds=60, id='rss_collector')
         background_scheduler.add_job(run_price_collector, 'interval', seconds=120, id='price_collector')
-        background_scheduler.add_job(run_consumer_polling, 'interval', seconds=5, id='consumer_poller')
+        background_scheduler.add_job(run_consumer_polling, 'interval', seconds=3, id='consumer_poller')  # Every 2 seconds
         background_scheduler.start()
-        print("[STARTUP] ✅ Collectors scheduled (RSS: 60s, Price: 120s, Consumer: 5s)")
+        print("[STARTUP] ✅ Collectors scheduled (RSS: 60s, Price: 120s, Consumer: 2s)")
+        print(f"[STARTUP] Active jobs: {len(background_scheduler.get_jobs())}")
         print(f"[STARTUP] Active jobs: {len(background_scheduler.get_jobs())}")
     except Exception as e:
         print(f"[STARTUP] ❌ Scheduler error: {type(e).__name__}: {e}")
