@@ -305,6 +305,44 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
     return {"total_events": total, "by_source": sources, "by_type": types}
 
 
+@router.get("/diagnostic/scheduler-status")
+async def diagnostic_scheduler_status():
+    """Check APScheduler status (for debugging)."""
+    try:
+        from app.main import background_scheduler
+        
+        if not background_scheduler:
+            return {
+                "status": "error",
+                "message": "Scheduler not initialized",
+                "scheduler_running": False,
+                "jobs": None
+            }
+        
+        jobs_info = []
+        if background_scheduler.running:
+            for job in background_scheduler.get_jobs():
+                jobs_info.append({
+                    "id": job.id,
+                    "name": job.name,
+                    "interval": str(job.trigger),
+                    "next_run_time": str(job.next_run_time)
+                })
+        
+        return {
+            "status": "success",
+            "scheduler_running": background_scheduler.running,
+            "jobs_count": len(jobs_info),
+            "jobs": jobs_info
+        }
+    except Exception as e:
+        logger.error(f"[DIAGNOSTIC] Scheduler status check failed: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 @router.get("/diagnostic/test-rss-sync")
 async def diagnostic_test_rss_sync():
     """Test RSS collection SYNCHRONOUSLY (for debugging). Blocks until complete."""
