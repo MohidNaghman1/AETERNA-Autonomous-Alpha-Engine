@@ -239,10 +239,11 @@ def run_consumer():
     channel.start_consuming()
 
 
-def run_consumer_poll(batch_size: int = 10) -> int:
+def run_consumer_poll(batch_size: int = 1000) -> int:
     """
     Non-blocking consumer that polls RabbitMQ queue.
     
+    Processes up to batch_size messages per call.
     Returns number of messages processed.
     Safe to call repeatedly without blocking.
     """
