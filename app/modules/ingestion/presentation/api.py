@@ -367,19 +367,24 @@ async def diagnostic_test_rss_sync():
 
 
 @router.get("/diagnostic/test-consumer-poll")
-async def diagnostic_test_consumer_poll():
-    """Test consumer polling SYNCHRONOUSLY (for debugging). Processes up to 10 messages."""
+async def diagnostic_test_consumer_poll(batch_size: int = 1000):
+    """Test consumer polling SYNCHRONOUSLY (for debugging).
+    
+    Args:
+        batch_size: Number of messages to process (default 1000)
+    """
     try:
         from app.modules.ingestion.application.consumer import run_consumer_poll
         
-        logger.info("[DIAGNOSTIC] Starting synchronous consumer polling...")
-        count = run_consumer_poll(batch_size=10)
+        logger.info(f"[DIAGNOSTIC] Starting synchronous consumer polling with batch_size={batch_size}...")
+        count = run_consumer_poll(batch_size=batch_size)
         logger.info(f"[DIAGNOSTIC] Consumer polling finished, processed {count} messages")
         
         return {
             "status": "success",
             "message": f"Consumer polling completed, processed {count} messages",
-            "processed_count": count
+            "processed_count": count,
+            "batch_size": batch_size
         }
     except Exception as e:
         logger.error(f"[DIAGNOSTIC] Sync consumer polling failed: {e}", exc_info=True)
