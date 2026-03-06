@@ -19,7 +19,7 @@ from pydantic import BaseModel
 router = APIRouter(
     prefix="/api/admin/roles",
     tags=["admin-roles"],
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[require_role("admin")],
 )
 
 

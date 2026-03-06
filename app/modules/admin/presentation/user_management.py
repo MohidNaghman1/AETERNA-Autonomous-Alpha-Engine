@@ -7,7 +7,7 @@ from fastapi import HTTPException
 router = APIRouter(
     prefix="/api/admin/users",
     tags=["admin-users"],
-    dependencies=[Depends(require_role("admin"))],
+    dependencies=[require_role("admin")],
 )
 
 
