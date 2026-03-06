@@ -34,6 +34,65 @@ from app.modules.ingestion.application.rss_collector import run_collector
 load_dotenv()
 
 
+# Global scheduler and alert consumer
+background_scheduler = None
+alert_consumer = None
+
+
+# Startup and Shutdown Events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan context manager: starts scheduler and alert consumer on startup."""
+    global alert_consumer, background_scheduler
+    
+    # Start Alert Consumer
+    if not alert_consumer:
+        alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
+        alert_consumer.start()
+        print("[STARTUP] ✅ Alert consumer started")
+    
+    # Start Scheduled Collectors
+    print("[STARTUP] Starting automatic collectors...")
+    try:
+        background_scheduler = BackgroundScheduler()
+        
+        def run_rss_collector():
+            try:
+                print(f"[RSS] Running at {time.strftime('%H:%M:%S')}")
+                run_collector()
+            except Exception as e:
+                print(f"[RSS] Error: {e}")
+        
+        def run_price_collector():
+            try:
+                print(f"[PRICE] Running at {time.strftime('%H:%M:%S')}")
+                price_run()
+            except Exception as e:
+                print(f"[PRICE] Error: {e}")
+        
+        def run_consumer_polling():
+            try:
+                count = run_consumer_poll(batch_size=50)
+                if count > 0:
+                    print(f"[CONSUMER] Processed {count} messages")
+            except Exception as e:
+                print(f"[CONSUMER] Error: {e}")
+        
+        background_scheduler.add_job(run_rss_collector, 'interval', seconds=60, id='rss_collector')
+        background_scheduler.add_job(run_price_collector, 'interval', seconds=120, id='price_collector')
+        background_scheduler.add_job(run_consumer_polling, 'interval', seconds=3, id='consumer_poller')
+        background_scheduler.start()
+        print("[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s)")
+    except Exception as e:
+        print(f"[STARTUP] ❌ Scheduler failed: {e}")
+    
+    yield
+    
+    # Cleanup on shutdown
+    if background_scheduler and background_scheduler.running:
+        background_scheduler.shutdown()
+
+
 app = FastAPI(
     title="AETERNA Autonomous Alpha Engine",
     description="AI-powered cryptocurrency alert and analysis engine with multi-channel delivery",
@@ -41,6 +100,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
@@ -129,10 +189,6 @@ def system_health():
     return diagnostics
 
 
-alert_consumer = None
-background_scheduler = None  # Keep reference so it doesn't get garbage collected
-
-
 @sio.event
 async def connect(sid, environ, auth):
     """Handle WebSocket connection with JWT authentication."""
@@ -192,74 +248,6 @@ def get_user_prefs(user_id):
             db.close()
         except Exception:
             pass
-
-
-# --- Startup: Launch alert consumer thread ---
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global alert_consumer, background_scheduler
-    
-    # Start Alert Consumer
-    if not alert_consumer:
-        alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
-        alert_consumer.start()
-        print("[STARTUP] ✅ Alert consumer started")
-    
-    # Start Scheduled Collectors (RSS, Price, and Consumer)
-    print("[STARTUP] Starting scheduled collectors and consumer...")
-    try:
-        background_scheduler = BackgroundScheduler()
-        
-        # RSS Collector - every 60 seconds
-        def run_rss_collector():
-            try:
-                print(f"[SCHEDULE] Running RSS collector at {time.strftime('%H:%M:%S')}")
-                run_collector()
-                print(f"[SCHEDULE] RSS collector completed")
-            except Exception as e:
-                print(f"[COLLECTORS] RSS error: {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Price Collector - every 120 seconds
-        def run_price_collector():
-            try:
-                print(f"[SCHEDULE] Running Price collector at {time.strftime('%H:%M:%S')}")
-                price_run()
-                print(f"[SCHEDULE] Price collector completed")
-            except Exception as e:
-                print(f"[COLLECTORS] Price error: {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # RabbitMQ Consumer Polling - every 3 seconds, small batches
-        def run_consumer_polling():
-            try:
-                count = run_consumer_poll(batch_size=50)
-                if count > 0:
-                    print(f"[CONSUMER] Processed {count} messages")
-            except Exception as e:
-                print(f"[CONSUMER] Error: {type(e).__name__}: {e}")
-        
-        background_scheduler.add_job(run_rss_collector, 'interval', seconds=60, id='rss_collector')
-        background_scheduler.add_job(run_price_collector, 'interval', seconds=120, id='price_collector')
-        background_scheduler.add_job(run_consumer_polling, 'interval', seconds=3, id='consumer_poller')
-        background_scheduler.start()
-        print("[STARTUP] ✅ Auto-scheduled: RSS every 60s, Consumer: 50 msgs every 3s")
-        print(f"[STARTUP] Jobs running: {len(background_scheduler.get_jobs())}")
-    except Exception as e:
-        print(f"[STARTUP] ❌ Scheduler error: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    yield
-    
-    # Cleanup on shutdown
-    print("[SHUTDOWN] Stopping background services...")
-    if background_scheduler and background_scheduler.running:
-        background_scheduler.shutdown()
-    if alert_consumer:
-        alert_consumer.stop()
 
 
 
