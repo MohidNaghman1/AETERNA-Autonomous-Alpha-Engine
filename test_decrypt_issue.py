@@ -114,6 +114,20 @@ def check_rss_collection_details():
             print(f"❌ RSS diagnostic error: {e}")
         return None
 
+def check_queue_depth():
+    """Check RabbitMQ queue depth."""
+    try:
+        status, response = make_request(
+            f"{BASE_URL}/ingestion/diagnostic/rabbitmq-queue-depth",
+            timeout=30
+        )
+        if status == 200:
+            data = json.loads(response)
+            return data.get("message_count", 0)
+        return None
+    except Exception as e:
+        return None
+
 if __name__ == "__main__":
     print("=" * 70)
     print("DECRYPT FEED ISSUE TEST")
@@ -152,9 +166,27 @@ if __name__ == "__main__":
     print("\n[4] Waiting 15 seconds for collection to complete...")
     time.sleep(15)
     
+    # Step 4b: Check queue depth
+    print("\n[4b] Checking RabbitMQ queue depth...")
+    queue_before = check_queue_depth()
+    if queue_before is not None:
+        print(f"    Messages in queue: {queue_before}")
+    else:
+        print("    ⚠️ Could not check queue depth")
+    
     # Step 5: Poll consumer with large batch
     print("\n[5] Polling consumer to process all queued messages...")
     processed = poll_consumer(batch_size=10000)  # Process everything in queue
+    
+    # Step 5b: Check queue depth again
+    time.sleep(2)
+    print("\n[5b] Checking RabbitMQ queue depth after consumer poll...")
+    queue_after = check_queue_depth()
+    if queue_after is not None:
+        print(f"    Messages remaining in queue: {queue_after}")
+        print(f"    Messages consumed by this poll: {queue_before - queue_after if queue_before else 'unknown'}")
+    else:
+        print("    ⚠️ Could not check queue depth")
     
     # Step 6: Wait for database updates
     print("\n[6] Waiting 5 seconds for database updates...")

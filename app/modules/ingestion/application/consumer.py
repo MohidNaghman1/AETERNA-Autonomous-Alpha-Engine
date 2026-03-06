@@ -286,8 +286,13 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
         channel.basic_qos(prefetch_count=1)
         
         # Poll up to batch_size messages without blocking
-        for _ in range(batch_size):
-            method, properties, body = channel.basic_get(queue=RABBITMQ_QUEUE, auto_ack=False)
+        logger.debug(f"[CONSUMER-POLL] Starting loop to fetch up to {batch_size} messages")
+        for attempt in range(batch_size):
+            try:
+                method, properties, body = channel.basic_get(queue=RABBITMQ_QUEUE, auto_ack=False)
+            except Exception as e:
+                logger.error(f"[CONSUMER-POLL] basic_get() failed at attempt {attempt}: {e}")
+                break
             
             if method:
                 # Message received, process it
@@ -295,9 +300,14 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                     process_event(channel, method, properties, body)
                     processed_count += 1
                 except Exception as e:
-                    logger.error(f"[CONSUMER-POLL] Error processing message: {e}", exc_info=True)
+                    logger.error(f"[CONSUMER-POLL] Error processing message at attempt {attempt}: {e}", exc_info=True)
+                    try:
+                        channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                    except:
+                        pass
             else:
-                # No more messages available, exit loop
+                # No more messages available
+                logger.debug(f"[CONSUMER-POLL] No message at attempt {attempt}, queue empty")
                 break
         
         if processed_count > 0:
