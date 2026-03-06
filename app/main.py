@@ -127,7 +127,7 @@ def metrics():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=os.getenv("CORS_ORIGINS", "https://aeterna-fronend.vercel.app,*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
