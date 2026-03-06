@@ -4,7 +4,7 @@ Provides APIs for assigning and managing user roles (RBAC).
 Only accessible to admin users.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from app.modules.admin.application.dependencies import require_role
 from app.modules.admin.application.role_service import (
     assign_role,
@@ -13,7 +13,7 @@ from app.modules.admin.application.role_service import (
     list_all_roles,
     list_admins,
 )
-from app.config.db import AsyncSessionLocal as SessionLocal
+from app.config.db import SessionLocal
 from pydantic import BaseModel
 
 router = APIRouter(

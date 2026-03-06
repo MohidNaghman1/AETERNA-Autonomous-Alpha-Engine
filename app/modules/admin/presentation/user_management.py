@@ -1,8 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, HTTPException
 from app.modules.admin.application.dependencies import require_role
 from app.modules.identity.infrastructure.models import User
-from app.config.db import AsyncSessionLocal as SessionLocal
-from fastapi import HTTPException
+from app.config.db import SessionLocal
 
 router = APIRouter(
     prefix="/api/admin/users",

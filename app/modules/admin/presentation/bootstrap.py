@@ -1,7 +1,7 @@
 """Bootstrap admin creation - only works once during initial setup."""
 
 from fastapi import APIRouter, HTTPException, status
-from app.config.db import AsyncSessionLocal as SessionLocal
+from app.config.db import SessionLocal
 from app.modules.identity.infrastructure.models import UserRole, User
 from pydantic import BaseModel
 import os
