@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
-from app.modules.admin.middleware import admin_auth_required
+from fastapi import APIRouter, Depends
+from app.modules.admin.application.dependencies import require_role
 from app.modules.identity.infrastructure.models import User
 from app.config.db import AsyncSessionLocal as SessionLocal
+from fastapi import HTTPException
 
 router = APIRouter(
     prefix="/api/admin/users",
     tags=["admin-users"],
-    dependencies=[Depends(admin_auth_required)],
+    dependencies=[Depends(require_role("admin"))],
 )
 
 

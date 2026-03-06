@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends
-from app.modules.admin.middleware import admin_auth_required
+from app.modules.admin.application.dependencies import require_role
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-@router.get("/metrics", dependencies=[Depends(admin_auth_required)])
+@router.get("/metrics", dependencies=[Depends(require_role("admin"))])
 def get_system_metrics():
     # Stub: Replace with real metrics aggregation
     return {

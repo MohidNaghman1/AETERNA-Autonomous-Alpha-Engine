@@ -3,7 +3,8 @@
 Provides role validation dependencies for admin-only endpoints.
 """
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from app.config.db import AsyncSessionLocal as SessionLocal
 from app.modules.identity.infrastructure.models import UserRole
 from app.shared.utils.auth_utils import decode_token
@@ -11,39 +12,38 @@ import logging
 
 logger = logging.getLogger("admin-deps")
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-def extract_user_id_from_token(request: Request) -> str:
-    """Extract user_id from JWT token in Authorization header.
+
+def extract_user_id_from_token(token: str) -> str:
+    """Extract user_id from JWT token.
 
     Args:
-        request: FastAPI request object
+        token: JWT token string
 
     Returns:
         str: User ID from token "sub" claim
 
     Raises:
-        HTTPException: 401 if token missing, invalid, or expired
+        HTTPException: 401 if token invalid, expired, or missing user ID
     """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-    
-    try:
-        scheme, token = auth_header.split(" ")
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authentication scheme")
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid Authorization header format")
-    
     try:
         payload = decode_token(token)
         user_id = payload.get("sub")
         if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token: missing user ID")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing user ID"
+            )
         return str(user_id)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Token decode error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
 
 
 def require_role(role: str):
@@ -59,15 +59,18 @@ def require_role(role: str):
         HTTPException: 401 if token invalid/missing, 403 if role mismatch
     """
 
-    def dependency(request: Request):
-        user_id = extract_user_id_from_token(request)
+    def dependency(token: str = Depends(oauth2_scheme)):
+        user_id = extract_user_id_from_token(token)
         db = SessionLocal()
-        user_role = db.query(UserRole).filter(UserRole.user_id == int(user_id)).first()
-        db.close()
-        if not user_role or user_role.role != role:
-            raise HTTPException(
-                status_code=403, detail=f"{role.capitalize()} role required"
-            )
-        return True
+        try:
+            user_role = db.query(UserRole).filter(UserRole.user_id == int(user_id)).first()
+            if not user_role or user_role.role != role:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"{role.capitalize()} role required"
+                )
+            return True
+        finally:
+            db.close()
 
     return Depends(dependency)
