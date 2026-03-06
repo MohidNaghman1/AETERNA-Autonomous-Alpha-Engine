@@ -94,7 +94,7 @@ def process_event(ch, method, properties, body):
         # Validate event
         if not validate_event(event):
             logger.warning(
-                f"[INVALID] Event {getattr(event, 'id', None)} failed validation."
+                f"[INVALID] Event {getattr(event, 'id', None)} failed validation. Title: {data.get('content', {}).get('title', 'N/A')[:50]}"
             )
             # Invalid events don't get retried - ACK and discard
             ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -142,7 +142,7 @@ def process_event(ch, method, properties, body):
                 db.refresh(db_event)
 
                 logger.info(
-                    f"[✅ PROCESSED] Event {event.id} (DB ID: {db_event.id}) | Type: {getattr(event, 'type', None)} | Score: {score}"
+                    f"[✅ PROCESSED] Event {event.id} (DB ID: {db_event.id}) | Source: {getattr(event, 'source', 'unknown')} | Type: {getattr(event, 'type', None)} | Title: {data.get('content', {}).get('title', 'N/A')[:50]}"
                 )
 
                 success = True
