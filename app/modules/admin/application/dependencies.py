@@ -5,7 +5,7 @@ Provides role validation dependencies for admin-only endpoints.
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from app.config.db import AsyncSessionLocal as SessionLocal
+from app.config.db import SessionLocal
 from app.modules.identity.infrastructure.models import UserRole
 from app.shared.utils.auth_utils import decode_token
 import logging
