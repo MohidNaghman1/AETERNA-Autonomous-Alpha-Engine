@@ -130,11 +130,16 @@ def run_collector():
                     continue
                 
                 entries_added = 0
+                duplicates_skipped = 0
+                validation_failed = 0
+                publish_failed = 0
+                
                 for entry in feed.entries:
                     event = normalize_entry(entry, source)
                     
                     if is_duplicate(event.id):
                         logger.info(f"Duplicate event skipped: {event.id}")
+                        duplicates_skipped += 1
                         continue
                     
                     logger.info(
@@ -145,6 +150,9 @@ def run_collector():
                         success = publish_event(event, None)
                         if success:
                             entries_added += 1
+                        else:
+                            publish_failed += 1
+                            logger.warning(f"[SKIP] Entry {event.id} from {source} failed validation or publish")
                     
                     EVENTS_PROCESSED.labels(collector="rss").inc()
                     mark_as_seen(event.id)
@@ -152,7 +160,9 @@ def run_collector():
                 results["success"].append({
                     "source": source, 
                     "total_entries": len(feed.entries),
-                    "new_entries": entries_added
+                    "new_entries": entries_added,
+                    "duplicates_skipped": duplicates_skipped,
+                    "publish_failed": publish_failed
                 })
                 break  # Success, exit retry loop
                 
