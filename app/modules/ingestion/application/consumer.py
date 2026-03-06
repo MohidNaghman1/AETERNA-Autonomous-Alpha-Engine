@@ -157,7 +157,7 @@ def process_event(ch, method, properties, body):
                 db.refresh(db_event)
 
                 logger.info(
-                    f"[✅ PROCESSED] Event {event.id} (DB ID: {db_event.id}) | Source: {getattr(event, 'source', 'unknown')} | Type: {getattr(event, 'type', None)} | Title: {data.get('content', {}).get('title', 'N/A')[:50]}"
+                    f"[✅] Event {event.id} | {getattr(event, 'source', 'unknown')} | {data.get('content', {}).get('title', 'N/A')[:40]}"
                 )
 
                 success = True
@@ -283,10 +283,10 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
         
         channel = connection.channel()
         channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
-        channel.basic_qos(prefetch_count=1)
+        # Set prefetch to batch_size so RabbitMQ sends multiple messages at once (not just 1)
+        channel.basic_qos(prefetch_count=min(batch_size, 1000))
         
-        # Poll up to batch_size messages without blocking
-        logger.debug(f"[CONSUMER-POLL] Starting loop to fetch up to {batch_size} messages")
+        logger.info(f"[CONSUMER-POLL] Processing up to {batch_size} messages (prefetch={min(batch_size, 1000)})")
         for attempt in range(batch_size):
             try:
                 method, properties, body = channel.basic_get(queue=RABBITMQ_QUEUE, auto_ack=False)
@@ -295,19 +295,16 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                 break
             
             if method:
-                # Message received, process it
                 try:
                     process_event(channel, method, properties, body)
                     processed_count += 1
                 except Exception as e:
-                    logger.error(f"[CONSUMER-POLL] Error processing message at attempt {attempt}: {e}", exc_info=True)
+                    logger.error(f"[CONSUMER-POLL] Error processing message: {e}")
                     try:
                         channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                     except:
                         pass
             else:
-                # No more messages available
-                logger.debug(f"[CONSUMER-POLL] No message at attempt {attempt}, queue empty")
                 break
         
         if processed_count > 0:

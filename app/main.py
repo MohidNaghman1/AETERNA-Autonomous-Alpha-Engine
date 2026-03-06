@@ -232,22 +232,20 @@ async def lifespan(app: FastAPI):
                 import traceback
                 traceback.print_exc()
         
-        # RabbitMQ Consumer Polling - every 5 seconds
+        # RabbitMQ Consumer Polling - every 3 seconds
         def run_consumer_polling():
             try:
-                count = run_consumer_poll(batch_size=100)  # Process up to 100 messages per cycle
+                count = run_consumer_poll(batch_size=200)
                 if count > 0:
-                    print(f"[CONSUMER-POLL] Processed {count} events at {time.strftime('%H:%M:%S')}")
+                    print(f"[CONSUMER] Processed {count} messages")
             except Exception as e:
-                print(f"[COLLECTORS] Consumer poll error: {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"[CONSUMER] Error: {type(e).__name__}: {e}")
         
         background_scheduler.add_job(run_rss_collector, 'interval', seconds=60, id='rss_collector')
         background_scheduler.add_job(run_price_collector, 'interval', seconds=120, id='price_collector')
-        background_scheduler.add_job(run_consumer_polling, 'interval', seconds=3, id='consumer_poller')  # Every 2 seconds
+        background_scheduler.add_job(run_consumer_polling, 'interval', seconds=3, id='consumer_poller')
         background_scheduler.start()
-        print("[STARTUP] ✅ Collectors scheduled (RSS: 60s, Price: 120s, Consumer: 2s)")
+        print("[STARTUP] ✅ Collectors scheduled (RSS: 60s, Price: 120s, Consumer: 200 msgs/3s)")
         print(f"[STARTUP] Active jobs: {len(background_scheduler.get_jobs())}")
         print(f"[STARTUP] Active jobs: {len(background_scheduler.get_jobs())}")
     except Exception as e:
