@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.modules.admin.application.dependencies import require_role
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/metrics", dependencies=[require_role("admin")])

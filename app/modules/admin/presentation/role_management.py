@@ -17,7 +17,7 @@ from app.config.db import SessionLocal
 from pydantic import BaseModel
 
 router = APIRouter(
-    prefix="/api/admin/roles",
+    prefix="/admin/roles",
     tags=["admin-roles"],
     dependencies=[require_role("admin")],
 )

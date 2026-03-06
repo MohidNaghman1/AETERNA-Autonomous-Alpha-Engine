@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger("bootstrap")
 
 router = APIRouter(
-    prefix="/api/bootstrap",
+    prefix="/bootstrap",
     tags=["bootstrap"],
 )
 
