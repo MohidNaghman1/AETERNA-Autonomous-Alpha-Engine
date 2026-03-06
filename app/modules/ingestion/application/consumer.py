@@ -47,9 +47,17 @@ credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
 
 def validate_event(event: Event) -> bool:
-    if not event.id or not getattr(event, "timestamp", None) or not event.content:
+    if not event.id:
+        logger.debug(f"[VALIDATION] Missing ID")
+        return False
+    if not getattr(event, "timestamp", None):
+        logger.debug(f"[VALIDATION] Missing timestamp for {event.id}")
+        return False
+    if not event.content:
+        logger.debug(f"[VALIDATION] Missing content for {event.id}")
         return False
     if len(str(event.content)) < 10:
+        logger.debug(f"[VALIDATION] Content too short for {event.id}")
         return False
     return True
 
@@ -89,7 +97,14 @@ def process_event(ch, method, properties, body):
         if "event_type" in data:
             data["type"] = data.pop("event_type")
 
-        event = Event(**data)
+        try:
+            event = Event(**data)
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to create Event from data: {type(e).__name__}: {str(e)[:100]}")
+            logger.error(f"[ERROR] Data keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+            # Invalid message format - ACK and discard
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
 
         # Validate event
         if not validate_event(event):
