@@ -4,7 +4,7 @@ from app.modules.identity.infrastructure.models import User
 from app.config.db import SessionLocal
 
 router = APIRouter(
-    prefix="/admin/users",
+    prefix="/api/admin/users",
     tags=["admin-users"],
     dependencies=[require_role("admin")],
 )

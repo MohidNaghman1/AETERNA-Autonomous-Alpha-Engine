@@ -11,6 +11,7 @@ from sqlalchemy import select, and_, desc
 from sqlalchemy.orm import Session
 from app.config.db import AsyncSessionLocal
 from app.shared.application.dependencies import get_db, get_current_user
+from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
 from app.modules.alerting.presentation.schema import Alert, AlertDismissResponse
 from datetime import datetime, timedelta
@@ -49,8 +50,10 @@ async def get_alerts_query(
     Returns:
         List of Alert ORM objects
     """
-    # Start with base query
-    query = select(AlertORM).where(AlertORM.user_id == user_id)
+    # Get both user's personal alerts AND system broadcast alerts (user_id=0)
+    query = select(AlertORM).where(
+        (AlertORM.user_id == user_id) | (AlertORM.user_id == 0)
+    )
 
     # Apply filters
     filters = []
@@ -150,10 +153,13 @@ async def get_alert(
         Alert object or 404 if not found or not owned by user
     """
     try:
-        # Query and verify ownership
+        # Query and verify ownership - allow personal alerts and broadcast alerts (user_id=0)
         result = await db.execute(
             select(AlertORM).where(
-                and_(AlertORM.id == alert_id, AlertORM.user_id == current_user.id)
+                and_(
+                    AlertORM.id == alert_id,
+                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0)
+                )
             )
         )
         alert = result.scalars().first()
@@ -188,10 +194,13 @@ async def mark_alert_read(
         Updated alert object
     """
     try:
-        # Query and verify ownership
+        # Query and verify ownership - allow personal alerts and broadcast alerts (user_id=0)
         result = await db.execute(
             select(AlertORM).where(
-                and_(AlertORM.id == alert_id, AlertORM.user_id == current_user.id)
+                and_(
+                    AlertORM.id == alert_id,
+                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0)
+                )
             )
         )
         alert = result.scalars().first()
@@ -238,10 +247,13 @@ async def dismiss_alert(
         Confirmation message
     """
     try:
-        # Query and verify ownership
+        # Query and verify ownership - allow personal alerts and broadcast alerts (user_id=0)
         result = await db.execute(
             select(AlertORM).where(
-                and_(AlertORM.id == alert_id, AlertORM.user_id == current_user.id)
+                and_(
+                    AlertORM.id == alert_id,
+                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0)
+                )
             )
         )
         alert = result.scalars().first()
@@ -328,3 +340,122 @@ async def export_alert_history_csv(
     except Exception as e:
         logger.error(f"Error exporting alerts for user {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail="Error exporting alerts")
+
+
+# ============================================================
+# DIAGNOSTIC ENDPOINTS - Admin only, for debugging alert system
+# ============================================================
+
+@router.get("/diagnostics/all", dependencies=[require_role("admin")])
+async def get_all_alerts_diagnostic(
+    limit: int = Query(100, ge=1, le=1000),
+    skip: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only endpoint to view all alerts in system (for debugging).
+    
+    Parameters:
+    - limit: Maximum number of alerts to return (default: 100, max: 1000)
+    - skip: Offset for pagination (default: 0)
+    
+    Returns:
+        List of all alerts (personal and broadcast) with count
+    """
+    try:
+        # Get total count
+        count_result = await db.execute(select(AlertORM))
+        total_count = len(count_result.scalars().all())
+        
+        # Get paginated results
+        result = await db.execute(
+            select(AlertORM)
+            .order_by(desc(AlertORM.created_at))
+            .offset(skip)
+            .limit(min(limit, 1000))
+        )
+        alerts = result.scalars().all()
+        
+        return {
+            "total": total_count,
+            "returned": len(alerts),
+            "skip": skip,
+            "limit": limit,
+            "alerts": [
+                {
+                    "id": alert.id,
+                    "user_id": alert.user_id,
+                    "event_id": alert.event_id,
+                    "priority": alert.priority,
+                    "status": alert.status,
+                    "created_at": alert.created_at.isoformat() if alert.created_at else None,
+                    "channels": alert.channels,
+                }
+                for alert in alerts
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error fetching diagnostic alerts: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching alerts")
+
+
+@router.get("/diagnostics/user/{user_id}", dependencies=[require_role("admin")])
+async def get_user_alerts_diagnostic(
+    user_id: int,
+    limit: int = Query(100, ge=1, le=1000),
+    skip: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only endpoint to view all alerts for specific user (for debugging).
+    
+    Parameters:
+    - user_id: User ID to query
+    - limit: Maximum number of alerts to return (default: 100, max: 1000)
+    - skip: Offset for pagination (default: 0)
+    
+    Returns:
+        List of alerts for user including broadcast alerts
+    """
+    try:
+        # Get total count for this user (including broadcast)
+        count_result = await db.execute(
+            select(AlertORM).where(
+                (AlertORM.user_id == user_id) | (AlertORM.user_id == 0)
+            )
+        )
+        total_count = len(count_result.scalars().all())
+        
+        # Get paginated results
+        result = await db.execute(
+            select(AlertORM)
+            .where(
+                (AlertORM.user_id == user_id) | (AlertORM.user_id == 0)
+            )
+            .order_by(desc(AlertORM.created_at))
+            .offset(skip)
+            .limit(min(limit, 1000))
+        )
+        alerts = result.scalars().all()
+        
+        return {
+            "user_id": user_id,
+            "total": total_count,
+            "returned": len(alerts),
+            "skip": skip,
+            "limit": limit,
+            "alerts": [
+                {
+                    "id": alert.id,
+                    "user_id": alert.user_id,
+                    "event_id": alert.event_id,
+                    "priority": alert.priority,
+                    "status": alert.status,
+                    "created_at": alert.created_at.isoformat() if alert.created_at else None,
+                    "channels": alert.channels,
+                    "is_broadcast": alert.user_id == 0,
+                }
+                for alert in alerts
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error fetching diagnostic alerts for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching alerts")
