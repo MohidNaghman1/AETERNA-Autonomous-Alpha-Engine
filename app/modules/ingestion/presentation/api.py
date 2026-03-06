@@ -345,17 +345,18 @@ async def diagnostic_scheduler_status():
 
 @router.get("/diagnostic/test-rss-sync")
 async def diagnostic_test_rss_sync():
-    """Test RSS collection SYNCHRONOUSLY (for debugging). Blocks until complete."""
+    """Test RSS collection SYNCHRONOUSLY with detailed results (for debugging). Blocks until complete."""
     try:
         from app.modules.ingestion.application.rss_collector import run_collector
         
         logger.info("[DIAGNOSTIC] Starting synchronous RSS collection...")
-        run_collector()
+        results = run_collector()
         logger.info("[DIAGNOSTIC] RSS collection finished")
         
         return {
             "status": "success",
-            "message": "RSS collection completed synchronously"
+            "message": "RSS collection completed synchronously",
+            "results": results
         }
     except Exception as e:
         logger.error(f"[DIAGNOSTIC] Sync RSS collection failed: {e}", exc_info=True)
