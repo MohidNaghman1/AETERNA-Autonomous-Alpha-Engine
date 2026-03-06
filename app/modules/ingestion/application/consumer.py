@@ -247,6 +247,7 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
     Returns number of messages processed.
     Safe to call repeatedly without blocking.
     """
+    logger.info(f"[CONSUMER-POLL-BATCH] batch_size={batch_size}")
     processed_count = 0
     connection = None
     channel = None

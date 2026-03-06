@@ -133,9 +133,15 @@ def run_collector():
                 duplicates_skipped = 0
                 validation_failed = 0
                 publish_failed = 0
+                normalization_errors = 0
                 
                 for entry in feed.entries:
-                    event = normalize_entry(entry, source)
+                    try:
+                        event = normalize_entry(entry, source)
+                    except Exception as e:
+                        logger.error(f"[NORM-ERR] Failed to normalize entry from {source}: {type(e).__name__}: {str(e)[:100]}")
+                        normalization_errors += 1
+                        continue
                     
                     if is_duplicate(event.id):
                         logger.info(f"Duplicate event skipped: {event.id}")
@@ -162,7 +168,8 @@ def run_collector():
                     "total_entries": len(feed.entries),
                     "new_entries": entries_added,
                     "duplicates_skipped": duplicates_skipped,
-                    "publish_failed": publish_failed
+                    "publish_failed": publish_failed,
+                    "normalization_errors": normalization_errors
                 })
                 break  # Success, exit retry loop
                 
