@@ -51,30 +51,38 @@ def save_processed_event(event: dict, scores: dict):
         print(
             f"[DB] ✅ Saved processed event {event['id']} | Priority: {scores.get('priority')} | Score: {scores.get('score'):.2f}"
         )
-        
+
         # Generate alerts for HIGH and MEDIUM priority events
         priority = scores.get("priority", "LOW")
         if priority in ("HIGH", "MEDIUM"):
-            try:                
+            try:
                 # Prepare event data for alert generation
                 alert_event = {
                     "id": event.get("id"),
                     "user_id": 0,  # System broadcast alert for all users
                     "priority": priority,
                     "score": scores.get("score", 0),
-                    "title": event.get("content", {}).get("title", f"{priority} Priority Event"),
+                    "title": event.get("content", {}).get(
+                        "title", f"{priority} Priority Event"
+                    ),
                     "summary": event.get("content", {}).get("summary", ""),
                     "text": event.get("content", {}).get("text", ""),
                 }
-                
+
                 alert = generate_alert(alert_event, user_prefs=None)
                 if alert:
-                    print(f"[ALERT] 🚨 Generated {priority} priority alert for event {event['id']}")
+                    print(
+                        f"[ALERT] 🚨 Generated {priority} priority alert for event {event['id']}"
+                    )
                 else:
-                    print(f"[ALERT] ⚠️  Alert filtered out for event {event['id']} (check rate limit/quiet hours)")
+                    print(
+                        f"[ALERT] ⚠️  Alert filtered out for event {event['id']} (check rate limit/quiet hours)"
+                    )
             except Exception as e:
-                print(f"[ALERT] ❌ Failed to generate alert for event {event['id']}: {str(e)}")
-        
+                print(
+                    f"[ALERT] ❌ Failed to generate alert for event {event['id']}: {str(e)}"
+                )
+
         return processed_event
     except Exception as e:
         db.rollback()

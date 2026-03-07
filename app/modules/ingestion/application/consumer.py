@@ -100,8 +100,12 @@ def process_event(ch, method, properties, body):
         try:
             event = Event(**data)
         except Exception as e:
-            logger.error(f"[ERROR] Failed to create Event from data: {type(e).__name__}: {str(e)[:100]}")
-            logger.error(f"[ERROR] Data keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+            logger.error(
+                f"[ERROR] Failed to create Event from data: {type(e).__name__}: {str(e)[:100]}"
+            )
+            logger.error(
+                f"[ERROR] Data keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}"
+            )
             # Invalid message format - ACK and discard
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
@@ -137,7 +141,7 @@ def process_event(ch, method, properties, body):
                 timestamp_str = getattr(event, "timestamp", None)
                 if timestamp_str:
                     # Remove 'Z' suffix and parse
-                    ts_clean = timestamp_str.rstrip('Z')
+                    ts_clean = timestamp_str.rstrip("Z")
                     timestamp_dt = datetime.fromisoformat(ts_clean)
                 else:
                     timestamp_dt = None
@@ -230,7 +234,7 @@ def run_consumer():
                 credentials=credentials,
             )
         )
-    
+
     channel = connection.channel()
     channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
     channel.basic_qos(prefetch_count=1)
@@ -242,7 +246,7 @@ def run_consumer():
 def run_consumer_poll(batch_size: int = 1000) -> int:
     """
     Non-blocking consumer that polls RabbitMQ queue.
-    
+
     Processes up to batch_size messages per call.
     Returns number of messages processed.
     Safe to call repeatedly without blocking.
@@ -251,7 +255,7 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
     processed_count = 0
     connection = None
     channel = None
-    
+
     try:
         # Prefer URL-based connection (CloudAMQP format)
         if RABBITMQ_URL:
@@ -261,7 +265,9 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                 connection = pika.BlockingConnection([conn_params])
             except Exception as e:
                 logger.error(f"[CONSUMER-POLL] Failed to connect via URL: {e}")
-                logger.debug(f"[CONSUMER-POLL] Falling back to host-based connection...")
+                logger.debug(
+                    f"[CONSUMER-POLL] Falling back to host-based connection..."
+                )
                 connection = pika.BlockingConnection(
                     pika.ConnectionParameters(
                         host=RABBITMQ_HOST,
@@ -280,20 +286,26 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                     credentials=credentials,
                 )
             )
-        
+
         channel = connection.channel()
         channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
         # Set prefetch to batch_size so RabbitMQ sends multiple messages at once (not just 1)
         channel.basic_qos(prefetch_count=min(batch_size, 1000))
-        
-        logger.info(f"[CONSUMER-POLL] Processing up to {batch_size} messages (prefetch={min(batch_size, 1000)})")
+
+        logger.info(
+            f"[CONSUMER-POLL] Processing up to {batch_size} messages (prefetch={min(batch_size, 1000)})"
+        )
         for attempt in range(batch_size):
             try:
-                method, properties, body = channel.basic_get(queue=RABBITMQ_QUEUE, auto_ack=False)
+                method, properties, body = channel.basic_get(
+                    queue=RABBITMQ_QUEUE, auto_ack=False
+                )
             except Exception as e:
-                logger.error(f"[CONSUMER-POLL] basic_get() failed at attempt {attempt}: {e}")
+                logger.error(
+                    f"[CONSUMER-POLL] basic_get() failed at attempt {attempt}: {e}"
+                )
                 break
-            
+
             if method:
                 try:
                     process_event(channel, method, properties, body)
@@ -301,21 +313,28 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                 except Exception as e:
                     logger.error(f"[CONSUMER-POLL] Error processing message: {e}")
                     try:
-                        channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                        channel.basic_nack(
+                            delivery_tag=method.delivery_tag, requeue=True
+                        )
                     except:
                         pass
             else:
                 break
-        
+
         if processed_count > 0:
-            logger.info(f"[CONSUMER-POLL] Processed {processed_count} messages from queue")
-        
+            logger.info(
+                f"[CONSUMER-POLL] Processed {processed_count} messages from queue"
+            )
+
         return processed_count
-        
+
     except Exception as e:
-        logger.error(f"[CONSUMER-POLL] Connection error: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(
+            f"[CONSUMER-POLL] Connection error: {type(e).__name__}: {str(e)}",
+            exc_info=True,
+        )
         return 0
-    
+
     finally:
         # Close connection
         try:

@@ -11,7 +11,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Add app to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app")))
 
 from app.modules.alerting.infrastructure.models import Alert
 from app.modules.ingestion.infrastructure.models import EventORM
@@ -29,7 +29,8 @@ from app.config.db import Base
 target_metadata = Base.metadata
 
 # Load .env from project root
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 
 def get_url():
     return (
@@ -42,6 +43,7 @@ def get_url():
         )
     )
 
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url") or get_url()
     context.configure(
@@ -52,6 +54,7 @@ def run_migrations_offline() -> None:
     )
     with context.begin_transaction():
         context.run_migrations()
+
 
 def run_migrations_online() -> None:
     url = config.get_main_option("sqlalchemy.url") or get_url()
@@ -64,6 +67,7 @@ def run_migrations_online() -> None:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()

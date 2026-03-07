@@ -127,7 +127,7 @@ def publish_event(event: Event, _metadata=None):
 
 def run_collector():
     """Single collection run - fetches prices once and returns.
-    
+
     This is suitable for being called by Celery Beat which handles scheduling.
     Do NOT use this as an infinite loop - let Celery Beat manage the schedule.
     """
@@ -135,44 +135,42 @@ def run_collector():
         try:
             prices = fetch_prices()
             published = 0
-            
+
             for entry in prices:
                 # Detect significant move
                 p1h = entry.get("price_change_percentage_1h_in_currency")
                 if p1h is not None and abs(p1h) < 5:
                     continue
-                
+
                 event = normalize_price_entry(entry)
-                
+
                 if is_duplicate(event.id):
                     logger.info(f"Duplicate price event skipped: {event.id}")
                     continue
-                
+
                 logger.info(
                     f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | 1h%: {p1h}"
                 )
                 publish_event(event, None)
                 mark_as_seen(event.id)
                 published += 1
-            
+
             logger.info(f"Published {published} price events this cycle.")
             break
-            
+
         except Exception as e:
             if attempt == RETRY_ATTEMPTS - 1:
                 logger.error(f"[ERROR] Failed to fetch/publish prices: {e}")
             else:
-                logger.info(
-                    f"Retrying CoinGecko fetch in {2 ** attempt} seconds..."
-                )
+                logger.info(f"Retrying CoinGecko fetch in {2 ** attempt} seconds...")
                 time.sleep(2**attempt)
-    
+
     logger.info("Price collection cycle completed.")
 
 
 def run_collector_loop():
     """Infinite loop version for standalone execution.
-    
+
     Use this if running the collector as a standalone script, not via Celery.
     For Celery, use run_collector() and let Celery Beat handle scheduling.
     """
@@ -181,7 +179,7 @@ def run_collector_loop():
             run_collector()
         except Exception as e:
             logger.error(f"[ERROR] Collection cycle failed: {str(e)}")
-        
+
         logger.info(f"Sleeping for {POLL_INTERVAL} seconds before next price poll.")
         time.sleep(POLL_INTERVAL)
 

@@ -64,9 +64,7 @@ def _cleanup_memory_cache():
     """Remove expired entries from in-memory cache."""
     global _memory_cache
     now = datetime.utcnow()
-    _memory_cache = {
-        h: exp for h, exp in _memory_cache.items() if exp > now
-    }
+    _memory_cache = {h: exp for h, exp in _memory_cache.items() if exp > now}
 
 
 def hash_content(content: str) -> str:
@@ -93,13 +91,13 @@ def is_duplicate(content: str) -> bool:
         bool: True if content was seen in the past hour, False otherwise
     """
     h = hash_content(content)
-    
+
     if _redis_available and _redis:
         try:
             return _redis.exists(h) == 1
         except Exception as e:
             logger.warning(f"Redis check failed, using memory cache: {e}")
-    
+
     # Fallback to in-memory cache
     _cleanup_memory_cache()
     return h in _memory_cache
@@ -114,15 +112,14 @@ def mark_as_seen(content: str) -> None:
         content: Event content to mark as seen
     """
     h = hash_content(content)
-    
+
     if _redis_available and _redis:
         try:
             _redis.setex(h, DEDUP_TTL_SECONDS, "1")
             return
         except Exception as e:
             logger.warning(f"Redis mark failed, using memory cache: {e}")
-    
+
     # Fallback to in-memory cache
     expiry = datetime.utcnow() + timedelta(seconds=DEDUP_TTL_SECONDS)
     _memory_cache[h] = expiry
-

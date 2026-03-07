@@ -156,7 +156,7 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
 @router.get("/auto-update-status")
 async def auto_update_status(db: AsyncSession = Depends(get_db)):
     """Check if automatic updates are running.
-    
+
     Returns:
     - auto_updates_enabled: True if scheduler is running
     - update_frequency: How often news is fetched
@@ -164,34 +164,32 @@ async def auto_update_status(db: AsyncSession = Depends(get_db)):
     """
     try:
         from app.main import background_scheduler
-        
+
         # Get latest event timestamp
         latest_result = await db.execute(
             select(EventORM.timestamp).order_by(desc(EventORM.timestamp)).limit(1)
         )
         latest_event = latest_result.scalar()
         last_event_time = latest_event.isoformat() if latest_event else None
-        
+
         # Check scheduler status
         scheduler_running = background_scheduler and background_scheduler.running
-        
+
         return {
             "status": "active" if scheduler_running else "inactive",
             "auto_updates_enabled": scheduler_running,
             "update_frequency": {
                 "rss_collection": "every 60 seconds",
                 "consumer_processing": "every 3 seconds (50 messages per batch)",
-                "price_collection": "every 120 seconds"
+                "price_collection": "every 120 seconds",
             },
             "last_event_timestamp": last_event_time,
-            "message": "🔄 Automatic updates RUNNING - new events fetched every 60 seconds" if scheduler_running else "⚠️  Scheduler not running"
+            "message": (
+                "🔄 Automatic updates RUNNING - new events fetched every 60 seconds"
+                if scheduler_running
+                else "⚠️  Scheduler not running"
+            ),
         }
     except Exception as e:
         logger.error(f"[AUTO-UPDATE] Status check failed: {e}")
-        return {
-            "status": "error",
-            "auto_updates_enabled": False,
-            "error": str(e)
-        }
-
-
+        return {"status": "error", "auto_updates_enabled": False, "error": str(e)}

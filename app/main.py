@@ -46,32 +46,32 @@ alert_consumer = None
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager: starts scheduler and alert consumer on startup."""
     global alert_consumer, background_scheduler
-    
+
     # Start Alert Consumer
     if not alert_consumer:
         alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
         alert_consumer.start()
         print("[STARTUP] ✅ Alert consumer started")
-    
+
     # Start Scheduled Collectors
     print("[STARTUP] Starting automatic collectors...")
     try:
         background_scheduler = BackgroundScheduler()
-        
+
         def run_rss_collector():
             try:
                 print(f"[RSS] Running at {time.strftime('%H:%M:%S')}")
                 run_collector()
             except Exception as e:
                 print(f"[RSS] Error: {e}")
-        
+
         def run_price_collector():
             try:
                 print(f"[PRICE] Running at {time.strftime('%H:%M:%S')}")
                 price_run()
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
-        
+
         def run_consumer_polling():
             try:
                 count = run_consumer_poll(batch_size=50)
@@ -79,17 +79,25 @@ async def lifespan(app: FastAPI):
                     print(f"[CONSUMER] Processed {count} messages")
             except Exception as e:
                 print(f"[CONSUMER] Error: {e}")
-        
-        background_scheduler.add_job(run_rss_collector, 'interval', seconds=60, id='rss_collector')
-        background_scheduler.add_job(run_price_collector, 'interval', seconds=120, id='price_collector')
-        background_scheduler.add_job(run_consumer_polling, 'interval', seconds=3, id='consumer_poller')
+
+        background_scheduler.add_job(
+            run_rss_collector, "interval", seconds=60, id="rss_collector"
+        )
+        background_scheduler.add_job(
+            run_price_collector, "interval", seconds=120, id="price_collector"
+        )
+        background_scheduler.add_job(
+            run_consumer_polling, "interval", seconds=3, id="consumer_poller"
+        )
         background_scheduler.start()
-        print("[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s)")
+        print(
+            "[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s)"
+        )
     except Exception as e:
         print(f"[STARTUP] ❌ Scheduler failed: {e}")
-    
+
     yield
-    
+
     # Cleanup on shutdown
     if background_scheduler and background_scheduler.running:
         background_scheduler.shutdown()
@@ -127,7 +135,9 @@ def metrics():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "https://aeterna-fronend.vercel.app,*").split(","),
+    allow_origins=os.getenv(
+        "CORS_ORIGINS", "https://aeterna-fronend.vercel.app,*"
+    ).split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -252,7 +262,6 @@ def get_user_prefs(user_id):
             db.close()
         except Exception:
             pass
-
 
 
 app.lifespan = lifespan

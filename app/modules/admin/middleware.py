@@ -28,7 +28,7 @@ def extract_user_id_from_token(token: str) -> str:
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing user ID"
+                detail="Invalid token: missing user ID",
             )
         return str(user_id)
     except HTTPException:
@@ -36,23 +36,22 @@ def extract_user_id_from_token(token: str) -> str:
     except Exception as e:
         logger.error(f"Token decode error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
         )
 
 
 def get_admin_user_id(token: str = None) -> str:
     """Get and validate admin user from token.
-    
+
     Args:
         token: JWT token (can be None for request-based extraction)
-        
+
     Returns:
         str: Validated user ID
     """
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header"
+            detail="Missing Authorization header",
         )
     return extract_user_id_from_token(token)

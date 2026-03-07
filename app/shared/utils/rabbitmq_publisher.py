@@ -77,10 +77,14 @@ class RabbitMQPublisher:
                 conn_params = pika.URLParameters(self.url)
                 return pika.BlockingConnection([conn_params])
             except Exception as e:
-                self.logger.warning(f"URL connection failed: {e}, falling back to host-based")
-        
+                self.logger.warning(
+                    f"URL connection failed: {e}, falling back to host-based"
+                )
+
         # Fallback to host-based connection
-        self.logger.debug(f"Creating connection to {self.host}:{self.port} vhost={self.vhost}")
+        self.logger.debug(
+            f"Creating connection to {self.host}:{self.port} vhost={self.vhost}"
+        )
         conn = pika.BlockingConnection(
             pika.ConnectionParameters(
                 host=self.host,
@@ -105,7 +109,9 @@ class RabbitMQPublisher:
                 channel = conn.channel()
                 channel.queue_declare(queue=self.queue_name, durable=True)
                 self._pool.put((conn, channel))
-            self.logger.info(f"Connection pool initialized with {self.pool_size} connections")
+            self.logger.info(
+                f"Connection pool initialized with {self.pool_size} connections"
+            )
         except pika.exceptions.AMQPConnectionError as e:
             self.logger.warning(
                 f"Could not initialize RabbitMQ pool: {e}. "
@@ -146,7 +152,9 @@ class RabbitMQPublisher:
                         new_channel.queue_declare(queue=self.queue_name, durable=True)
                         self._pool.put((new_conn, new_channel))
                     except Exception as create_err:
-                        self.logger.error(f"Failed to create replacement connection: {create_err}")
+                        self.logger.error(
+                            f"Failed to create replacement connection: {create_err}"
+                        )
                     time.sleep(2**attempt)
             except Empty:
                 self.logger.error("No available RabbitMQ connections in pool.")

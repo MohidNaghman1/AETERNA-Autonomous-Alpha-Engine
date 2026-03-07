@@ -103,97 +103,107 @@ def publish_event(event: Event, _=None) -> bool:
 
 def run_collector():
     """Single collection run - fetches all feeds once and returns.
-    
+
     This is suitable for being called by Celery Beat which handles scheduling.
     Do NOT use this as an infinite loop - let Celery Beat manage the schedule.
     """
     headers = {"User-Agent": "Mozilla/5.0"}
     results = {"success": [], "failed": []}
-    
+
     for feed_url in FEEDS:
         source = feed_url.split("//")[-1].split("/")[0]
         logger.info(f"Fetching feed: {feed_url} (source: {source})")
-        
+
         for attempt in range(RETRY_ATTEMPTS):
             try:
                 response = requests.get(feed_url, headers=headers, timeout=10)
                 logger.info(f"HTTP status for {feed_url}: {response.status_code}")
                 response.raise_for_status()
                 feed = feedparser.parse(response.content)
-                logger.info(
-                    f"Feed '{source}' returned {len(feed.entries)} entries."
-                )
-                
+                logger.info(f"Feed '{source}' returned {len(feed.entries)} entries.")
+
                 if not feed.entries:
                     logger.warning(f"No entries found in feed: {feed_url}")
                     results["failed"].append({"source": source, "reason": "No entries"})
                     continue
-                
+
                 entries_added = 0
                 duplicates_skipped = 0
                 validation_failed = 0
                 publish_failed = 0
                 normalization_errors = 0
-                
+
                 for entry in feed.entries:
                     try:
                         event = normalize_entry(entry, source)
                     except Exception as e:
-                        logger.error(f"[NORM-ERR] Failed to normalize entry from {source}: {type(e).__name__}: {str(e)[:100]}")
+                        logger.error(
+                            f"[NORM-ERR] Failed to normalize entry from {source}: {type(e).__name__}: {str(e)[:100]}"
+                        )
                         normalization_errors += 1
                         continue
-                    
+
                     if is_duplicate(event.id):
                         logger.info(f"Duplicate event skipped: {event.id}")
                         duplicates_skipped += 1
                         continue
-                    
+
                     logger.info(
                         f"Publishing event: {event.id} | Source: {source} | Title: {event.content.get('title', 'N/A')[:50]}"
                     )
-                    
+
                     with EVENT_PROCESSING_TIME.labels(collector="rss").time():
                         success = publish_event(event, None)
                         if success:
                             entries_added += 1
                         else:
                             publish_failed += 1
-                            logger.warning(f"[SKIP] Entry {event.id} from {source} failed validation or publish")
-                    
+                            logger.warning(
+                                f"[SKIP] Entry {event.id} from {source} failed validation or publish"
+                            )
+
                     EVENTS_PROCESSED.labels(collector="rss").inc()
                     mark_as_seen(event.id)
-                
-                results["success"].append({
-                    "source": source, 
-                    "total_entries": len(feed.entries),
-                    "new_entries": entries_added,
-                    "duplicates_skipped": duplicates_skipped,
-                    "publish_failed": publish_failed,
-                    "normalization_errors": normalization_errors
-                })
+
+                results["success"].append(
+                    {
+                        "source": source,
+                        "total_entries": len(feed.entries),
+                        "new_entries": entries_added,
+                        "duplicates_skipped": duplicates_skipped,
+                        "publish_failed": publish_failed,
+                        "normalization_errors": normalization_errors,
+                    }
+                )
                 break  # Success, exit retry loop
-                
+
             except Exception as e:
-                logger.error(f"[ATTEMPT {attempt+1}] Failed to process {feed_url}: {type(e).__name__}: {str(e)}")
+                logger.error(
+                    f"[ATTEMPT {attempt+1}] Failed to process {feed_url}: {type(e).__name__}: {str(e)}"
+                )
                 logger.error(traceback.format_exc())
-                
+
                 if attempt == RETRY_ATTEMPTS - 1:
-                    results["failed"].append({
-                        "source": source, 
-                        "reason": f"{type(e).__name__}: {str(e)[:100]}"
-                    })
+                    results["failed"].append(
+                        {
+                            "source": source,
+                            "reason": f"{type(e).__name__}: {str(e)[:100]}",
+                        }
+                    )
                 elif attempt < RETRY_ATTEMPTS - 1:
                     logger.info(f"Retrying {feed_url} in {2 ** attempt} seconds...")
                     time.sleep(2**attempt)
-    
-    logger.info(f"RSS collection cycle completed. Success: {len(results['success'])}, Failed: {len(results['failed'])}")
+
+    logger.info(
+        f"RSS collection cycle completed. Success: {len(results['success'])}, Failed: {len(results['failed'])}"
+    )
     logger.info(f"Details: {results}")
     return results
 
 
 def run_collector_loop():
     """Infinite loop version for standalone execution.
-    
+
     Use this if running the collector as a standalone script, not via Celery.
     For Celery, use run_collector() and let Celery Beat handle scheduling.
     """
@@ -203,7 +213,7 @@ def run_collector_loop():
         except Exception as e:
             logger.error(f"[ERROR] Collection cycle failed: {str(e)}")
             logger.error(traceback.format_exc())
-        
+
         logger.info(f"Sleeping for {POLL_INTERVAL} seconds before next poll.")
         time.sleep(POLL_INTERVAL)
 
