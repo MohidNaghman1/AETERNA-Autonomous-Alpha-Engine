@@ -21,6 +21,11 @@ from app.shared.utils.monitoring import (
     EVENT_PROCESSING_TIME,
     start_metrics_server,
 )
+from app.shared.utils.data_extractors import (
+    extract_price_entry_detailed,
+    identify_significant_changes,
+)
+from app.shared.utils.validators import validate_event as validate_event_schema
 
 COINGECKO_API = "https://api.coingecko.com/api/v3/coins/markets"
 POLL_INTERVAL = 60  # seconds
@@ -50,7 +55,11 @@ def fetch_prices():
         "order": "market_cap_desc",
         "per_page": 100,
         "page": 1,
-        "price_change_percentage": "1h,24h",
+        "price_change_percentage": "1h,24h,7d,14d,30d,1y",  # Extended timeframes
+        "include_market_cap": "true",
+        "include_24hr_vol": "true",
+        "include_market_cap_change_percentage": "true",
+        "include_last_updated_at": "true",
     }
     headers = {"User-Agent": "Mozilla/5.0"}
     backoff = 10
@@ -80,24 +89,26 @@ def fetch_prices():
 
 
 def normalize_price_entry(entry):
-    content = {
-        "id": entry["id"],
-        "symbol": entry["symbol"],
-        "name": entry["name"],
-        "current_price": entry["current_price"],
-        "price_change_percentage_1h": entry.get(
-            "price_change_percentage_1h_in_currency"
-        ),
-        "price_change_percentage_24h": entry.get(
-            "price_change_percentage_24h_in_currency"
-        ),
-        "market_cap": entry["market_cap"],
-        "last_updated": entry["last_updated"],
-    }
+    """
+    Normalize and enrich CoinGecko price entry to Event format.
+    Extracts detailed price metrics, risk scores, and significant changes.
+    """
+    # Extract detailed price content
+    content = extract_price_entry_detailed(entry)
+    
+    # Identify significant changes
+    significance_info = identify_significant_changes(
+        content,
+        significance_threshold_pct=5.0
+    )
+    content.update(significance_info)
+    
     ts = datetime.utcnow()
+    
     # Entity extraction from symbol and name
     text = (entry.get("symbol") or "") + " " + (entry.get("name") or "")
     entities = extract_crypto_mentions(text)
+    
     return Event.create(
         source="coingecko",
         type_="price",
@@ -109,10 +120,18 @@ def normalize_price_entry(entry):
 
 
 def validate_event(event: Event) -> bool:
+    """Validate event using schema validation"""
     if not event.id or not event.timestamp or not event.content:
         return False
     if len(str(event.content)) < 10:
         return False
+    
+    # Schema validation
+    is_valid, error_msg = validate_event_schema(event.model_dump())
+    if not is_valid:
+        logger.warning(f"[SCHEMA-VALIDATION-FAILED] {error_msg}")
+        return False
+    
     return True
 
 
@@ -135,27 +154,36 @@ def run_collector():
         try:
             prices = fetch_prices()
             published = 0
+            skipped_no_significance = 0
+            skipped_duplicate = 0
 
             for entry in prices:
-                # Detect significant move
-                p1h = entry.get("price_change_percentage_1h_in_currency")
-                if p1h is not None and abs(p1h) < 5:
-                    continue
-
                 event = normalize_price_entry(entry)
+                
+                # Check for significance (5% or more change in 1h)
+                significance_info = event.content.get("significant_moves", [])
+                if not significance_info:
+                    skipped_no_significance += 1
+                    continue
 
                 if is_duplicate(event.id):
                     logger.info(f"Duplicate price event skipped: {event.id}")
+                    skipped_duplicate += 1
                     continue
 
+                alert_reasons = event.content.get("alert_reasons", "Price movement detected")
                 logger.info(
-                    f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | 1h%: {p1h}"
+                    f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | {alert_reasons}"
                 )
                 publish_event(event, None)
                 mark_as_seen(event.id)
                 published += 1
 
-            logger.info(f"Published {published} price events this cycle.")
+            logger.info(
+                f"Published {published} price events this cycle. "
+                f"Skipped: {skipped_no_significance} (no significance), "
+                f"{skipped_duplicate} (duplicate)."
+            )
             break
 
         except Exception as e:

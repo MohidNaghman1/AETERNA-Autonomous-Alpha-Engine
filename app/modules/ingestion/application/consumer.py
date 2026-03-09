@@ -2,6 +2,7 @@
 Event Consumer for RabbitMQ
 - Listens to RabbitMQ queue
 - Validates, scores, and stores events in DB
+- Implements DLQ (Dead Letter Queue) for failed messages
 - Tracks Prometheus metrics and logs
 """
 
@@ -20,6 +21,7 @@ from app.shared.utils.monitoring import (
 )
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.config.db import SessionLocal  # Use synchronous session for pika consumer
+from app.shared.utils.validators import validate_event as validate_event_schema
 
 # Start Prometheus metrics server (only once per process)
 try:
@@ -43,7 +45,43 @@ RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
 RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
 
+# DLQ Configuration
+DLQ_QUEUE = os.getenv("RABBITMQ_DLQ_QUEUE", "events_dlq")
+MAX_RETRIES = int(os.getenv("RABBITMQ_MAX_RETRIES", "3"))
+RETRY_DELAY_SECONDS = int(os.getenv("RABBITMQ_RETRY_DELAY", "5"))
+
 credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+
+
+def get_retry_count(properties: pika.BasicProperties) -> int:
+    """Extract retry count from message headers"""
+    if properties and properties.headers:
+        return properties.headers.get("x-retry-count", 0)
+    return 0
+
+
+def send_to_dlq(channel: pika.adapters.blocking_connection.BlockingChannel, body: bytes, error_msg: str, retry_count: int):
+    """Send message to Dead Letter Queue"""
+    try:
+        channel.queue_declare(queue=DLQ_QUEUE, durable=True)
+        headers = {
+            "x-retry-count": retry_count,
+            "x-error-message": error_msg[:500],  # Limit error message size
+            "x-failed-at": datetime.utcnow().isoformat(),
+        }
+        
+        channel.basic_publish(
+            exchange='',
+            routing_key=DLQ_QUEUE,
+            body=body,
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # persistent
+                headers=headers
+            )
+        )
+        logger.info(f"[DLQ] Message sent to DLQ after {retry_count} retries. Error: {error_msg[:100]}")
+    except Exception as e:
+        logger.error(f"[DLQ-ERROR] Failed to send message to DLQ: {e}")
 
 
 def validate_event(event: Event) -> bool:
@@ -77,19 +115,26 @@ def process_event(ch, method, properties, body):
     """
     Process event message from RabbitMQ.
 
-    P1 Fix: Only ACK message after successful database commit.
-    If database commit fails, message is NACKed and returned to queue.
+    P1 Enhancements:
+    - Schema validation before processing
+    - DLQ (Dead Letter Queue) for failed events
+    - Retry logic with exponential backoff
+    - Comprehensive error tracking
 
     Flow:
     1. Parse JSON
-    2. Validate event
-    3. Create EventORM
-    4. Commit to database
-    5. On success: ACK (message removed from queue)
-    6. On failure: NACK (message returned to queue for retry)
+    2. Validate schema
+    3. Validate event data
+    4. Create EventORM
+    5. Commit to database
+    6. On success: ACK (message removed from queue)
+    7. On retriable failure: NACK (message returned to queue for retry)
+    8. On max retries exceeded: Send to DLQ and ACK
+    9. On non-retriable failure: Send to DLQ and ACK
     """
     success = False
     db = None
+    retry_count = get_retry_count(properties)
 
     try:
         data = json.loads(body)
@@ -106,7 +151,19 @@ def process_event(ch, method, properties, body):
             logger.error(
                 f"[ERROR] Data keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}"
             )
-            # Invalid message format - ACK and discard
+            # Invalid message format - send to DLQ (non-retriable)
+            send_to_dlq(ch, body, f"Event deserialization failed: {str(e)}", retry_count)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
+        # Validate event schema
+        is_valid, validation_error = validate_event_schema(event.model_dump())
+        if not is_valid:
+            logger.warning(
+                f"[VALIDATION-FAILED] Event {getattr(event, 'id', None)}: {validation_error}"
+            )
+            # Schema validation failed - send to DLQ (non-retriable)
+            send_to_dlq(ch, body, f"Schema validation failed: {validation_error}", retry_count)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -115,7 +172,8 @@ def process_event(ch, method, properties, body):
             logger.warning(
                 f"[INVALID] Event {getattr(event, 'id', None)} failed validation. Title: {data.get('content', {}).get('title', 'N/A')[:50]}"
             )
-            # Invalid events don't get retried - ACK and discard
+            # Invalid events don't get retried - send to DLQ and ACK
+            send_to_dlq(ch, body, "Event validation failed", retry_count)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -168,7 +226,7 @@ def process_event(ch, method, properties, body):
                 EVENTS_PROCESSED.labels(collector="consumer").inc()
 
             except Exception as e:
-                # Database error - will be NACKed for retry
+                # Database error - retriable
                 logger.error(
                     f"[❌ DB ERROR] Failed to store event {getattr(event, 'id', None)}: {type(e).__name__}: {str(e)}"
                 )
@@ -178,6 +236,7 @@ def process_event(ch, method, properties, body):
                     except Exception as rb_err:
                         logger.error(f"[ERROR] Rollback failed: {rb_err}")
                 success = False
+                raise  # Re-raise to trigger retry logic
 
             finally:
                 if db:
@@ -186,24 +245,41 @@ def process_event(ch, method, properties, body):
                     except Exception:
                         pass
 
-        # P1 Fix: ACK only on success, NACK on failure
+        # P1 Fix: ACK only on success
         if success:
             ch.basic_ack(delivery_tag=method.delivery_tag)
         else:
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-            logger.warning(f"[⚠️  NACKED] Message returned to queue for retry")
+            if retry_count < MAX_RETRIES:
+                # Increment retry count and requeue
+                logger.warning(
+                    f"[RETRY] Message will be retried (attempt {retry_count + 1}/{MAX_RETRIES})"
+                )
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            else:
+                # Max retries exceeded - send to DLQ
+                logger.error(f"[DLQ] Max retries ({MAX_RETRIES}) exceeded, sending to DLQ")
+                send_to_dlq(ch, body, "Max retries exceeded", retry_count)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except json.JSONDecodeError as e:
-        # Bad JSON - NACK without requeue (permanent failure)
+        # Bad JSON - non-retriable
         logger.error(f"[❌ JSON ERROR] Failed to parse JSON: {e}")
+        send_to_dlq(ch, body, f"JSON parsing failed: {str(e)}", retry_count)
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     except Exception as e:
-        # Unexpected error - NACK with requeue
+        # Unexpected error - might be retriable
         logger.error(
             f"[❌ UNEXPECTED ERROR] {type(e).__name__}: {str(e)}", exc_info=True
         )
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        
+        if retry_count < MAX_RETRIES:
+            logger.warning(f"[RETRY] Retrying message (attempt {retry_count + 1}/{MAX_RETRIES})")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        else:
+            logger.error(f"[DLQ] Max retries exceeded, sending to DLQ")
+            send_to_dlq(ch, body, f"Unexpected error: {str(e)[:100]}", retry_count)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 def run_consumer():

@@ -80,46 +80,66 @@ def hash_content(content: str) -> str:
 
 
 def is_duplicate(content: str) -> bool:
-    """Check if content hash exists (duplicate in 1-hour window).
+    """Check if content/ID exists (duplicate in 24-hour window).
 
     Tries Redis first, falls back to in-memory cache if unavailable.
+    
+    Supports both:
+    - Full content hashing for semantic deduplication
+    - Direct ID checking for faster lookups
 
     Args:
-        content: Event content to check
+        content: Event content to check OR event ID for direct lookup
 
     Returns:
-        bool: True if content was seen in the past hour, False otherwise
+        bool: True if seen in the past 24 hours, False otherwise
     """
-    h = hash_content(content)
+    # If content is short (looks like an ID), use it directly
+    # Otherwise hash it for content comparison
+    if len(content) < 50 and not any(c in content for c in [' ', '\n', '\t']):
+        # Likely an ID, use directly with prefix
+        cache_key = f"event:{content}"
+    else:
+        # Content, hash it
+        cache_key = f"content:{hash_content(content)}"
 
     if _redis_available and _redis:
         try:
-            return _redis.exists(h) == 1
+            exists = _redis.exists(cache_key) == 1
+            if exists:
+                logger.debug(f"[DEDUP] Found in Redis: {cache_key[:50]}")
+            return exists
         except Exception as e:
             logger.warning(f"Redis check failed, using memory cache: {e}")
 
     # Fallback to in-memory cache
     _cleanup_memory_cache()
-    return h in _memory_cache
+    return cache_key in _memory_cache
 
 
-def mark_as_seen(content: str) -> None:
-    """Store content hash with 1-hour TTL.
+def mark_as_seen(content: str, ttl_seconds: int = 86400) -> None:
+    """Store content/ID with configurable TTL (default 24 hours).
 
     Tries Redis first, falls back to in-memory cache if unavailable.
 
     Args:
-        content: Event content to mark as seen
+        content: Event content to mark as seen OR event ID
+        ttl_seconds: Time-to-live in seconds (default 86400 = 24 hours)
     """
-    h = hash_content(content)
+    # If content is short (looks like an ID), use it directly
+    if len(content) < 50 and not any(c in content for c in [' ', '\n', '\t']):
+        cache_key = f"event:{content}"
+    else:
+        cache_key = f"content:{hash_content(content)}"
 
     if _redis_available and _redis:
         try:
-            _redis.setex(h, DEDUP_TTL_SECONDS, "1")
+            _redis.setex(cache_key, ttl_seconds, "1")
+            logger.debug(f"[DEDUP] Marked in Redis: {cache_key[:50]} (TTL: {ttl_seconds}s)")
             return
         except Exception as e:
             logger.warning(f"Redis mark failed, using memory cache: {e}")
 
     # Fallback to in-memory cache
-    expiry = datetime.utcnow() + timedelta(seconds=DEDUP_TTL_SECONDS)
-    _memory_cache[h] = expiry
+    expiry = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+    _memory_cache[cache_key] = expiry

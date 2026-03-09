@@ -24,6 +24,8 @@ from app.shared.utils.monitoring import (
     EVENT_PROCESSING_TIME,
     start_metrics_server,
 )
+from app.shared.utils.data_extractors import extract_rss_entry_detailed
+from app.shared.utils.validators import validate_event as validate_event_schema
 
 # RSS Feeds
 FEEDS = [
@@ -61,17 +63,19 @@ except Exception:
 
 
 def normalize_entry(entry, source):
-    content = {
-        "title": entry.get("title"),
-        "summary": entry.get("summary"),
-        "link": entry.get("link"),
-        "published": entry.get("published"),
-        "source": source,
-    }
+    """
+    Normalize and enrich RSS feed entry to Event format.
+    Extracts detailed metadata including URLs, hashtags, quality score, etc.
+    """
+    # Extract detailed content
+    content = extract_rss_entry_detailed(entry, source)
+    
     ts = datetime.utcnow()
+    
     # Entity extraction from title and summary
     text = (entry.get("title") or "") + " " + (entry.get("summary") or "")
     entities = extract_crypto_mentions(text)
+    
     return Event.create(
         source=source,
         type_="news",
@@ -83,10 +87,18 @@ def normalize_entry(entry, source):
 
 
 def validate_event(event: Event) -> bool:
+    """Validate event using schema validation"""
     if not event.id or not event.timestamp or not event.content:
         return False
     if len(str(event.content)) < 10:
         return False
+    
+    # Schema validation
+    is_valid, error_msg = validate_event_schema(event.model_dump())
+    if not is_valid:
+        logger.warning(f"[SCHEMA-VALIDATION-FAILED] {error_msg}")
+        return False
+    
     return True
 
 
