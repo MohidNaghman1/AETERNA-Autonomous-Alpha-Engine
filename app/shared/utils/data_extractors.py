@@ -138,7 +138,7 @@ def extract_rss_entry_detailed(entry: Dict[str, Any], source: str) -> Dict[str, 
     
     # Core fields
     title = entry.get("title", "").strip()
-    summary = entry.get("summary", "").or entry.get("description", "")
+    summary = entry.get("summary", "") or entry.get("description", "")
     if summary:
         summary = strip_html(summary).strip()
     
