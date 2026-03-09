@@ -16,6 +16,7 @@ from sqlalchemy import select
 import os
 import logging
 from app.shared.utils.email_utils import send_email_alert
+from app.modules.delivery.application.telegram_alert_utils import build_telegram_alert_message
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def deliver_email_alert(alert: dict, user_prefs: dict) -> bool:
     Deliver alert via email according to user preferences.
 
     Args:
-        alert: Alert object with 'title' and 'body' keys
+        alert: Alert object with 'title', 'body', and enriched fields (quality_score, risk_score, etc.)
         user_prefs: User preferences dict with 'email', 'email_frequency', 'unsubscribe'
 
     Returns:
@@ -40,12 +41,15 @@ def deliver_email_alert(alert: dict, user_prefs: dict) -> bool:
     if not email or unsubscribe or email_frequency == "off":
         return False
 
+    # Build enriched HTML email content
+    html_content = _build_alert_email_html(alert)
+
     if email_frequency == "immediate":
         try:
             send_email_alert(
                 to_email=email,
                 subject=alert["title"],
-                html_content=alert.get("body", ""),
+                html_content=html_content,
             )
             logger.info(f"[EMAIL] Alert sent to {email}")
             return True
@@ -68,6 +72,51 @@ def deliver_email_alert(alert: dict, user_prefs: dict) -> bool:
             )
             return False
     return False
+
+
+def _build_alert_email_html(alert: dict) -> str:
+    """Build enriched HTML email content from alert with enhanced fields."""
+    html_parts = [
+        f"<p><strong>{alert.get('body', '')}</strong></p>"
+    ]
+    
+    # Priority badge
+    priority = alert.get("priority", "LOW")
+    priority_color = {"HIGH": "#ff4444", "MEDIUM": "#ffaa00", "LOW": "#00aa00"}.get(priority, "#999")
+    html_parts.append(f'<p><span style="background-color: {priority_color}; color: white; padding: 5px 10px; border-radius: 5px;"><strong>Priority: {priority}</strong></span></p>')
+    
+    # Quality/Risk scores
+    if alert.get("quality_score") is not None:
+        html_parts.append(f'<p>📊 <strong>Content Quality Score:</strong> {alert.get("quality_score")}/100</p>')
+    
+    if alert.get("risk_score") is not None:
+        html_parts.append(f'<p>⚠️  <strong>Crypto Risk Score:</strong> {alert.get("risk_score")}/100</p>')
+    
+    if alert.get("volatility"):
+        html_parts.append(f'<p>📈 <strong>Volatility:</strong> {alert.get("volatility").upper()}</p>')
+    
+    if alert.get("read_time_minutes"):
+        html_parts.append(f'<p>⏱️  <strong>Read Time:</strong> ~{alert.get("read_time_minutes")} minutes</p>')
+    
+    # Alert reasons (for price alerts)
+    if alert.get("alert_reasons"):
+        html_parts.append(f'<p>🔔 <strong>Alert Reason:</strong> {alert.get("alert_reasons")}</p>')
+    
+    # URLs (for news)
+    urls = alert.get("urls", [])
+    if urls:
+        html_parts.append('<p><strong>📚 Related Links:</strong><br>')
+        for url in urls[:3]:
+            html_parts.append(f'  <a href="{url}">→ {url[:60]}...</a><br>')
+        html_parts.append('</p>')
+    
+    # Hashtags (for news)
+    hashtags = alert.get("hashtags", [])
+    if hashtags:
+        hashtags_str = " ".join([f"<code>#{tag}</code>" for tag in hashtags[:5]])
+        html_parts.append(f'<p><strong>🏷️  Topics:</strong> {hashtags_str}</p>')
+    
+    return "\n".join(html_parts)
 
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -111,10 +160,11 @@ async def send_alert_via_bot(telegram_id: int, message: str) -> bool:
 async def deliver_telegram_alert(alert: dict, user_prefs: dict) -> bool:
     """Deliver alert via Telegram according to user preferences.
 
-    Retrieves user's Telegram account link and sends formatted alert message.
+    Retrieves user's Telegram account link and sends enriched alert message with 
+    quality_score, risk_score, and other metadata.
 
     Args:
-        alert: Alert object with 'title' and 'body' keys
+        alert: Alert object with 'title', 'body', and enriched fields
         user_prefs: User preferences dict with 'email' key
 
     Returns:
@@ -140,9 +190,8 @@ async def deliver_telegram_alert(alert: dict, user_prefs: dict) -> bool:
                 logger.info(f"[TELEGRAM] User {email} has no Telegram account linked")
                 return False
 
-            title = alert.get("title", "New Alert")
-            body = alert.get("body", "")
-            message = f"🚨 {title}\n\n{body}"
+            # Build enriched message with new fields
+            message = build_telegram_alert_message(alert)
 
             success = await send_alert_via_bot(telegram_id, message)
             return success
