@@ -53,7 +53,7 @@ def fetch_prices():
     params = {
         "vs_currency": "usd",
         "order": "market_cap_desc",
-        "per_page": 100,
+        "per_page": 250,  # Increased from 100 to track top 250 coins by market cap
         "page": 1,
         "price_change_percentage": "1h,24h,7d,14d,30d,1y",  # Extended timeframes
         "include_market_cap": "true",
