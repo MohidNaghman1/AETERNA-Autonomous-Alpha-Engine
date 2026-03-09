@@ -16,7 +16,9 @@ from sqlalchemy import select
 import os
 import logging
 from app.shared.utils.email_utils import send_email_alert
-from app.modules.delivery.application.telegram_alert_utils import build_telegram_alert_message
+from app.modules.delivery.application.telegram_alert_utils import (
+    build_telegram_alert_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,46 +78,58 @@ def deliver_email_alert(alert: dict, user_prefs: dict) -> bool:
 
 def _build_alert_email_html(alert: dict) -> str:
     """Build enriched HTML email content from alert with enhanced fields."""
-    html_parts = [
-        f"<p><strong>{alert.get('body', '')}</strong></p>"
-    ]
-    
+    html_parts = [f"<p><strong>{alert.get('body', '')}</strong></p>"]
+
     # Priority badge
     priority = alert.get("priority", "LOW")
-    priority_color = {"HIGH": "#ff4444", "MEDIUM": "#ffaa00", "LOW": "#00aa00"}.get(priority, "#999")
-    html_parts.append(f'<p><span style="background-color: {priority_color}; color: white; padding: 5px 10px; border-radius: 5px;"><strong>Priority: {priority}</strong></span></p>')
-    
+    priority_color = {"HIGH": "#ff4444", "MEDIUM": "#ffaa00", "LOW": "#00aa00"}.get(
+        priority, "#999"
+    )
+    html_parts.append(
+        f'<p><span style="background-color: {priority_color}; color: white; padding: 5px 10px; border-radius: 5px;"><strong>Priority: {priority}</strong></span></p>'
+    )
+
     # Quality/Risk scores
     if alert.get("quality_score") is not None:
-        html_parts.append(f'<p>📊 <strong>Content Quality Score:</strong> {alert.get("quality_score")}/100</p>')
-    
+        html_parts.append(
+            f'<p>📊 <strong>Content Quality Score:</strong> {alert.get("quality_score")}/100</p>'
+        )
+
     if alert.get("risk_score") is not None:
-        html_parts.append(f'<p>⚠️  <strong>Crypto Risk Score:</strong> {alert.get("risk_score")}/100</p>')
-    
+        html_parts.append(
+            f'<p>⚠️  <strong>Crypto Risk Score:</strong> {alert.get("risk_score")}/100</p>'
+        )
+
     if alert.get("volatility"):
-        html_parts.append(f'<p>📈 <strong>Volatility:</strong> {alert.get("volatility").upper()}</p>')
-    
+        html_parts.append(
+            f'<p>📈 <strong>Volatility:</strong> {alert.get("volatility").upper()}</p>'
+        )
+
     if alert.get("read_time_minutes"):
-        html_parts.append(f'<p>⏱️  <strong>Read Time:</strong> ~{alert.get("read_time_minutes")} minutes</p>')
-    
+        html_parts.append(
+            f'<p>⏱️  <strong>Read Time:</strong> ~{alert.get("read_time_minutes")} minutes</p>'
+        )
+
     # Alert reasons (for price alerts)
     if alert.get("alert_reasons"):
-        html_parts.append(f'<p>🔔 <strong>Alert Reason:</strong> {alert.get("alert_reasons")}</p>')
-    
+        html_parts.append(
+            f'<p>🔔 <strong>Alert Reason:</strong> {alert.get("alert_reasons")}</p>'
+        )
+
     # URLs (for news)
     urls = alert.get("urls", [])
     if urls:
-        html_parts.append('<p><strong>📚 Related Links:</strong><br>')
+        html_parts.append("<p><strong>📚 Related Links:</strong><br>")
         for url in urls[:3]:
             html_parts.append(f'  <a href="{url}">→ {url[:60]}...</a><br>')
-        html_parts.append('</p>')
-    
+        html_parts.append("</p>")
+
     # Hashtags (for news)
     hashtags = alert.get("hashtags", [])
     if hashtags:
         hashtags_str = " ".join([f"<code>#{tag}</code>" for tag in hashtags[:5]])
-        html_parts.append(f'<p><strong>🏷️  Topics:</strong> {hashtags_str}</p>')
-    
+        html_parts.append(f"<p><strong>🏷️  Topics:</strong> {hashtags_str}</p>")
+
     return "\n".join(html_parts)
 
 
@@ -160,7 +174,7 @@ async def send_alert_via_bot(telegram_id: int, message: str) -> bool:
 async def deliver_telegram_alert(alert: dict, user_prefs: dict) -> bool:
     """Deliver alert via Telegram according to user preferences.
 
-    Retrieves user's Telegram account link and sends enriched alert message with 
+    Retrieves user's Telegram account link and sends enriched alert message with
     quality_score, risk_score, and other metadata.
 
     Args:

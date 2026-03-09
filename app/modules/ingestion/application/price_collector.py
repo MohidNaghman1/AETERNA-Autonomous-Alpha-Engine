@@ -95,20 +95,19 @@ def normalize_price_entry(entry):
     """
     # Extract detailed price content
     content = extract_price_entry_detailed(entry)
-    
+
     # Identify significant changes
     significance_info = identify_significant_changes(
-        content,
-        significance_threshold_pct=5.0
+        content, significance_threshold_pct=5.0
     )
     content.update(significance_info)
-    
+
     ts = datetime.utcnow()
-    
+
     # Entity extraction from symbol and name
     text = (entry.get("symbol") or "") + " " + (entry.get("name") or "")
     entities = extract_crypto_mentions(text)
-    
+
     return Event.create(
         source="coingecko",
         type_="price",
@@ -125,13 +124,13 @@ def validate_event(event: Event) -> bool:
         return False
     if len(str(event.content)) < 10:
         return False
-    
+
     # Schema validation
     is_valid, error_msg = validate_event_schema(event.model_dump())
     if not is_valid:
         logger.warning(f"[SCHEMA-VALIDATION-FAILED] {error_msg}")
         return False
-    
+
     return True
 
 
@@ -159,7 +158,7 @@ def run_collector():
 
             for entry in prices:
                 event = normalize_price_entry(entry)
-                
+
                 # Check for significance (5% or more change in 1h)
                 significance_info = event.content.get("significant_moves", [])
                 if not significance_info:
@@ -171,7 +170,9 @@ def run_collector():
                     skipped_duplicate += 1
                     continue
 
-                alert_reasons = event.content.get("alert_reasons", "Price movement detected")
+                alert_reasons = event.content.get(
+                    "alert_reasons", "Price movement detected"
+                )
                 logger.info(
                     f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | {alert_reasons}"
                 )

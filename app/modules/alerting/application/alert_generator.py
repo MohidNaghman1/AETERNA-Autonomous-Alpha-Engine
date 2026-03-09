@@ -138,7 +138,7 @@ def generate_alert(
         return None
     # Extract content dict (where enriched fields are stored)
     content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
-    
+
     alert = {
         "alert_id": f"alert_{event.get('id')}",
         "user_id": user_id,
@@ -153,10 +153,16 @@ def generate_alert(
         "status": "pending",
         # Enhanced fields for richer alerts (from extractors)
         "quality_score": content.get("quality_score"),  # News content quality (0-100)
-        "read_time_minutes": content.get("read_time_minutes"),  # Estimated read time (news)
+        "read_time_minutes": content.get(
+            "read_time_minutes"
+        ),  # Estimated read time (news)
         "risk_score": content.get("risk_score"),  # Crypto risk score (0-100, prices)
-        "volatility": content.get("price_volatility_category"),  # high/medium/low (prices)
-        "alert_reasons": content.get("alert_reasons"),  # Why alert was triggered (prices)
+        "volatility": content.get(
+            "price_volatility_category"
+        ),  # high/medium/low (prices)
+        "alert_reasons": content.get(
+            "alert_reasons"
+        ),  # Why alert was triggered (prices)
         "urls": content.get("urls", [])[:3],  # Top 3 relevant URLs (news)
         "hashtags": content.get("hashtags", [])[:5],  # Top 5 hashtags (news)
     }

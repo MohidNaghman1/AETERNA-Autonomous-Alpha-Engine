@@ -83,7 +83,7 @@ def is_duplicate(content: str) -> bool:
     """Check if content/ID exists (duplicate in 24-hour window).
 
     Tries Redis first, falls back to in-memory cache if unavailable.
-    
+
     Supports both:
     - Full content hashing for semantic deduplication
     - Direct ID checking for faster lookups
@@ -96,7 +96,7 @@ def is_duplicate(content: str) -> bool:
     """
     # If content is short (looks like an ID), use it directly
     # Otherwise hash it for content comparison
-    if len(content) < 50 and not any(c in content for c in [' ', '\n', '\t']):
+    if len(content) < 50 and not any(c in content for c in [" ", "\n", "\t"]):
         # Likely an ID, use directly with prefix
         cache_key = f"event:{content}"
     else:
@@ -127,7 +127,7 @@ def mark_as_seen(content: str, ttl_seconds: int = 86400) -> None:
         ttl_seconds: Time-to-live in seconds (default 86400 = 24 hours)
     """
     # If content is short (looks like an ID), use it directly
-    if len(content) < 50 and not any(c in content for c in [' ', '\n', '\t']):
+    if len(content) < 50 and not any(c in content for c in [" ", "\n", "\t"]):
         cache_key = f"event:{content}"
     else:
         cache_key = f"content:{hash_content(content)}"
@@ -135,7 +135,9 @@ def mark_as_seen(content: str, ttl_seconds: int = 86400) -> None:
     if _redis_available and _redis:
         try:
             _redis.setex(cache_key, ttl_seconds, "1")
-            logger.debug(f"[DEDUP] Marked in Redis: {cache_key[:50]} (TTL: {ttl_seconds}s)")
+            logger.debug(
+                f"[DEDUP] Marked in Redis: {cache_key[:50]} (TTL: {ttl_seconds}s)"
+            )
             return
         except Exception as e:
             logger.warning(f"Redis mark failed, using memory cache: {e}")

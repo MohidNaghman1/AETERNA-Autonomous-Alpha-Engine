@@ -60,7 +60,12 @@ def get_retry_count(properties: pika.BasicProperties) -> int:
     return 0
 
 
-def send_to_dlq(channel: pika.adapters.blocking_connection.BlockingChannel, body: bytes, error_msg: str, retry_count: int):
+def send_to_dlq(
+    channel: pika.adapters.blocking_connection.BlockingChannel,
+    body: bytes,
+    error_msg: str,
+    retry_count: int,
+):
     """Send message to Dead Letter Queue"""
     try:
         channel.queue_declare(queue=DLQ_QUEUE, durable=True)
@@ -69,17 +74,18 @@ def send_to_dlq(channel: pika.adapters.blocking_connection.BlockingChannel, body
             "x-error-message": error_msg[:500],  # Limit error message size
             "x-failed-at": datetime.utcnow().isoformat(),
         }
-        
+
         channel.basic_publish(
-            exchange='',
+            exchange="",
             routing_key=DLQ_QUEUE,
             body=body,
             properties=pika.BasicProperties(
-                delivery_mode=2,  # persistent
-                headers=headers
-            )
+                delivery_mode=2, headers=headers  # persistent
+            ),
         )
-        logger.info(f"[DLQ] Message sent to DLQ after {retry_count} retries. Error: {error_msg[:100]}")
+        logger.info(
+            f"[DLQ] Message sent to DLQ after {retry_count} retries. Error: {error_msg[:100]}"
+        )
     except Exception as e:
         logger.error(f"[DLQ-ERROR] Failed to send message to DLQ: {e}")
 
@@ -152,7 +158,9 @@ def process_event(ch, method, properties, body):
                 f"[ERROR] Data keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}"
             )
             # Invalid message format - send to DLQ (non-retriable)
-            send_to_dlq(ch, body, f"Event deserialization failed: {str(e)}", retry_count)
+            send_to_dlq(
+                ch, body, f"Event deserialization failed: {str(e)}", retry_count
+            )
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -163,7 +171,9 @@ def process_event(ch, method, properties, body):
                 f"[VALIDATION-FAILED] Event {getattr(event, 'id', None)}: {validation_error}"
             )
             # Schema validation failed - send to DLQ (non-retriable)
-            send_to_dlq(ch, body, f"Schema validation failed: {validation_error}", retry_count)
+            send_to_dlq(
+                ch, body, f"Schema validation failed: {validation_error}", retry_count
+            )
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -257,7 +267,9 @@ def process_event(ch, method, properties, body):
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
             else:
                 # Max retries exceeded - send to DLQ
-                logger.error(f"[DLQ] Max retries ({MAX_RETRIES}) exceeded, sending to DLQ")
+                logger.error(
+                    f"[DLQ] Max retries ({MAX_RETRIES}) exceeded, sending to DLQ"
+                )
                 send_to_dlq(ch, body, "Max retries exceeded", retry_count)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -272,9 +284,11 @@ def process_event(ch, method, properties, body):
         logger.error(
             f"[❌ UNEXPECTED ERROR] {type(e).__name__}: {str(e)}", exc_info=True
         )
-        
+
         if retry_count < MAX_RETRIES:
-            logger.warning(f"[RETRY] Retrying message (attempt {retry_count + 1}/{MAX_RETRIES})")
+            logger.warning(
+                f"[RETRY] Retrying message (attempt {retry_count + 1}/{MAX_RETRIES})"
+            )
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
         else:
             logger.error(f"[DLQ] Max retries exceeded, sending to DLQ")

@@ -69,13 +69,13 @@ def normalize_entry(entry, source):
     """
     # Extract detailed content
     content = extract_rss_entry_detailed(entry, source)
-    
+
     ts = datetime.utcnow()
-    
+
     # Entity extraction from title and summary
     text = (entry.get("title") or "") + " " + (entry.get("summary") or "")
     entities = extract_crypto_mentions(text)
-    
+
     return Event.create(
         source=source,
         type_="news",
@@ -92,13 +92,13 @@ def validate_event(event: Event) -> bool:
         return False
     if len(str(event.content)) < 10:
         return False
-    
+
     # Schema validation
     is_valid, error_msg = validate_event_schema(event.model_dump())
     if not is_valid:
         logger.warning(f"[SCHEMA-VALIDATION-FAILED] {error_msg}")
         return False
-    
+
     return True
 
 

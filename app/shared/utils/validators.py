@@ -10,11 +10,13 @@ from typing import List, Dict, Any, Optional
 
 class ContentSchema(BaseModel):
     """Base content schema - can be extended for specific event types"""
+
     model_config = ConfigDict(extra="allow")  # Allow additional fields
 
 
 class RSSContentSchema(ContentSchema):
     """Validation schema for RSS feed events"""
+
     title: str = Field(..., min_length=5, max_length=500)
     summary: Optional[str] = Field(None, max_length=50000)
     link: str = Field(..., min_length=10)
@@ -29,7 +31,7 @@ class RSSContentSchema(ContentSchema):
     hashtags: List[str] = Field(default_factory=list, max_items=50)
     quality_score: float = Field(default=0.0, ge=0.0, le=100.0)
 
-    @field_validator('title')
+    @field_validator("title")
     @classmethod
     def title_not_spam(cls, v: str) -> str:
         """Validate title isn't spam-like"""
@@ -40,6 +42,7 @@ class RSSContentSchema(ContentSchema):
 
 class PriceContentSchema(ContentSchema):
     """Validation schema for price feed events"""
+
     id: str = Field(..., min_length=1, max_length=100)
     symbol: str = Field(..., min_length=1, max_length=20)
     name: str = Field(..., min_length=1, max_length=200)
@@ -52,7 +55,7 @@ class PriceContentSchema(ContentSchema):
     market_cap_rank: Optional[int] = Field(None, gt=0)
     trading_volume_24h: Optional[float] = Field(None, ge=0)
     circulating_supply: Optional[float] = Field(None, ge=0)
-    
+
     # Price changes
     change_1h_pct: Optional[float] = Field(None, ge=-100, le=1000)
     change_24h_pct: Optional[float] = Field(None, ge=-100, le=1000)
@@ -61,13 +64,13 @@ class PriceContentSchema(ContentSchema):
     risk_score: float = Field(default=50.0, ge=0.0, le=100.0)
     price_volatility_category: str = Field(default="low", pattern="^(low|medium|high)$")
 
-    @field_validator('symbol')
+    @field_validator("symbol")
     @classmethod
     def symbol_uppercase(cls, v: str) -> str:
         """Ensure symbol is uppercase"""
         return v.upper()
 
-    @field_validator('current_price')
+    @field_validator("current_price")
     @classmethod
     def current_price_positive(cls, v: Optional[float]) -> Optional[float]:
         """Price must be positive if provided"""
@@ -78,50 +81,66 @@ class PriceContentSchema(ContentSchema):
 
 class EventSchema(BaseModel):
     """Main event validation schema"""
+
     model_config = ConfigDict(extra="allow")
-    
-    source: str = Field(..., min_length=1, max_length=100, description="Event source (rss, coingecko, twitter, etc)")
-    type: str = Field(..., min_length=1, max_length=50, description="Event type (news, price, sentiment, etc)")
+
+    source: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Event source (rss, coingecko, twitter, etc)",
+    )
+    type: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="Event type (news, price, sentiment, etc)",
+    )
     timestamp: datetime = Field(..., description="ISO8601 timestamp")
     content: Dict[str, Any] = Field(..., min_length=1, description="Event content")
-    entities: List[str] = Field(default_factory=list, max_items=100, description="Extracted entities (crypto names, symbols)")
+    entities: List[str] = Field(
+        default_factory=list,
+        max_items=100,
+        description="Extracted entities (crypto names, symbols)",
+    )
     raw: Optional[Dict[str, Any]] = Field(None, description="Original raw data")
 
-    @field_validator('timestamp')
+    @field_validator("timestamp")
     @classmethod
     def timestamp_not_future(cls, v: datetime) -> datetime:
         """Timestamp cannot be in the future"""
         now = datetime.utcnow()
         max_future_seconds = 300  # Allow 5 minutes for clock skew
-        
+
         if v.timestamp() > (now.timestamp() + max_future_seconds):
             raise ValueError(f"Timestamp {v} is in the future")
         return v
 
-    @field_validator('timestamp')
+    @field_validator("timestamp")
     @classmethod
     def timestamp_not_too_old(cls, v: datetime) -> datetime:
         """Timestamp shouldn't be more than 90 days old"""
         now = datetime.utcnow()
         days_old = (now - v).days
-        
+
         if days_old > 90:
             # Log warning but don't fail - some sources have old data
             pass
         return v
 
-    @field_validator('content')
+    @field_validator("content")
     @classmethod
     def content_size_limit(cls, v: Dict[str, Any]) -> Dict[str, Any]:
         """Content shouldn't exceed 1MB when serialized"""
         import json
+
         size_mb = len(json.dumps(v)) / (1024 * 1024)
-        
+
         if size_mb > 1:
             raise ValueError(f"Content too large: {size_mb:.2f}MB, max 1MB")
         return v
 
-    @field_validator('entities')
+    @field_validator("entities")
     @classmethod
     def entities_not_empty_strings(cls, v: List[str]) -> List[str]:
         """Remove empty strings from entities"""
@@ -138,11 +157,14 @@ class EventSchema(BaseModel):
                 PriceContentSchema.model_validate(self.content)
             return True
         except Exception as e:
-            raise ValueError(f"Type-specific validation failed for {self.type}: {str(e)}")
+            raise ValueError(
+                f"Type-specific validation failed for {self.type}: {str(e)}"
+            )
 
 
 class EventProcessingLogSchema(BaseModel):
     """Schema for event processing audit log"""
+
     event_id: int = Field(..., gt=0)
     source: str = Field(..., max_length=50)
     status: str = Field(..., pattern="^(pending|processing|success|failed)$")
@@ -155,7 +177,7 @@ class EventProcessingLogSchema(BaseModel):
 def validate_event(event: Dict[str, Any]) -> tuple[bool, Optional[str]]:
     """
     Validate event and return (is_valid, error_message).
-    
+
     Safer than raising exceptions - can be used in pipelines.
     """
     try:
@@ -168,7 +190,7 @@ def validate_event(event: Dict[str, Any]) -> tuple[bool, Optional[str]]:
 def validate_event_strict(event: Dict[str, Any]) -> EventSchema:
     """
     Validate event and return validated object or raise exception.
-    
+
     Use for critical paths where strict validation is needed.
     """
     return EventSchema(**event)
