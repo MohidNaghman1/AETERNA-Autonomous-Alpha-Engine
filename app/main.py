@@ -168,14 +168,9 @@ def system_health():
     diagnostics = {}
 
     # Check RabbitMQ
-    rabbitmq_host = os.getenv("RABBITMQ_HOST", "localhost")
-    rabbitmq_user = os.getenv("RABBITMQ_USER", "guest")
-    rabbitmq_password = os.getenv("RABBITMQ_PASSWORD", "guest")
+    rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
     try:
-        credentials = pika.PlainCredentials(rabbitmq_user, rabbitmq_password)
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials)
-        )
+        connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
         connection.close()
         diagnostics["rabbitmq"] = "✅ Connected"
     except Exception as e:
@@ -184,8 +179,8 @@ def system_health():
     # Check Redis
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
-        # For Redis Cloud (rediss://), use skip_full_coverage_check to bypass SSL validation
-        r = redis.from_url(redis_url, decode_responses=True, skip_full_coverage_check=True)
+        # For Redis Cloud (rediss://), disable SSL verification
+        r = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs="none")
         r.ping()
         diagnostics["redis"] = "✅ Connected"
     except Exception as e:
