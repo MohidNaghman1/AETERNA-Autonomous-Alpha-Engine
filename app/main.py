@@ -184,7 +184,8 @@ def system_health():
     # Check Redis
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
-        r = redis.from_url(redis_url, decode_responses=True)
+        # For Redis Cloud (rediss://), use skip_full_coverage_check to bypass SSL validation
+        r = redis.from_url(redis_url, decode_responses=True, skip_full_coverage_check=True)
         r.ping()
         diagnostics["redis"] = "✅ Connected"
     except Exception as e:
