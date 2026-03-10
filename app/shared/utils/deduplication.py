@@ -29,12 +29,8 @@ def _init_redis():
     """Initialize Redis connection with error handling."""
     global _redis, _redis_available
     try:
-        # For Redis Cloud (rediss://), use connection_pool_kwargs for SSL settings
-        _redis = redis.from_url(
-            REDIS_URL,
-            decode_responses=True,
-            connection_pool_kwargs={"ssl_check_hostname": False}
-        )
+        # For Redis Cloud (rediss://), redis-py auto-detects and uses SSL
+        _redis = redis.from_url(REDIS_URL, decode_responses=True)
         # Test connection
         _redis.ping()
         _redis_available = True
