@@ -29,8 +29,12 @@ def _init_redis():
     """Initialize Redis connection with error handling."""
     global _redis, _redis_available
     try:
-        # For Redis Cloud (rediss://), disable hostname checking for self-signed certs
-        _redis = redis.from_url(REDIS_URL, decode_responses=True, ssl_check_hostname=False)
+        import ssl
+        # For Redis Cloud (rediss://), create SSL context with proper settings
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        _redis = redis.from_url(REDIS_URL, decode_responses=True, ssl_context=ssl_context)
         # Test connection
         _redis.ping()
         _redis_available = True
