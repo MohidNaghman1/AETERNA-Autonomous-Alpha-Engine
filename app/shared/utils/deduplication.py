@@ -15,11 +15,7 @@ from typing import Set, Tuple
 logger = logging.getLogger(__name__)
 
 # Placeholder: Load from .env or settings
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = int(os.getenv("REDIS_DB", 0))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
-REDIS_URL = os.getenv("REDIS_URL")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 DEDUP_TTL_SECONDS = 3600  # 1 hour
 
 # Redis connection (singleton, optional)
@@ -33,18 +29,7 @@ def _init_redis():
     """Initialize Redis connection with error handling."""
     global _redis, _redis_available
     try:
-        if REDIS_URL:
-            _redis = redis.from_url(REDIS_URL, decode_responses=True)
-        else:
-            _redis = redis.StrictRedis(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
-                db=REDIS_DB,
-                password=REDIS_PASSWORD,
-                decode_responses=True,
-                socket_connect_timeout=2,
-                socket_timeout=2,
-            )
+        _redis = redis.from_url(REDIS_URL, decode_responses=True)
         # Test connection
         _redis.ping()
         _redis_available = True

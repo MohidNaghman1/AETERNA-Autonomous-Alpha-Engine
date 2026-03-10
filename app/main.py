@@ -182,10 +182,9 @@ def system_health():
         diagnostics["rabbitmq"] = f"❌ Error: {str(e)}"
 
     # Check Redis
-    redis_host = os.getenv("REDIS_HOST", "localhost")
-    redis_port = os.getenv("REDIS_PORT", 6379)
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
-        r = redis.Redis(host=redis_host, port=int(redis_port), decode_responses=True)
+        r = redis.from_url(redis_url, decode_responses=True)
         r.ping()
         diagnostics["redis"] = "✅ Connected"
     except Exception as e:
