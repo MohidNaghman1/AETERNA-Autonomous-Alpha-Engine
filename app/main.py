@@ -179,12 +179,12 @@ def system_health():
     # Check Redis
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
-        import ssl
-        # For Redis Cloud (rediss://), create SSL context with proper settings
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        r = redis.from_url(redis_url, decode_responses=True, ssl_context=ssl_context)
+        # For Redis Cloud (rediss://), use connection_pool_kwargs for SSL settings
+        r = redis.from_url(
+            redis_url, 
+            decode_responses=True,
+            connection_pool_kwargs={"ssl_check_hostname": False}
+        )
         r.ping()
         diagnostics["redis"] = "✅ Connected"
     except Exception as e:
