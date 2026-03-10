@@ -4,7 +4,7 @@ Ensures data quality and consistency before storage.
 """
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 
@@ -109,7 +109,7 @@ class EventSchema(BaseModel):
     @classmethod
     def timestamp_not_future(cls, v: datetime) -> datetime:
         """Timestamp cannot be in the future"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         max_future_seconds = 300  # Allow 5 minutes for clock skew
 
         if v.timestamp() > (now.timestamp() + max_future_seconds):
@@ -120,7 +120,7 @@ class EventSchema(BaseModel):
     @classmethod
     def timestamp_not_too_old(cls, v: datetime) -> datetime:
         """Timestamp shouldn't be more than 90 days old"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         days_old = (now - v).days
 
         if days_old > 90:
