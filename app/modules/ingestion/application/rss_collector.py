@@ -76,6 +76,17 @@ def normalize_entry(entry, source):
     text = (entry.get("title") or "") + " " + (entry.get("summary") or "")
     entities = extract_crypto_mentions(text)
 
+    # DEBUG: Log what was extracted
+    logger.debug(
+        f"[RSS-EXTRACT] Title: {entry.get('title', 'N/A')[:60]}"
+    )
+    logger.debug(
+        f"[RSS-EXTRACT] Hashtags: {content.get('hashtags', [])}"
+    )
+    logger.debug(
+        f"[RSS-EXTRACT] Mentions: {content.get('mentions', [])}"
+    )
+
     return Event.create(
         source=source,
         type_="news",
