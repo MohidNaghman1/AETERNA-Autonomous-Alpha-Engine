@@ -268,7 +268,9 @@ async def mark_alert_read(
         await db.refresh(alert)
 
         logger.info(f"Alert {alert_id} marked as read by user {current_user.id}")
-        return convert_alert_orm_to_schema(alert)
+        # Return enriched alert with event details
+        enriched = await convert_alert_with_event(db, alert)
+        return enriched
 
     except HTTPException:
         raise
