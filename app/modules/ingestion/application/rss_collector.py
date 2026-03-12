@@ -48,7 +48,7 @@ publisher = RabbitMQPublisher(queue_name=RABBITMQ_QUEUE)
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger("rss-collector")
 
