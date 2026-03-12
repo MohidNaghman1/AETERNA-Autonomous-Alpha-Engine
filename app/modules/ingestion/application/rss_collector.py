@@ -50,7 +50,23 @@ publisher = RabbitMQPublisher(queue_name=RABBITMQ_QUEUE)
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s"
 )
+
+# Ensure root logger is also at DEBUG
+logging.getLogger().setLevel(logging.DEBUG)
+
 logger = logging.getLogger("rss-collector")
+logger.setLevel(logging.DEBUG)
+
+# Set handler levels to DEBUG
+for handler in logger.handlers:
+    handler.setLevel(logging.DEBUG)
+
+# Also set root logger handlers
+for handler in logging.getLogger().handlers:
+    handler.setLevel(logging.DEBUG)
+
+# Diagnostic: Log the logger configuration at startup
+logger.info(f"Logger level: {logger.level}, Effective level: {logger.getEffectiveLevel()}")
 
 RETRY_ATTEMPTS = 3
 POLL_INTERVAL = 60  # seconds
