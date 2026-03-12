@@ -37,6 +37,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("event-consumer")
 
+# Reduce pika verbosity
+logging.getLogger("pika").setLevel(logging.WARNING)
+
 RABBITMQ_URL = os.getenv("RABBITMQ_URL")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))

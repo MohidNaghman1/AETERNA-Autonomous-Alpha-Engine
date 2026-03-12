@@ -65,6 +65,9 @@ for handler in logger.handlers:
 for handler in logging.getLogger().handlers:
     handler.setLevel(logging.DEBUG)
 
+# Reduce pika verbosity - it's too noisy
+logging.getLogger("pika").setLevel(logging.WARNING)
+
 # Diagnostic: Log the logger configuration at startup
 logger.info(f"Logger level: {logger.level}, Effective level: {logger.getEffectiveLevel()}")
 
