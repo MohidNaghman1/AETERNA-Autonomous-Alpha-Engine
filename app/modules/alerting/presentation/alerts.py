@@ -8,12 +8,13 @@ from fastapi import APIRouter, HTTPException, Query, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.config.db import AsyncSessionLocal
 from app.shared.application.dependencies import get_db, get_current_user
 from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
 from app.modules.alerting.presentation.schema import Alert, AlertDismissResponse
+from app.modules.ingestion.infrastructure.models import EventORM
 from datetime import datetime, timedelta
 from typing import List, Optional
 import csv
@@ -48,9 +49,10 @@ async def get_alerts_query(
         limit: Number of results (max 100)
 
     Returns:
-        List of Alert ORM objects
+        List of Alert ORM objects with related events
     """
     # Get both user's personal alerts AND system broadcast alerts (user_id=0)
+    # Join with Event to fetch related event details
     query = select(AlertORM).where(
         (AlertORM.user_id == user_id) | (AlertORM.user_id == 0)
     )
@@ -87,13 +89,52 @@ def convert_alert_orm_to_schema(alert: AlertORM) -> Alert:
     Returns:
         Alert: Pydantic schema object
     """
+    # Safely extract fields from alert - only use fields that exist on the model
+    # The ORM model has: id, user_id, event_id, channels, status, sent_at, created_at
     return Alert(
         alert_id=str(alert.id),
         created_at=alert.created_at.isoformat() if alert.created_at else "",
-        title=alert.alert_id,
-        priority=alert.priority,
-        entity=None,  # Not in ORM model yet
-        status=alert.status,
+        title=f"Event {alert.event_id}",  # Title from related event
+        priority=None,  # Priority should come from event if available
+        entity=None,  # Entity can be extracted from event content
+        status=alert.status or "pending",
+        read_at=alert.sent_at.isoformat() if alert.sent_at else None,
+    )
+
+
+async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
+    """Convert Alert ORM with enriched event data.
+
+    Args:
+        db: Database session
+        alert: Alert ORM model instance
+
+    Returns:
+        Alert: Pydantic schema with event details
+    """
+    # Fetch the related event
+    result = await db.execute(select(EventORM).where(EventORM.id == alert.event_id))
+    event = result.scalars().first()
+
+    # Extract data from event content if available
+    title = "Alert"
+    priority = None
+    entity = None
+
+    if event and event.content:
+        title = event.content.get("title", f"Event {alert.event_id}")
+        priority = event.content.get("priority")
+        # Extract entity from mentions or hashtags
+        mentions = event.content.get("mentions", [])
+        entity = mentions[0] if mentions else None
+
+    return Alert(
+        alert_id=str(alert.id),
+        created_at=alert.created_at.isoformat() if alert.created_at else "",
+        title=title,
+        priority=priority,
+        entity=entity,
+        status=alert.status or "pending",
         read_at=alert.sent_at.isoformat() if alert.sent_at else None,
     )
 
@@ -131,7 +172,13 @@ async def alert_history(
             limit=limit,
         )
 
-        return [convert_alert_orm_to_schema(alert) for alert in alerts]
+        # Enrich alerts with event details
+        enriched_alerts = []
+        for alert in alerts:
+            enriched = await convert_alert_with_event(db, alert)
+            enriched_alerts.append(enriched)
+
+        return enriched_alerts
 
     except Exception as e:
         logger.error(f"Error fetching alert history for user {current_user.id}: {e}")
@@ -170,7 +217,9 @@ async def get_alert(
             )
             raise HTTPException(status_code=404, detail="Alert not found")
 
-        return convert_alert_orm_to_schema(alert)
+        # Enrich with event details
+        enriched = await convert_alert_with_event(db, alert)
+        return enriched
 
     except HTTPException:
         raise
