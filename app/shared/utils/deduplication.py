@@ -7,6 +7,7 @@ Prevents duplicate alerts from being sent.
 
 import hashlib
 import redis
+import ssl
 import os
 import logging
 from datetime import datetime, timedelta
@@ -51,7 +52,7 @@ def _init_redis():
                     password=password,
                     db=db,
                     ssl=True,
-                    ssl_cert_reqs="none",
+                    ssl_cert_reqs=ssl.CERT_NONE,
                     decode_responses=True
                 )
             else:

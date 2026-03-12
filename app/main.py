@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import pika
 import redis
+import ssl
 import os
 import threading
 import traceback
@@ -199,7 +200,7 @@ def system_health():
                     password=password,
                     db=db,
                     ssl=True,
-                    ssl_cert_reqs="none",
+                    ssl_cert_reqs=ssl.CERT_NONE,
                     decode_responses=True
                 )
             else:
