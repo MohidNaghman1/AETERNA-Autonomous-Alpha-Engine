@@ -29,6 +29,7 @@ from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
 from app.modules.ingestion.application.consumer import run_consumer_poll
+from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
@@ -80,6 +81,14 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[CONSUMER] Error: {e}")
 
+        def run_intelligence_scoring():
+            try:
+                count = run_intelligence_poll(batch_size=50)
+                if count > 0:
+                    print(f"[INTELLIGENCE] Scored {count} events")
+            except Exception as e:
+                print(f"[INTELLIGENCE] Error: {e}")
+
         background_scheduler.add_job(
             run_rss_collector, "interval", seconds=60, id="rss_collector"
         )
@@ -89,9 +98,12 @@ async def lifespan(app: FastAPI):
         background_scheduler.add_job(
             run_consumer_polling, "interval", seconds=3, id="consumer_poller"
         )
+        background_scheduler.add_job(
+            run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
+        )
         background_scheduler.start()
         print(
-            "[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s)"
+            "[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s), Intelligence(50events/5s)"
         )
     except Exception as e:
         print(f"[STARTUP] ❌ Scheduler failed: {e}")

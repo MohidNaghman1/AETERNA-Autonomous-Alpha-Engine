@@ -1,15 +1,23 @@
 """
-RabbitMQ Consumer for Agent A Event Processing
+Consumer for Agent A Event Processing (Intelligence Pipeline)
+- Reads events from EventORM table
+- Scores events using Agent A
+- Creates ProcessedEvent records
+- Generates HIGH/MEDIUM priority alerts
 """
 
 import json
 import pika
 import os
+import logging
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError
 from app.modules.intelligence.application.agent_a import score_event
 from app.modules.intelligence.infrastructure.models import ProcessedEvent
+from app.modules.ingestion.infrastructure.models import EventORM
 from app.config.db import SessionLocal  # Use synchronous session for pika consumer
 from app.modules.alerting.application.alert_generator import generate_alert
+from sqlalchemy import and_
 
 # Optionally load .env for local dev
 try:
@@ -19,6 +27,10 @@ try:
 except ImportError:
     pass
 
+# Setup logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("intelligence-consumer")
+
 RABBITMQ_HOST = os.environ.get("RABBITMQ_HOST", "localhost")
 QUEUE_NAME = os.environ.get("RABBITMQ_QUEUE", "events")
 
@@ -27,6 +39,44 @@ QUEUE_NAME = os.environ.get("RABBITMQ_QUEUE", "events")
 def get_recent_event_embeddings():
     # Return a list of embeddings from recent events (last 30 min)
     return []
+
+
+def _generate_alert_for_scored_event(event_orm, event_dict, priority, score):
+    """
+    Helper function to generate alerts for HIGH/MEDIUM priority events.
+    
+    Args:
+        event_orm: EventORM instance (with content field)
+        event_dict: Dict representation of event
+        priority: Priority level (HIGH, MEDIUM, LOW)
+        score: Numerical score
+    
+    Returns:
+        Generated alert dict or None if filtered
+    """
+    if priority not in ("HIGH", "MEDIUM"):
+        return None
+    
+    try:
+        alert_event = {
+            "id": str(event_orm.id),
+            "user_id": None,  # System broadcast
+            "priority": priority,
+            "score": score,
+            "title": event_orm.content.get("title", "New Alert") if event_orm.content else "New Alert",
+            "content": event_orm.content or {},
+        }
+        
+        alert = generate_alert(alert_event, user_prefs=None)
+        if alert:
+            logger.info(f"[ALERT] 🚨 Generated {priority} priority alert for event {event_orm.id[:16]}...")
+            return alert
+        else:
+            logger.debug(f"[ALERT] Alert filtered (rate limit/quiet hours) for event {event_orm.id[:16]}...")
+            return None
+    except Exception as e:
+        logger.error(f"[ALERT] Failed to generate alert: {type(e).__name__}: {str(e)[:100]}")
+        return None
 
 
 def save_processed_event(event: dict, scores: dict):
@@ -52,37 +102,6 @@ def save_processed_event(event: dict, scores: dict):
             f"[DB] ✅ Saved processed event {event['id']} | Priority: {scores.get('priority')} | Score: {scores.get('score'):.2f}"
         )
 
-        # Generate alerts for HIGH and MEDIUM priority events
-        priority = scores.get("priority", "LOW")
-        if priority in ("HIGH", "MEDIUM"):
-            try:
-                # Prepare event data for alert generation
-                alert_event = {
-                    "id": event.get("id"),
-                    "user_id": 0,  # System broadcast alert for all users
-                    "priority": priority,
-                    "score": scores.get("score", 0),
-                    "title": event.get("content", {}).get(
-                        "title", f"{priority} Priority Event"
-                    ),
-                    "summary": event.get("content", {}).get("summary", ""),
-                    "text": event.get("content", {}).get("text", ""),
-                }
-
-                alert = generate_alert(alert_event, user_prefs=None)
-                if alert:
-                    print(
-                        f"[ALERT] 🚨 Generated {priority} priority alert for event {event['id']}"
-                    )
-                else:
-                    print(
-                        f"[ALERT] ⚠️  Alert filtered out for event {event['id']} (check rate limit/quiet hours)"
-                    )
-            except Exception as e:
-                print(
-                    f"[ALERT] ❌ Failed to generate alert for event {event['id']}: {str(e)}"
-                )
-
         return processed_event
     except Exception as e:
         db.rollback()
@@ -103,8 +122,9 @@ def process_event(ch, method, properties, body):
     1. Parse JSON message
     2. Score event using Agent A
     3. Save to database
-    4. On success: ACK (remove from queue)
-    5. On failure: NACK (return to queue for retry)
+    4. Generate alerts if HIGH/MEDIUM priority
+    5. On success: ACK (remove from queue)
+    6. On failure: NACK (return to queue for retry)
     """
     try:
         event = json.loads(body)
@@ -147,6 +167,113 @@ def start_consumer():
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=QUEUE_NAME, on_message_callback=process_event)
     channel.start_consuming()
+
+def run_intelligence_poll(batch_size: int = 50) -> int:
+    processed_count = 0
+    db = None
+    
+    try:
+        db = SessionLocal()
+        
+        # Single query with JOIN to avoid subquery race condition
+        # Use EXISTS for efficiency
+        already_processed_ids = db.query(ProcessedEvent.id)
+        
+        unprocessed_events = (
+            db.query(EventORM)
+            .filter(~EventORM.id.in_(already_processed_ids))
+            .limit(batch_size)
+            .all()
+        )
+        
+        if not unprocessed_events:
+            logger.debug("[INTELLIGENCE-POLL] No unprocessed events found")
+            return 0
+        
+        logger.info(f"[INTELLIGENCE-POLL] Processing {len(unprocessed_events)} unprocessed events")
+        
+        for event_orm in unprocessed_events:
+            try:
+                # Check again inside the loop to guard against concurrent polls
+                existing = db.query(ProcessedEvent).filter(
+                    ProcessedEvent.id == str(event_orm.id)
+                ).first()
+                if existing:
+                    logger.debug(f"[INTELLIGENCE-POLL] Skipping already-processed event {str(event_orm.id)[:16]}")
+                    continue
+
+                event_dict = {
+                    "id": str(event_orm.id),
+                    "source": event_orm.source,
+                    "type": event_orm.type,
+                    "timestamp": event_orm.timestamp.isoformat() if event_orm.timestamp else None,
+                    "content": event_orm.content or {},
+                }
+                
+                scores = score_event(event_dict)
+                priority = scores.get("priority", "LOW")
+                score = scores.get("score", 0)
+                
+                # Save ProcessedEvent and update EventORM content in a single commit
+                processed_event = ProcessedEvent(
+                    id=str(event_orm.id),
+                    user_id=None,
+                    priority=priority,
+                    score=score,
+                    multi_source=scores.get("multi_source", 0),
+                    engagement=scores.get("engagement", 0),
+                    bot=scores.get("bot", 0),
+                    dedup=scores.get("dedup", 0),
+                    event_data=event_dict,
+                    timestamp=datetime.utcnow(),
+                )
+                db.add(processed_event)
+                
+                # Update priority in content in the same commit
+                # IMPORTANT: Copy dict before mutation - SQLAlchemy may not detect in-place mutations
+                if event_orm.content is None:
+                    event_orm.content = {}
+                updated_content = dict(event_orm.content)
+                updated_content["priority"] = priority
+                event_orm.content = updated_content
+                db.add(event_orm)
+                
+                db.commit()  # Single commit for both changes
+                db.refresh(processed_event)
+                
+                logger.info(
+                    f"[INTELLIGENCE] ✅ Scored event {str(event_orm.id)[:16]}... | Priority: {priority} | Score: {score:.2f}"
+                )
+                
+                _generate_alert_for_scored_event(event_orm, event_dict, priority, score)
+                processed_count += 1
+                
+            except IntegrityError as e:
+                # Another concurrent poll inserted this event between our check and commit
+                logger.warning(
+                    f"[INTELLIGENCE] ⚠️ Concurrent insert detected for event {str(event_orm.id)[:16]}... "
+                    f"(another poll processed it first)"
+                )
+                db.rollback()
+                # Don't increment processed_count since this poll didn't actually process it
+                continue
+                
+            except Exception as e:
+                logger.error(
+                    f"[INTELLIGENCE] ❌ Failed to process event {str(event_orm.id)[:16]}...: "
+                    f"{type(e).__name__}: {str(e)[:100]}"
+                )
+                db.rollback()
+                continue
+        
+        return processed_count
+        
+    except Exception as e:
+        logger.error(f"[INTELLIGENCE-POLL] Error: {type(e).__name__}: {str(e)[:200]}")
+        return 0
+    finally:
+        if db:
+            db.close()
 
 
 if __name__ == "__main__":
