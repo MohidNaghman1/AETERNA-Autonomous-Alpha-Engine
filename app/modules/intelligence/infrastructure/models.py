@@ -10,7 +10,7 @@ from datetime import datetime
 class ProcessedEvent(Base):
     __tablename__ = "processed_events"
 
-    id = Column(String, primary_key=True)  # Use event id from source
+    id = Column(Integer, primary_key=True)  # Match EventORM.id - store actual event ID, not auto-increment
     user_id = Column(String, index=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     priority = Column(String, index=True)

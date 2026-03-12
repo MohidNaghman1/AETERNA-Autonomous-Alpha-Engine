@@ -68,11 +68,12 @@ def _generate_alert_for_scored_event(event_orm, event_dict, priority, score):
         }
         
         alert = generate_alert(alert_event, user_prefs=None)
+        event_id_str = str(event_orm.id)
         if alert:
-            logger.info(f"[ALERT] 🚨 Generated {priority} priority alert for event {event_orm.id[:16]}...")
+            logger.info(f"[ALERT] 🚨 Generated {priority} priority alert for event {event_id_str}...")
             return alert
         else:
-            logger.debug(f"[ALERT] Alert filtered (rate limit/quiet hours) for event {event_orm.id[:16]}...")
+            logger.debug(f"[ALERT] Alert filtered (rate limit/quiet hours) for event {event_id_str}...")
             return None
     except Exception as e:
         logger.error(f"[ALERT] Failed to generate alert: {type(e).__name__}: {str(e)[:100]}")
@@ -84,7 +85,7 @@ def save_processed_event(event: dict, scores: dict):
     db = SessionLocal()
     try:
         processed_event = ProcessedEvent(
-            id=event.get("id"),
+            id=int(event.get("id", 0)),  # Convert event id to integer
             user_id=event.get("user_id"),
             priority=scores.get("priority", "LOW"),
             score=scores.get("score", 0),
@@ -175,8 +176,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
     try:
         db = SessionLocal()
         
-        # Single query with JOIN to avoid subquery race condition
-        # Use EXISTS for efficiency
+        # Both EventORM.id and ProcessedEvent.id are integers - no casting needed
         already_processed_ids = db.query(ProcessedEvent.id)
         
         unprocessed_events = (
@@ -196,10 +196,10 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
             try:
                 # Check again inside the loop to guard against concurrent polls
                 existing = db.query(ProcessedEvent).filter(
-                    ProcessedEvent.id == str(event_orm.id)
+                    ProcessedEvent.id == event_orm.id
                 ).first()
                 if existing:
-                    logger.debug(f"[INTELLIGENCE-POLL] Skipping already-processed event {str(event_orm.id)[:16]}")
+                    logger.debug(f"[INTELLIGENCE-POLL] Skipping already-processed event {event_orm.id}")
                     continue
 
                 event_dict = {
@@ -216,7 +216,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 
                 # Save ProcessedEvent and update EventORM content in a single commit
                 processed_event = ProcessedEvent(
-                    id=str(event_orm.id),
+                    id=event_orm.id,  # Store as integer (matches EventORM.id)
                     user_id=None,
                     priority=priority,
                     score=score,
@@ -242,7 +242,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 db.refresh(processed_event)
                 
                 logger.info(
-                    f"[INTELLIGENCE] ✅ Scored event {str(event_orm.id)[:16]}... | Priority: {priority} | Score: {score:.2f}"
+                    f"[INTELLIGENCE] ✅ Scored event {event_orm.id} | Priority: {priority} | Score: {score:.2f}"
                 )
                 
                 _generate_alert_for_scored_event(event_orm, event_dict, priority, score)
@@ -251,7 +251,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
             except IntegrityError as e:
                 # Another concurrent poll inserted this event between our check and commit
                 logger.warning(
-                    f"[INTELLIGENCE] ⚠️ Concurrent insert detected for event {str(event_orm.id)[:16]}... "
+                    f"[INTELLIGENCE] ⚠️ Concurrent insert detected for event {event_orm.id} "
                     f"(another poll processed it first)"
                 )
                 db.rollback()
@@ -260,7 +260,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 
             except Exception as e:
                 logger.error(
-                    f"[INTELLIGENCE] ❌ Failed to process event {str(event_orm.id)[:16]}...: "
+                    f"[INTELLIGENCE] ❌ Failed to process event {event_orm.id}: "
                     f"{type(e).__name__}: {str(e)[:100]}"
                 )
                 db.rollback()
