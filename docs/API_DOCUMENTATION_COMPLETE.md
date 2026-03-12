@@ -536,24 +536,46 @@ username=user@example.com&password=securepassword123
 [
   {
     "id": 1,
-    "source": "coindesk",
+    "source": "www.coindesk.com",
     "type": "news",
-    "timestamp": "2026-03-01T15:30:00",
+    "timestamp": "2026-03-12T15:30:00Z",
     "content": {
-      "title": "Bitcoin Reaches New High",
-      "summary": "Bitcoin price surges past $50,000",
-      "link": "https://coindesk.com/..."
+      "title": "Morning Minute: Saylor Buys $1.28B in Bitcoin",
+      "summary": "Bitcoin purchases push total holdings higher",
+      "link": "https://coindesk.com/...",
+      "author": "Author Name",
+      "categories": ["Markets", "Bitcoin"],
+      "hashtags": ["bitcoin", "kraken", "token", "markets"],
+      "mentions": ["bitcoin", "kraken", "token"],
+      "urls": ["https://coindesk.com/..."],
+      "word_count": 450,
+      "read_time_minutes": 2,
+      "has_image": true,
+      "quality_score": 72,
+      "event_hash": "d4a337e8dc1758ec4672a4c47ce50ef20371c92283107c51f705abeb3f778e0b"
     }
   },
   {
     "id": 2,
     "source": "coingecko",
     "type": "price",
-    "timestamp": "2026-03-01T15:35:00",
+    "timestamp": "2026-03-12T15:35:00Z",
     "content": {
+      "id": "bitcoin",
       "symbol": "BTC",
-      "price": 50234.5,
-      "change_24h": 3.45
+      "name": "Bitcoin",
+      "current_price": 50234.5,
+      "price_change_1h_pct": 1.25,
+      "price_change_24h_pct": 3.45,
+      "price_change_7d_pct": 5.67,
+      "ath": 52000,
+      "atl": 16500,
+      "market_cap": 987654321000,
+      "trading_volume_24h": 45678901234,
+      "significant_moves": ["Up 5.2% in 24h"],
+      "should_alert": true,
+      "alert_reasons": "Significant 24h move (5% threshold)",
+      "event_hash": "e1506ec50707c25dd1a27b4a7496efc3566c14709afd34924d7384fef0571dae"
     }
   }
 ]
@@ -580,13 +602,23 @@ username=user@example.com&password=securepassword123
 ```json
 {
   "id": 1,
-  "source": "coindesk",
+  "source": "www.coindesk.com",
   "type": "news",
-  "timestamp": "2026-03-01T15:30:00",
+  "timestamp": "2026-03-12T15:30:00Z",
   "content": {
     "title": "Bitcoin Reaches New High",
     "summary": "Bitcoin price surges past $50,000",
-    "link": "https://coindesk.com/..."
+    "link": "https://coindesk.com/...",
+    "author": "John Smith",
+    "categories": ["Markets", "Bitcoin"],
+    "hashtags": ["bitcoin", "markets", "rally"],
+    "mentions": ["bitcoin", "ethereum"],
+    "urls": ["https://coindesk.com/..."],
+    "word_count": 320,
+    "read_time_minutes": 2,
+    "has_image": true,
+    "quality_score": 68,
+    "event_hash": "abc123def456..."
   }
 }
 ```
@@ -785,25 +817,36 @@ Available via /api/alerts/history for all authenticated users
 ```json
 [
   {
-    "alert_id": "1",
-    "created_at": "2026-03-01T15:30:00",
-    "title": "alert_1",
+    "alert_id": "51555",
+    "created_at": "2026-03-12T09:51:51",
+    "title": "Tokenized crude oil: Inside LITRO's blockchain pilot",
     "priority": "HIGH",
-    "entity": null,
+    "entity": "blockchain",
     "status": "pending",
     "read_at": null
   },
   {
-    "alert_id": "2",
-    "created_at": "2026-03-01T15:35:00",
-    "title": "alert_2",
+    "alert_id": "51556",
+    "created_at": "2026-03-12T10:15:22",
+    "title": "Bitcoin Price Alert - Near ATH",
     "priority": "MEDIUM",
-    "entity": null,
+    "entity": "bitcoin",
     "status": "read",
-    "read_at": "2026-03-01T15:40:00"
+    "read_at": "2026-03-12T10:20:00"
+  },
+  {
+    "alert_id": "51557",
+    "created_at": "2026-03-12T11:30:45",
+    "title": "DeFi Protocol Update",
+    "priority": "MEDIUM",
+    "entity": "defi",
+    "status": "pending",
+    "read_at": null
   }
 ]
 ```
+
+**Note:** The `title` field now contains the actual event content (news headline or price alert reason), `entity` contains the primary cryptocurrency entity extracted from the event, and alerts are enriched from related event data.
 
 **Error Response:** `401 Unauthorized`
 
@@ -829,7 +872,19 @@ Available via /api/alerts/history for all authenticated users
 | --------- | ------- | ----------- |
 | alert_id  | integer | Alert ID    |
 
-**Response:** `200 OK` (Single alert object)
+**Response:** `200 OK`
+
+```json
+{
+  "alert_id": "51555",
+  "created_at": "2026-03-12T09:51:51",
+  "title": "Tokenized crude oil: Inside LITRO's blockchain pilot ahead of its 2027 launch",
+  "priority": "HIGH",
+  "entity": "blockchain",
+  "status": "pending",
+  "read_at": null
+}
+```
 
 **Error Response:** `404 Not Found` or `403 Forbidden`
 
@@ -859,13 +914,13 @@ Available via /api/alerts/history for all authenticated users
 
 ```json
 {
-  "alert_id": "1",
-  "created_at": "2026-03-01T15:30:00",
-  "title": "alert_1",
+  "alert_id": "51555",
+  "created_at": "2026-03-12T09:51:51",
+  "title": "Tokenized crude oil: Inside LITRO's blockchain pilot",
   "priority": "HIGH",
-  "entity": null,
+  "entity": "blockchain",
   "status": "read",
-  "read_at": "2026-03-01T16:30:00"
+  "read_at": "2026-03-12T10:15:22"
 }
 ```
 
