@@ -3,13 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import pika
 import redis
-import ssl
 import os
 import threading
 import traceback
 import time
 from dotenv import load_dotenv
-from urllib.parse import urlparse
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 import socketio
 from socketio import ASGIApp
@@ -181,40 +179,7 @@ def system_health():
     # Check Redis
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
-        # Parse URL to extract connection details
-        if redis_url.startswith(("redis://", "rediss://")):
-            parsed = urlparse(redis_url)
-            
-            host = parsed.hostname
-            port = parsed.port or (6380 if parsed.scheme == "rediss" else 6379)
-            username = parsed.username
-            password = parsed.password
-            db = int(parsed.path.lstrip("/")) if parsed.path and parsed.path != "/" else 0
-            use_ssl = parsed.scheme == "rediss"
-            
-            if use_ssl:
-                r = redis.Redis(
-                    host=host,
-                    port=port,
-                    username=username,
-                    password=password,
-                    db=db,
-                    ssl=True,
-                    ssl_cert_reqs=ssl.CERT_NONE,
-                    decode_responses=True
-                )
-            else:
-                r = redis.Redis(
-                    host=host,
-                    port=port,
-                    username=username,
-                    password=password,
-                    db=db,
-                    decode_responses=True
-                )
-        else:
-            r = redis.from_url(redis_url, decode_responses=True)
-        
+        r = redis.from_url(redis_url, decode_responses=True)
         r.ping()
         diagnostics["redis"] = "✅ Connected"
     except Exception as e:

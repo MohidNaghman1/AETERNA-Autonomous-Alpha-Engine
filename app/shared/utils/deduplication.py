@@ -7,12 +7,10 @@ Prevents duplicate alerts from being sent.
 
 import hashlib
 import redis
-import ssl
 import os
 import logging
 from datetime import datetime, timedelta
 from typing import Set, Tuple
-from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -31,43 +29,8 @@ def _init_redis():
     """Initialize Redis connection with error handling."""
     global _redis, _redis_available
     try:
-        redis_url = REDIS_URL
-        
-        # Parse URL to extract connection details
-        if redis_url.startswith(("redis://", "rediss://")):
-            parsed = urlparse(redis_url)
-            
-            host = parsed.hostname
-            port = parsed.port or (6380 if parsed.scheme == "rediss" else 6379)
-            username = parsed.username
-            password = parsed.password
-            db = int(parsed.path.lstrip("/")) if parsed.path and parsed.path != "/" else 0
-            use_ssl = parsed.scheme == "rediss"
-            
-            if use_ssl:
-                _redis = redis.Redis(
-                    host=host,
-                    port=port,
-                    username=username,
-                    password=password,
-                    db=db,
-                    ssl=True,
-                    ssl_cert_reqs=ssl.CERT_NONE,
-                    decode_responses=True
-                )
-            else:
-                _redis = redis.Redis(
-                    host=host,
-                    port=port,
-                    username=username,
-                    password=password,
-                    db=db,
-                    decode_responses=True
-                )
-        else:
-            # Fallback to from_url for other formats
-            _redis = redis.from_url(redis_url, decode_responses=True)
-        
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        _redis = redis.from_url(redis_url, decode_responses=True)
         # Test connection
         _redis.ping()
         _redis_available = True
