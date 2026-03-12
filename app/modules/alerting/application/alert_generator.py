@@ -151,20 +151,24 @@ def generate_alert(
         "body": event.get("summary", event.get("text", content.get("summary", ""))),
         "raw_event": event,
         "status": "pending",
-        # Enhanced fields for richer alerts (from extractors)
+        # Core content metadata
+        "author": content.get("author"),  # Original author (news)
+        "source": content.get("source"),  # Source (coindesk, cointelegraph, etc)
+        "categories": content.get("categories", [])[:5],  # Top 5 categories
+        # Crypto-specific enrichment (RSS extracted)
+        "mentions": content.get("mentions", [])[:10],  # Top 10 crypto entities mentioned
+        "hashtags": content.get("hashtags", [])[:5],  # Top 5 hashtags
+        # Content quality metrics
         "quality_score": content.get("quality_score"),  # News content quality (0-100)
-        "read_time_minutes": content.get(
-            "read_time_minutes"
-        ),  # Estimated read time (news)
-        "risk_score": content.get("risk_score"),  # Crypto risk score (0-100, prices)
-        "volatility": content.get(
-            "price_volatility_category"
-        ),  # high/medium/low (prices)
-        "alert_reasons": content.get(
-            "alert_reasons"
-        ),  # Why alert was triggered (prices)
-        "urls": content.get("urls", [])[:3],  # Top 3 relevant URLs (news)
-        "hashtags": content.get("hashtags", [])[:5],  # Top 5 hashtags (news)
+        "word_count": content.get("word_count"),  # Total words in content
+        "read_time_minutes": content.get("read_time_minutes"),  # Estimated read time (news)
+        # Price-specific metrics (for price events)
+        "risk_score": content.get("risk_score"),  # Crypto risk score (0-100)
+        "volatility": content.get("price_volatility_category"),  # high/medium/low
+        "alert_reasons": content.get("alert_reasons"),  # Why alert was triggered
+        # References
+        "urls": content.get("urls", [])[:3],  # Top 3 relevant URLs
+        "link": content.get("link"),  # Original source link
     }
     save_alert(alert)
     if user_id:
