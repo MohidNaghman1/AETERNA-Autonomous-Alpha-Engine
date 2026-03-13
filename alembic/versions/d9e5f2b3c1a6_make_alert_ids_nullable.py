@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "d9e5f2b3c1a6"
-down_revision: Union[str, Sequence[str], None] = "c8f4d9e2b1a5"
+down_revision: Union[str, Sequence[str], None] = "99627ce2eeb8"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
