@@ -12,12 +12,12 @@ import os
 import logging
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_, cast, String
 from app.modules.intelligence.application.agent_a import score_event
 from app.modules.intelligence.infrastructure.models import ProcessedEvent
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.config.db import SessionLocal  # Use synchronous session for pika consumer
 from app.modules.alerting.application.alert_generator import generate_alert
-from sqlalchemy import and_
 
 # Optionally load .env for local dev
 try:
@@ -85,7 +85,7 @@ def save_processed_event(event: dict, scores: dict):
     db = SessionLocal()
     try:
         processed_event = ProcessedEvent(
-            id=int(event.get("id", 0)),  # Convert event id to integer
+            id=str(event.get("id", "")),  # Store event id as string (matches DB schema)
             user_id=event.get("user_id"),
             priority=scores.get("priority", "LOW"),
             score=scores.get("score", 0),
@@ -176,12 +176,12 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
     try:
         db = SessionLocal()
         
-        # Both EventORM.id and ProcessedEvent.id are integers - no casting needed
+        # EventORM.id is Integer, ProcessedEvent.id is String - need to cast for comparison
         already_processed_ids = db.query(ProcessedEvent.id)
         
         unprocessed_events = (
             db.query(EventORM)
-            .filter(~EventORM.id.in_(already_processed_ids))
+            .filter(~cast(EventORM.id, String).in_(already_processed_ids))
             .limit(batch_size)
             .all()
         )
@@ -195,8 +195,9 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
         for event_orm in unprocessed_events:
             try:
                 # Check again inside the loop to guard against concurrent polls
+                # Cast integer event_orm.id to string to match ProcessedEvent.id column type
                 existing = db.query(ProcessedEvent).filter(
-                    ProcessedEvent.id == event_orm.id
+                    ProcessedEvent.id == cast(event_orm.id, String)
                 ).first()
                 if existing:
                     logger.debug(f"[INTELLIGENCE-POLL] Skipping already-processed event {event_orm.id}")
@@ -216,7 +217,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 
                 # Save ProcessedEvent and update EventORM content in a single commit
                 processed_event = ProcessedEvent(
-                    id=event_orm.id,  # Store as integer (matches EventORM.id)
+                    id=str(event_orm.id),  # Store as string (matches DB schema)
                     user_id=None,
                     priority=priority,
                     score=score,
