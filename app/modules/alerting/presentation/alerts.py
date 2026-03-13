@@ -51,10 +51,10 @@ async def get_alerts_query(
     Returns:
         List of Alert ORM objects with related events
     """
-    # Get both user's personal alerts AND system broadcast alerts (user_id=0)
+    # Get both user's personal alerts AND system broadcast alerts (user_id=None or user_id=0)
     # Join with Event to fetch related event details
     query = select(AlertORM).where(
-        (AlertORM.user_id == user_id) | (AlertORM.user_id == 0)
+        (AlertORM.user_id == user_id) | (AlertORM.user_id == 0) | (AlertORM.user_id.is_(None))
     )
 
     # Apply filters
@@ -205,7 +205,7 @@ async def get_alert(
             select(AlertORM).where(
                 and_(
                     AlertORM.id == alert_id,
-                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0),
+                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0) | (AlertORM.user_id.is_(None)),
                 )
             )
         )
@@ -243,12 +243,12 @@ async def mark_alert_read(
         Updated alert object
     """
     try:
-        # Query and verify ownership - allow personal alerts and broadcast alerts (user_id=0)
+        # Query and verify ownership - allow personal alerts and broadcast alerts (user_id=0 or user_id=None)
         result = await db.execute(
             select(AlertORM).where(
                 and_(
                     AlertORM.id == alert_id,
-                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0),
+                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0) | (AlertORM.user_id.is_(None)),
                 )
             )
         )
@@ -298,12 +298,12 @@ async def dismiss_alert(
         Confirmation message
     """
     try:
-        # Query and verify ownership - allow personal alerts and broadcast alerts (user_id=0)
+        # Query and verify ownership - allow personal alerts and broadcast alerts (user_id=0 or user_id=None)
         result = await db.execute(
             select(AlertORM).where(
                 and_(
                     AlertORM.id == alert_id,
-                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0),
+                    (AlertORM.user_id == current_user.id) | (AlertORM.user_id == 0) | (AlertORM.user_id.is_(None)),
                 )
             )
         )
@@ -473,7 +473,7 @@ async def get_user_alerts_diagnostic(
         # Get total count for this user (including broadcast)
         count_result = await db.execute(
             select(AlertORM).where(
-                (AlertORM.user_id == user_id) | (AlertORM.user_id == 0)
+                (AlertORM.user_id == user_id) | (AlertORM.user_id == 0) | (AlertORM.user_id.is_(None))
             )
         )
         total_count = len(count_result.scalars().all())
@@ -481,7 +481,7 @@ async def get_user_alerts_diagnostic(
         # Get paginated results
         result = await db.execute(
             select(AlertORM)
-            .where((AlertORM.user_id == user_id) | (AlertORM.user_id == 0))
+            .where((AlertORM.user_id == user_id) | (AlertORM.user_id == 0) | (AlertORM.user_id.is_(None)))
             .order_by(desc(AlertORM.created_at))
             .offset(skip)
             .limit(min(limit, 1000))
