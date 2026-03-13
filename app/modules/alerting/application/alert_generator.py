@@ -90,9 +90,13 @@ def save_alert(alert: dict) -> Alert:
     """
     db = SessionLocal()
     try:
+        # Safely convert to int, handle None values
+        user_id = alert.get("user_id") or 0
+        event_id = alert.get("event_id") or 0
+        
         db_alert = Alert(
-            user_id=int(alert.get("user_id", 0)),
-            event_id=int(alert.get("event_id", 0)),
+            user_id=int(user_id) if user_id else None,
+            event_id=int(event_id) if event_id else None,
             channels=alert.get("channels", []),
             status=alert.get("status", "pending"),
             created_at=datetime.utcnow(),
