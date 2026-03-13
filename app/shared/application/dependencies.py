@@ -12,6 +12,7 @@ from app.config.db import AsyncSessionLocal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 logger = logging.getLogger("auth-deps")
 
@@ -77,6 +78,20 @@ async def get_current_user(
                 detail="User not found",
             )
         return user
+    except ExpiredSignatureError:
+        logger.error("Token has expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except InvalidTokenError:
+        logger.error("Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except HTTPException:
         raise
     except Exception as e:

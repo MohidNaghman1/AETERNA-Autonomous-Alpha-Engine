@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import os
 from dotenv import load_dotenv
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 load_dotenv()
 
@@ -101,4 +102,9 @@ def decode_token(token: str) -> dict:
     Raises:
         jwt.InvalidTokenError: If token is invalid or expired
     """
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except ExpiredSignatureError:
+        raise
+    except InvalidTokenError:
+        raise
