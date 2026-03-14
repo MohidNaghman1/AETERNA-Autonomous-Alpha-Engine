@@ -7,7 +7,7 @@ All endpoints require authentication and enforce user ownership of alerts.
 from fastapi import APIRouter, HTTPException, Query, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc, or_
+from sqlalchemy import select, and_, desc, or_, func
 from app.shared.application.dependencies import get_db, get_current_user
 from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
@@ -22,6 +22,34 @@ import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+
+
+def normalize_source(source: str) -> List[str]:
+    """
+    Normalize source names for flexible querying.
+    Handles common variations:
+    - "coindesk" → matches "www.coindesk.com" or "coindesk.com"
+    - "cointelegraph" → matches "cointelegraph.com"
+    - "decrypt" → matches "decrypt.co"
+    - "coingecko" → matches "coingecko" (exact)
+    
+    Returns: list of possible source names to match
+    """
+    source_lower = source.lower().strip()
+    
+    # Map shorthand names to actual stored values
+    normalization_map = {
+        "coindesk": ["www.coindesk.com", "coindesk.com", "coindesk"],
+        "cointelegraph": ["cointelegraph.com", "cointelegraph"],
+        "decrypt": ["decrypt.co", "decrypt"],
+        "coingecko": ["coingecko"],
+        "www.coindesk.com": ["www.coindesk.com"],
+        "coindesk.com": ["coindesk.com"],
+        "cointelegraph.com": ["cointelegraph.com"],
+        "decrypt.co": ["decrypt.co"],
+    }
+    
+    return normalization_map.get(source_lower, [source])
 
 
 async def get_alerts_query(
@@ -92,7 +120,14 @@ async def get_alerts_query(
         if not event_joined:
             query = query.join(EventORM, AlertORM.event_id == EventORM.id)
             event_joined = True
-        filters.append(EventORM.source == source)
+        # Normalize source and filter by any matching variation
+        possible_sources = normalize_source(source)
+        logger.info(f"[DEBUG] Filtering by source: {source} → {possible_sources}")
+        logger.info(f"[DEBUG] Creating OR filter with {len(possible_sources)} source options")
+        # Build OR clause for all possible source matches
+        source_or_clause = or_(*[EventORM.source == s for s in possible_sources])
+        logger.info(f"[DEBUG] Source filter clause: {source_or_clause}")
+        filters.append(source_or_clause)
 
     # Filter by alert delivery channels (stored as JSON array)
     if channels:
@@ -645,3 +680,128 @@ async def get_user_alerts_diagnostic(
     except Exception as e:
         logger.error(f"Error fetching diagnostic alerts for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Error fetching alerts")
+
+
+@router.get("/diagnostics/available-sources")
+async def list_available_sources(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get list of all available sources in the system with event counts.
+    
+    This endpoint shows:
+    - All unique source names in the database
+    - How many events each source has
+    - How many alerts link to those events
+    
+    Useful for troubleshooting filter issues and understanding data ingestion.
+    """
+    try:
+        # Get all unique sources and their event counts
+        result = await db.execute(
+            select(EventORM.source, func.count(EventORM.id).label("event_count"))
+            .group_by(EventORM.source)
+            .order_by(desc(func.count(EventORM.id)))
+        )
+        sources_data = result.all()
+        
+        # Build response with source normalization info
+        sources_info = []
+        for source, event_count in sources_data:
+            # Get alert count for this source
+            alert_result = await db.execute(
+                select(func.count(AlertORM.id)).select_from(AlertORM)
+                .join(EventORM, AlertORM.event_id == EventORM.id)
+                .where(EventORM.source == source)
+            )
+            alert_count = alert_result.scalar() or 0
+            
+            # Get normalized versions
+            normalized = normalize_source(source)
+            
+            sources_info.append({
+                "actual_source": source,
+                "event_count": event_count,
+                "alert_count": alert_count,
+                "normalized_names": normalized,
+                "filterable_as": [source] + normalized,  # Show all ways to filter it
+            })
+        
+        logger.info(f"[DEBUG] Available sources: {[s['actual_source'] for s in sources_info]}")
+        
+        return {
+            "total_unique_sources": len(sources_info),
+            "sources": sources_info
+        }
+    except Exception as e:
+        logger.error(f"Error fetching available sources: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error fetching sources")
+
+
+@router.get("/diagnostics/test-source-filter/{source_name}")
+async def test_source_filter(
+    source_name: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Test source filtering for a specific source.
+    
+    This endpoint helps debug why a source filter might return empty results.
+    
+    Parameters:
+    - source_name: Source to test (e.g., 'decrypt', 'coindesk', 'coingecko')
+    
+    Returns:
+    - What the normalization maps it to
+    - How many events match each normalized source
+    - How many alerts link to those events
+    - Sample event data to verify
+    """
+    try:
+        possible_sources = normalize_source(source_name)
+        logger.info(f"[DEBUG] Testing source filter: {source_name} → {possible_sources}")
+        
+        results = {
+            "input_source": source_name,
+            "normalized_to": possible_sources,
+            "detailed_results": []
+        }
+        
+        for normalized_source in possible_sources:
+            # Count events
+            event_result = await db.execute(
+                select(func.count(EventORM.id)).where(EventORM.source == normalized_source)
+            )
+            event_count = event_result.scalar() or 0
+            
+            # Get sample events
+            sample_result = await db.execute(
+                select(EventORM).where(EventORM.source == normalized_source).limit(2)
+            )
+            samples = sample_result.scalars().all()
+            
+            # Count alerts for this source
+            alert_result = await db.execute(
+                select(func.count(AlertORM.id)).select_from(AlertORM)
+                .join(EventORM, AlertORM.event_id == EventORM.id)
+                .where(EventORM.source == normalized_source)
+            )
+            alert_count = alert_result.scalar() or 0
+            
+            results["detailed_results"].append({
+                "normalized_source": normalized_source,
+                "event_count": event_count,
+                "alert_count": alert_count,
+                "sample_events": [
+                    {
+                        "id": s.id,
+                        "source": s.source,
+                        "type": s.type,
+                        "timestamp": s.timestamp.isoformat() if s.timestamp else None,
+                    }
+                    for s in samples
+                ]
+            })
+        
+        return results
+    except Exception as e:
+        logger.error(f"Error testing source filter: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error testing source filter")
