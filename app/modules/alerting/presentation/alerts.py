@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import List, Optional
 import csv
 from io import StringIO
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -157,37 +158,51 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
             event = result.scalars().first()
 
             if event:
-                logger.debug(
-                    f"[DEBUG] Found event {alert.event_id} for alert {alert.id}"
-                )
-                if event.content:
+                logger.info(f"[✓] Found event {alert.event_id} for alert {alert.id}")
+
+                # Handle both dict and JSON string content
+                content = event.content
+                if isinstance(content, str):
+                    try:
+                        content = json.loads(content)
+                        logger.debug(
+                            f"[DEBUG] Parsed JSON string content for event {alert.event_id}"
+                        )
+                    except json.JSONDecodeError as e:
+                        logger.error(f"[✗] Failed to parse JSON content: {e}")
+                        content = {}
+
+                if content and isinstance(content, dict):
                     # Get title - try multiple fields to find actual alert content
                     title = (
-                        event.content.get("title")
-                        or event.content.get("body")
-                        or event.content.get("summary")
+                        content.get("title")
+                        or content.get("body")
+                        or content.get("summary")
                         or f"Event {alert.event_id}"
                     )
 
                     # Get priority from event content
-                    priority = event.content.get("priority")
+                    priority = content.get("priority")
 
                     # Get primary entity/cryptocurrency mentioned
-                    mentions = event.content.get("mentions", [])
+                    mentions = content.get("mentions", [])
                     entity = mentions[0] if mentions else None
 
-                    logger.debug(
-                        f"[DEBUG] Extracted title='{title}', priority={priority}, entity={entity}"
+                    logger.info(
+                        f"[✓] Extracted: title='{title[:50]}...', priority={priority}, entity={entity}"
                     )
                 else:
-                    logger.warning(f"[⚠] Event {alert.event_id} has no content")
+                    logger.warning(
+                        f"[⚠] Event {alert.event_id} has no content or invalid format"
+                    )
             else:
                 logger.warning(
                     f"[⚠] Event {alert.event_id} not found for alert {alert.id}"
                 )
         except Exception as e:
             logger.error(
-                f"[❌] Error fetching event {alert.event_id} for alert {alert.id}: {e}"
+                f"[✗] Error fetching event {alert.event_id} for alert {alert.id}: {e}",
+                exc_info=True,
             )
     else:
         logger.debug(f"[DEBUG] Alert {alert.id} has no event_id")
