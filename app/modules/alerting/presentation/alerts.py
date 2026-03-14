@@ -112,14 +112,14 @@ def convert_alert_orm_to_schema(alert: AlertORM) -> Alert:
     Returns:
         Alert: Pydantic schema object
     """
-    # Safely extract fields from alert - only use fields that exist on the model
-    # The ORM model has: id, user_id, event_id, channels, status, sent_at, created_at
+    # Return basic alert without event enrichment
+    # Note: Prefer convert_alert_with_event() for full data
     return Alert(
         alert_id=str(alert.id),
         created_at=alert.created_at.isoformat() if alert.created_at else "",
-        title=f"Event {alert.event_id}",  # Title from related event
-        priority=None,  # Priority should come from event if available
-        entity=None,  # Entity can be extracted from event content
+        title="Alert",  # Will be enriched with event data by caller
+        priority=None,
+        entity=None,
         status=alert.status or "pending",
         read_at=alert.sent_at.isoformat() if alert.sent_at else None,
     )
@@ -145,9 +145,13 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
     entity = None
 
     if event and event.content:
-        title = event.content.get("title", f"Event {alert.event_id}")
+        # Get title - try multiple fields to find actual alert content
+        title = event.content.get("title") or event.content.get("body") or f"Event {alert.event_id}"
+        
+        # Get priority from event content
         priority = event.content.get("priority")
-        # Extract entity from mentions or hashtags
+        
+        # Get primary entity/cryptocurrency mentioned
         mentions = event.content.get("mentions", [])
         entity = mentions[0] if mentions else None
 
