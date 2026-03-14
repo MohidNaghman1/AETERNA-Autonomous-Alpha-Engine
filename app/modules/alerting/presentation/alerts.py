@@ -166,6 +166,11 @@ def convert_alert_orm_to_schema(alert: AlertORM) -> Alert:
         entity=None,
         status=alert.status or "pending",
         read_at=alert.sent_at.isoformat() if alert.sent_at else None,
+        event_id=alert.event_id,
+        source=None,
+        event_type=None,
+        event_timestamp=None,
+        content=None,
     )
 
 
@@ -183,6 +188,11 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
     title = "Alert"
     priority = None
     entity = None
+    event_id = alert.event_id
+    source = None
+    event_type = None
+    event_timestamp = None
+    content = None
 
     # Only fetch event if we have an event_id
     if alert.event_id:
@@ -195,36 +205,47 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
             if event:
                 logger.info(f"[✓] Found event {alert.event_id} for alert {alert.id}")
 
+                # Store event metadata
+                source = event.source
+                event_type = event.type
+                event_timestamp = event.timestamp.isoformat() if event.timestamp else None
+
                 # Handle both dict and JSON string content
-                content = event.content
-                if isinstance(content, str):
+                content_data = event.content
+                if isinstance(content_data, str):
                     try:
-                        content = json.loads(content)
+                        content_data = json.loads(content_data)
                         logger.debug(
                             f"[DEBUG] Parsed JSON string content for event {alert.event_id}"
                         )
                     except json.JSONDecodeError as e:
                         logger.error(f"[✗] Failed to parse JSON content: {e}")
-                        content = {}
+                        content_data = {}
 
-                if content and isinstance(content, dict):
+                if content_data and isinstance(content_data, dict):
+                    # Store full content for response (excluding unnecessary fields)
+                    content = {
+                        k: v for k, v in content_data.items()
+                        if k not in ["event_hash", "word_count", "quality_score", "read_time_minutes"]
+                    }
+
                     # Get title - try multiple fields to find actual alert content
                     title = (
-                        content.get("title")
-                        or content.get("body")
-                        or content.get("summary")
+                        content_data.get("title")
+                        or content_data.get("body")
+                        or content_data.get("summary")
                         or f"Event {alert.event_id}"
                     )
 
                     # Get priority from event content
-                    priority = content.get("priority")
+                    priority = content_data.get("priority")
 
                     # Get primary entity/cryptocurrency mentioned
-                    mentions = content.get("mentions", [])
+                    mentions = content_data.get("mentions", [])
                     entity = mentions[0] if mentions else None
 
                     logger.info(
-                        f"[✓] Extracted: title='{title[:50]}...', priority={priority}, entity={entity}"
+                        f"[✓] Extracted: title='{title[:50]}...', priority={priority}, entity={entity}, source={source}"
                     )
                 else:
                     logger.warning(
@@ -250,6 +271,11 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
         entity=entity,
         status=alert.status or "pending",
         read_at=alert.sent_at.isoformat() if alert.sent_at else None,
+        event_id=event_id,
+        source=source,
+        event_type=event_type,
+        event_timestamp=event_timestamp,
+        content=content,
     )
 
 
@@ -735,73 +761,3 @@ async def list_available_sources(
     except Exception as e:
         logger.error(f"Error fetching available sources: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching sources")
-
-
-@router.get("/diagnostics/test-source-filter/{source_name}")
-async def test_source_filter(
-    source_name: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Test source filtering for a specific source.
-    
-    This endpoint helps debug why a source filter might return empty results.
-    
-    Parameters:
-    - source_name: Source to test (e.g., 'decrypt', 'coindesk', 'coingecko')
-    
-    Returns:
-    - What the normalization maps it to
-    - How many events match each normalized source
-    - How many alerts link to those events
-    - Sample event data to verify
-    """
-    try:
-        possible_sources = normalize_source(source_name)
-        logger.info(f"[DEBUG] Testing source filter: {source_name} → {possible_sources}")
-        
-        results = {
-            "input_source": source_name,
-            "normalized_to": possible_sources,
-            "detailed_results": []
-        }
-        
-        for normalized_source in possible_sources:
-            # Count events
-            event_result = await db.execute(
-                select(func.count(EventORM.id)).where(EventORM.source == normalized_source)
-            )
-            event_count = event_result.scalar() or 0
-            
-            # Get sample events
-            sample_result = await db.execute(
-                select(EventORM).where(EventORM.source == normalized_source).limit(2)
-            )
-            samples = sample_result.scalars().all()
-            
-            # Count alerts for this source
-            alert_result = await db.execute(
-                select(func.count(AlertORM.id)).select_from(AlertORM)
-                .join(EventORM, AlertORM.event_id == EventORM.id)
-                .where(EventORM.source == normalized_source)
-            )
-            alert_count = alert_result.scalar() or 0
-            
-            results["detailed_results"].append({
-                "normalized_source": normalized_source,
-                "event_count": event_count,
-                "alert_count": alert_count,
-                "sample_events": [
-                    {
-                        "id": s.id,
-                        "source": s.source,
-                        "type": s.type,
-                        "timestamp": s.timestamp.isoformat() if s.timestamp else None,
-                    }
-                    for s in samples
-                ]
-            })
-        
-        return results
-    except Exception as e:
-        logger.error(f"Error testing source filter: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error testing source filter")
