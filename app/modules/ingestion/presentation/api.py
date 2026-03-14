@@ -17,7 +17,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def normalize_source(source: str) -> str:
+def normalize_source(source: str) -> List[str]:
     """
     Normalize source names for flexible querying.
     Handles common variations:
@@ -25,11 +25,11 @@ def normalize_source(source: str) -> str:
     - "cointelegraph" → matches "cointelegraph.com"
     - "decrypt" → matches "decrypt.co"
     - "coingecko" → matches "coingecko" (exact)
-    
+
     Returns: normalized source name(s) as regex or exact match
     """
     source_lower = source.lower().strip()
-    
+
     # Map shorthand names to actual stored values
     normalization_map = {
         "coindesk": ["www.coindesk.com", "coindesk.com", "coindesk"],
@@ -41,7 +41,7 @@ def normalize_source(source: str) -> str:
         "cointelegraph.com": ["cointelegraph.com"],
         "decrypt.co": ["decrypt.co"],
     }
-    
+
     return normalization_map.get(source_lower, [source])
 
 
@@ -81,16 +81,20 @@ async def list_events(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     source: Optional[str] = Query(
-        None, description="Filter by data provider (coindesk, coingecko, decrypt, cointelegraph, etc)"
+        None,
+        description="Filter by data provider (coindesk, coingecko, decrypt, cointelegraph, etc)",
     ),
     event_type: Optional[str] = Query(
-        None, description="Filter by event type (news, price, etc)"
+        None,
+        description="Filter by event type (news, price, etc)"
     ),
     start_date: Optional[datetime] = Query(
-        None, description="Filter events after this date (ISO format)"
+        None,
+        description="Filter events after this date (ISO format)"
     ),
     end_date: Optional[datetime] = Query(
-        None, description="Filter events before this date (ISO format)"
+        None,
+        description="Filter events before this date (ISO format)"
     ),
     db: AsyncSession = Depends(get_db),
 ):

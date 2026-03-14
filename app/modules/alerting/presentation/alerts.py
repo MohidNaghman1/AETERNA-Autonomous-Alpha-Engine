@@ -224,9 +224,14 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
 
                 if content_data and isinstance(content_data, dict):
                     # Store full content for response (excluding unnecessary fields)
+                    exclude_keys = {
+                        "event_hash",
+                        "word_count",
+                        "quality_score",
+                        "read_time_minutes",
+                    }
                     content = {
-                        k: v for k, v in content_data.items()
-                        if k not in ["event_hash", "word_count", "quality_score", "read_time_minutes"]
+                        k: v for k, v in content_data.items() if k not in exclude_keys
                     }
 
                     # Get title - try multiple fields to find actual alert content
