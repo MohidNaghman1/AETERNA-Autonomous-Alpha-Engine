@@ -22,17 +22,17 @@ def upgrade() -> None:
     """Upgrade schema - make alert user_id and event_id nullable."""
     # Alter user_id constraint
     op.alter_column(
-        'alerts',
-        'user_id',
+        "alerts",
+        "user_id",
         existing_type=sa.Integer(),
         nullable=True,
         existing_nullable=False,
     )
-    
+
     # Alter event_id constraint
     op.alter_column(
-        'alerts',
-        'event_id',
+        "alerts",
+        "event_id",
         existing_type=sa.Integer(),
         nullable=True,
         existing_nullable=False,
@@ -44,18 +44,18 @@ def downgrade() -> None:
     # Revert user_id - set default for existing nulls first
     op.execute("UPDATE alerts SET user_id = 0 WHERE user_id IS NULL")
     op.alter_column(
-        'alerts',
-        'user_id',
+        "alerts",
+        "user_id",
         existing_type=sa.Integer(),
         nullable=False,
         existing_nullable=True,
     )
-    
+
     # Revert event_id - set default for existing nulls first
     op.execute("UPDATE alerts SET event_id = 0 WHERE event_id IS NULL")
     op.alter_column(
-        'alerts',
-        'event_id',
+        "alerts",
+        "event_id",
         existing_type=sa.Integer(),
         nullable=False,
         existing_nullable=True,

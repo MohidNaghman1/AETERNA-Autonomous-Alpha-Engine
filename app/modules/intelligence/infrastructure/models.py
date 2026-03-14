@@ -10,7 +10,9 @@ from datetime import datetime
 class ProcessedEvent(Base):
     __tablename__ = "processed_events"
 
-    id = Column(String, primary_key=True)  # Store actual event ID (as string from DB schema)
+    id = Column(
+        String, primary_key=True
+    )  # Store actual event ID (as string from DB schema)
     user_id = Column(String, index=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     priority = Column(String, index=True)

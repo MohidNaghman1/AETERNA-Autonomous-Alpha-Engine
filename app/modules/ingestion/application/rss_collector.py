@@ -69,7 +69,9 @@ for handler in logging.getLogger().handlers:
 logging.getLogger("pika").setLevel(logging.WARNING)
 
 # Diagnostic: Log the logger configuration at startup
-logger.info(f"Logger level: {logger.level}, Effective level: {logger.getEffectiveLevel()}")
+logger.info(
+    f"Logger level: {logger.level}, Effective level: {logger.getEffectiveLevel()}"
+)
 
 RETRY_ATTEMPTS = 3
 POLL_INTERVAL = 60  # seconds
@@ -96,15 +98,9 @@ def normalize_entry(entry, source):
     entities = extract_crypto_mentions(text)
 
     # DEBUG: Log what was extracted
-    logger.debug(
-        f"[RSS-EXTRACT] Title: {entry.get('title', 'N/A')[:60]}"
-    )
-    logger.debug(
-        f"[RSS-EXTRACT] Hashtags: {content.get('hashtags', [])}"
-    )
-    logger.debug(
-        f"[RSS-EXTRACT] Mentions: {content.get('mentions', [])}"
-    )
+    logger.debug(f"[RSS-EXTRACT] Title: {entry.get('title', 'N/A')[:60]}")
+    logger.debug(f"[RSS-EXTRACT] Hashtags: {content.get('hashtags', [])}")
+    logger.debug(f"[RSS-EXTRACT] Mentions: {content.get('mentions', [])}")
 
     return Event.create(
         source=source,

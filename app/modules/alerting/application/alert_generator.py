@@ -93,7 +93,7 @@ def save_alert(alert: dict) -> Alert:
         # Safely convert to int, handle None values
         user_id = alert.get("user_id") or 0
         event_id = alert.get("event_id") or 0
-        
+
         db_alert = Alert(
             user_id=int(user_id) if user_id else None,
             event_id=int(event_id) if event_id else None,
@@ -160,12 +160,16 @@ def generate_alert(
         "source": content.get("source"),  # Source (coindesk, cointelegraph, etc)
         "categories": content.get("categories", [])[:5],  # Top 5 categories
         # Crypto-specific enrichment (RSS extracted)
-        "mentions": content.get("mentions", [])[:10],  # Top 10 crypto entities mentioned
+        "mentions": content.get("mentions", [])[
+            :10
+        ],  # Top 10 crypto entities mentioned
         "hashtags": content.get("hashtags", [])[:5],  # Top 5 hashtags
         # Content quality metrics
         "quality_score": content.get("quality_score"),  # News content quality (0-100)
         "word_count": content.get("word_count"),  # Total words in content
-        "read_time_minutes": content.get("read_time_minutes"),  # Estimated read time (news)
+        "read_time_minutes": content.get(
+            "read_time_minutes"
+        ),  # Estimated read time (news)
         # Price-specific metrics (for price events)
         "risk_score": content.get("risk_score"),  # Crypto risk score (0-100)
         "volatility": content.get("price_volatility_category"),  # high/medium/low

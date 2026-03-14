@@ -25,8 +25,12 @@ class Alert(Base):
 
     __tablename__ = "alerts"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # System alerts may not have user_id
-    event_id = Column(Integer, ForeignKey("events.id"), nullable=True)  # System alerts may not have event_id
+    user_id = Column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )  # System alerts may not have user_id
+    event_id = Column(
+        Integer, ForeignKey("events.id"), nullable=True
+    )  # System alerts may not have event_id
     channels = Column(JSON, nullable=True)
     status = Column(String, default="pending")
     sent_at = Column(DateTime, nullable=True)

@@ -66,36 +66,98 @@ def extract_crypto_entities(text: str) -> List[str]:
     """Extract crypto-related entities/keywords from text."""
     if not text:
         return []
-    
+
     crypto_keywords = {
         # Major coins
-        'bitcoin', 'btc', 'ethereum', 'eth', 'cardano', 'ada', 'solana', 'sol',
-        'xrp', 'ripple', 'polkadot', 'dot', 'dogecoin', 'doge', 'litecoin', 'ltc',
+        "bitcoin",
+        "btc",
+        "ethereum",
+        "eth",
+        "cardano",
+        "ada",
+        "solana",
+        "sol",
+        "xrp",
+        "ripple",
+        "polkadot",
+        "dot",
+        "dogecoin",
+        "doge",
+        "litecoin",
+        "ltc",
         # DeFi protocols
-        'uniswap', 'aave', 'compound', 'curve', 'yearn', 'lido', 'maker', 
-        'balancer', 'sushiswap', 'pancakeswap', 'openocean',
+        "uniswap",
+        "aave",
+        "compound",
+        "curve",
+        "yearn",
+        "lido",
+        "maker",
+        "balancer",
+        "sushiswap",
+        "pancakeswap",
+        "openocean",
         # Layer 2 / Sidechains
-        'polygon', 'matic', 'arbitrum', 'optimism', 'zksync', 'starknet',
+        "polygon",
+        "matic",
+        "arbitrum",
+        "optimism",
+        "zksync",
+        "starknet",
         # Other L1s
-        'avalanche', 'avax', 'fantom', 'ftm', 'near', 'cosmos', 'atom', 'tron', 'trx',
+        "avalanche",
+        "avax",
+        "fantom",
+        "ftm",
+        "near",
+        "cosmos",
+        "atom",
+        "tron",
+        "trx",
         # NFT / Metaverse
-        'nft', 'nfts', 'metaverse', 'opensea', 'blur', 'dydx',
+        "nft",
+        "nfts",
+        "metaverse",
+        "opensea",
+        "blur",
+        "dydx",
         # Stablecoins
-        'usdc', 'usdt', 'dai', 'busd', 'stablecoin',
+        "usdc",
+        "usdt",
+        "dai",
+        "busd",
+        "stablecoin",
         # Concepts
-        'defi', 'cefi', 'blockchain', 'web3', 'dao', 'token', 'mining', 'staking',
-        'yield', 'liquidity', 'swap', 'bridge', 'oracle', 'validator',
+        "defi",
+        "cefi",
+        "blockchain",
+        "web3",
+        "dao",
+        "token",
+        "mining",
+        "staking",
+        "yield",
+        "liquidity",
+        "swap",
+        "bridge",
+        "oracle",
+        "validator",
         # Exchanges
-        'binance', 'coinbase', 'kraken', 'gemini', 'bybit', 'okx',
+        "binance",
+        "coinbase",
+        "kraken",
+        "gemini",
+        "bybit",
+        "okx",
     }
-    
+
     text_lower = text.lower()
     found = set()
-    
+
     for keyword in crypto_keywords:
         if keyword in text_lower:
             found.add(keyword)
-    
+
     return sorted(list(found))[:15]  # Return max 15 entities
 
 
@@ -227,12 +289,12 @@ def extract_rss_entry_detailed(entry: Dict[str, Any], source: str) -> Dict[str, 
 
     # Extract crypto entities instead of social media hashtags/mentions
     crypto_entities = extract_crypto_entities(title + " " + summary)
-    
+
     # Generate hashtags from categories and crypto entities
     hashtags_from_categories = [cat.lower().replace(" ", "") for cat in categories[:5]]
     all_hashtags = list(set(hashtags_from_categories + crypto_entities[:5]))
     hashtags = all_hashtags[:10]  # Limit to top 10
-    
+
     # Use crypto entities as mentions since RSS doesn't have @mentions
     mentions = crypto_entities  # Already limited to 15 in extract_crypto_entities
 
