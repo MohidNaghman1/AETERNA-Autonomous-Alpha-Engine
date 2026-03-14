@@ -7,15 +7,13 @@ All endpoints require authentication and enforce user ownership of alerts.
 from fastapi import APIRouter, HTTPException, Query, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc
-from sqlalchemy.orm import Session, joinedload
-from app.config.db import AsyncSessionLocal
+from sqlalchemy import select, and_, desc, or_
 from app.shared.application.dependencies import get_db, get_current_user
 from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
 from app.modules.alerting.presentation.schema import Alert, AlertDismissResponse
 from app.modules.ingestion.infrastructure.models import EventORM
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 import csv
 from io import StringIO
@@ -32,6 +30,8 @@ async def get_alerts_query(
     end_date: Optional[datetime] = None,
     priority: Optional[str] = None,
     entity: Optional[str] = None,
+    source: Optional[str] = None,
+    channels: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
 ):
@@ -44,7 +44,9 @@ async def get_alerts_query(
         start_date: Filter events after this date
         end_date: Filter events before this date
         priority: Filter by priority (HIGH, MEDIUM, LOW)
-        entity: Filter by entity
+        entity: Filter by entity/token (from event mentions)
+        source: Filter by data provider/feed source (e.g., 'coindesk', 'coingecko', 'cointelegraph')
+        channels: Filter by alert delivery channel (e.g., 'email', 'telegram', 'sms')
         skip: Offset for pagination
         limit: Number of results (max 100)
 
@@ -52,7 +54,6 @@ async def get_alerts_query(
         List of Alert ORM objects with related events
     """
     # Get both user's personal alerts AND system broadcast alerts (user_id=None or user_id=0)
-    # Join with Event to fetch related event details
     query = select(AlertORM).where(
         (AlertORM.user_id == user_id) | (AlertORM.user_id == 0) | (AlertORM.user_id.is_(None))
     )
@@ -65,6 +66,28 @@ async def get_alerts_query(
         filters.append(AlertORM.created_at <= end_date)
     if priority:
         filters.append(AlertORM.priority == priority)
+
+    # Filter by entity - requires joining with events and checking mentions in content
+    if entity:
+        query = query.join(EventORM, AlertORM.event_id == EventORM.id, isouter=True)
+        # Check if entity exists in the event's mentions array
+        # This is a simplified filter - assumes mentions field exists in JSON content
+        filters.append(
+            or_(
+                EventORM.content.astext.contains(f'"{entity}"'),
+                EventORM.content.astext.contains(f"'{entity}'")
+            )
+        )
+
+    # Filter by data provider/feed source (e.g., coindesk, coingecko, cointelegraph)
+    if source:
+        if entity is None:  # Only join if not already joined for entity
+            query = query.join(EventORM, AlertORM.event_id == EventORM.id, isouter=True)
+        filters.append(EventORM.source == source)
+
+    # Filter by alert delivery channels (stored as JSON array)
+    if channels:
+        filters.append(AlertORM.channels.astext.contains(channels))
 
     if filters:
         query = query.where(and_(*filters))
@@ -144,6 +167,9 @@ async def alert_history(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     priority: Optional[str] = Query(None),
+    entity: Optional[str] = Query(None, description="Filter by token/entity name (e.g., 'Bitcoin', 'Ethereum')"),
+    source: Optional[str] = Query(None, description="Filter by data provider/feed (e.g., 'coindesk', 'coingecko', 'cointelegraph')"),
+    channels: Optional[str] = Query(None, description="Filter by delivery channel (e.g., 'email', 'telegram', 'sms')"),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
@@ -157,6 +183,9 @@ async def alert_history(
     - start_date: Filter alerts after this date (ISO format)
     - end_date: Filter alerts before this date (ISO format)
     - priority: Filter by priority (HIGH, MEDIUM, LOW)
+    - entity: Filter by cryptocurrency/token name (e.g., Bitcoin, Ethereum, Solana)
+    - source: Filter by data provider/feed (e.g., CoinDesk, CoinGecko, CoinMarketCap, Cointelegraph)
+    - channels: Filter by how you receive alerts (email, telegram, sms, in-app, webhook)
 
     Returns:
         List of alerts for the current authenticated user
@@ -168,6 +197,9 @@ async def alert_history(
             start_date=start_date,
             end_date=end_date,
             priority=priority,
+            entity=entity,
+            source=source,
+            channels=channels,
             skip=skip,
             limit=limit,
         )
@@ -335,6 +367,9 @@ async def export_alert_history_csv(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     priority: Optional[str] = Query(None),
+    entity: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
+    channels: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -342,6 +377,14 @@ async def export_alert_history_csv(
     Export alert history as CSV.
 
     P0 Security Fix: Exports only alerts belonging to the authenticated user
+
+    Query Parameters:
+    - start_date: Filter alerts after this date (ISO format)
+    - end_date: Filter alerts before this date (ISO format)
+    - priority: Filter by priority (HIGH, MEDIUM, LOW)
+    - entity: Filter by cryptocurrency/token (e.g., Bitcoin, Ethereum, Solana)
+    - source: Filter by data provider/feed (e.g., coindesk, coingecko, cointelegraph, coinmarketcap)
+    - channels: Filter by delivery channel (email, telegram, sms, in-app, webhook)
 
     Returns:
         CSV file download with alert history
@@ -353,13 +396,16 @@ async def export_alert_history_csv(
             start_date=start_date,
             end_date=end_date,
             priority=priority,
+            entity=entity,
+            source=source,
+            channels=channels,
             limit=10000,  # Allow larger export
         )
 
         # Build CSV
         def generate_csv():
             # Header
-            fieldnames = ["alert_id", "created_at", "title", "priority", "status"]
+            fieldnames = ["alert_id", "created_at", "title", "priority", "status", "source", "channels"]
             output = StringIO()
             writer = csv.DictWriter(output, fieldnames=fieldnames)
             writer.writeheader()
@@ -375,6 +421,8 @@ async def export_alert_history_csv(
                         "title": alert.alert_id,
                         "priority": alert.priority,
                         "status": alert.status,
+                        "source": alert.source if hasattr(alert, 'source') else "",
+                        "channels": str(alert.channels) if alert.channels else "",
                     }
                 )
 
