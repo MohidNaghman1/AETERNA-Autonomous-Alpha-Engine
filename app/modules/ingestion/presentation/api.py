@@ -52,10 +52,18 @@ async def get_event(event_id: int, db: AsyncSession = Depends(get_db)):
 async def list_events(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    source: Optional[str] = None,
-    type: Optional[str] = None,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    source: Optional[str] = Query(
+        None, description="Filter by data provider (coindesk, coingecko, etc)"
+    ),
+    event_type: Optional[str] = Query(
+        None, description="Filter by event type (news, price, etc)"
+    ),
+    start_date: Optional[datetime] = Query(
+        None, description="Filter events after this date (ISO format)"
+    ),
+    end_date: Optional[datetime] = Query(
+        None, description="Filter events before this date (ISO format)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -64,22 +72,29 @@ async def list_events(
     Query Parameters:
     - skip: Offset for pagination (default: 0)
     - limit: Number of events to return (default: 100, max: 500)
-    - source: Filter by source (e.g., "coindesk", "coingecko")
-    - type: Filter by type (e.g., "news", "price")
+    - source: Filter by data provider source (e.g., "coindesk", "coingecko")
+    - event_type: Filter by event type (e.g., "news", "price")
     - start_date: Filter events after this date (ISO format)
     - end_date: Filter events before this date (ISO format)
+
+    Returns:
+        List of events matching all provided filters
     """
     query = select(EventORM)
 
     # Apply filters
     filters = []
     if source:
+        logger.info(f"[DEBUG] Filtering by source: {source}")
         filters.append(EventORM.source == source)
-    if type:
-        filters.append(EventORM.type == type)
+    if event_type:
+        logger.info(f"[DEBUG] Filtering by event_type: {event_type}")
+        filters.append(EventORM.type == event_type)
     if start_date:
+        logger.info(f"[DEBUG] Filtering by start_date: {start_date}")
         filters.append(EventORM.timestamp >= start_date)
     if end_date:
+        logger.info(f"[DEBUG] Filtering by end_date: {end_date}")
         filters.append(EventORM.timestamp <= end_date)
 
     if filters:
@@ -90,6 +105,9 @@ async def list_events(
         query.order_by(desc(EventORM.timestamp)).offset(skip).limit(limit)
     )
     events = result.scalars().all()
+    logger.info(
+        f"[✓] Retrieved {len(events)} events with filters: source={source}, type={event_type}"
+    )
     return events
 
 
@@ -109,6 +127,7 @@ async def list_events_by_source(
         .limit(limit)
     )
     events = result.scalars().all()
+    logger.info(f"Retrieved {len(events)} events from source: {source}")
     return events
 
 
@@ -128,6 +147,7 @@ async def list_events_by_type(
         .limit(limit)
     )
     events = result.scalars().all()
+    logger.info(f"Retrieved {len(events)} events of type: {event_type}")
     return events
 
 

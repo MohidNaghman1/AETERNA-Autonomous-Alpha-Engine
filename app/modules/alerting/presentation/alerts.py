@@ -74,9 +74,7 @@ async def get_alerts_query(
 
     # Filter by entity - requires joining with events and checking mentions in content
     if entity:
-        query = query.join(
-            EventORM, AlertORM.event_id == EventORM.id, isouter=True
-        )
+        query = query.join(EventORM, AlertORM.event_id == EventORM.id, isouter=True)
         event_joined = True
         # Check if entity exists in the event's mentions array
         # This is a simplified filter - assumes mentions field exists in JSON content
@@ -145,29 +143,54 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
     Returns:
         Alert: Pydantic schema with event details
     """
-    # Fetch the related event
-    result = await db.execute(select(EventORM).where(EventORM.id == alert.event_id))
-    event = result.scalars().first()
-
     # Extract data from event content if available
     title = "Alert"
     priority = None
     entity = None
 
-    if event and event.content:
-        # Get title - try multiple fields to find actual alert content
-        title = (
-            event.content.get("title")
-            or event.content.get("body")
-            or f"Event {alert.event_id}"
-        )
+    # Only fetch event if we have an event_id
+    if alert.event_id:
+        try:
+            result = await db.execute(
+                select(EventORM).where(EventORM.id == alert.event_id)
+            )
+            event = result.scalars().first()
 
-        # Get priority from event content
-        priority = event.content.get("priority")
+            if event:
+                logger.debug(
+                    f"[DEBUG] Found event {alert.event_id} for alert {alert.id}"
+                )
+                if event.content:
+                    # Get title - try multiple fields to find actual alert content
+                    title = (
+                        event.content.get("title")
+                        or event.content.get("body")
+                        or event.content.get("summary")
+                        or f"Event {alert.event_id}"
+                    )
 
-        # Get primary entity/cryptocurrency mentioned
-        mentions = event.content.get("mentions", [])
-        entity = mentions[0] if mentions else None
+                    # Get priority from event content
+                    priority = event.content.get("priority")
+
+                    # Get primary entity/cryptocurrency mentioned
+                    mentions = event.content.get("mentions", [])
+                    entity = mentions[0] if mentions else None
+
+                    logger.debug(
+                        f"[DEBUG] Extracted title='{title}', priority={priority}, entity={entity}"
+                    )
+                else:
+                    logger.warning(f"[⚠] Event {alert.event_id} has no content")
+            else:
+                logger.warning(
+                    f"[⚠] Event {alert.event_id} not found for alert {alert.id}"
+                )
+        except Exception as e:
+            logger.error(
+                f"[❌] Error fetching event {alert.event_id} for alert {alert.id}: {e}"
+            )
+    else:
+        logger.debug(f"[DEBUG] Alert {alert.id} has no event_id")
 
     return Alert(
         alert_id=str(alert.id),
