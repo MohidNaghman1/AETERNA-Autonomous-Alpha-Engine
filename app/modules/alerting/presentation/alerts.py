@@ -69,9 +69,15 @@ async def get_alerts_query(
     if priority:
         filters.append(AlertORM.priority == priority)
 
+    # Track if we've joined EventORM to avoid duplicate joins
+    event_joined = False
+
     # Filter by entity - requires joining with events and checking mentions in content
     if entity:
-        query = query.join(EventORM, AlertORM.event_id == EventORM.id, isouter=True)
+        query = query.join(
+            EventORM, AlertORM.event_id == EventORM.id, isouter=True
+        )
+        event_joined = True
         # Check if entity exists in the event's mentions array
         # This is a simplified filter - assumes mentions field exists in JSON content
         filters.append(
@@ -82,9 +88,11 @@ async def get_alerts_query(
         )
 
     # Filter by data provider/feed source (e.g., coindesk, coingecko, cointelegraph)
+    # Use INNER JOIN for source to only get alerts with matching events
     if source:
-        if entity is None:  # Only join if not already joined for entity
-            query = query.join(EventORM, AlertORM.event_id == EventORM.id, isouter=True)
+        if not event_joined:
+            query = query.join(EventORM, AlertORM.event_id == EventORM.id)
+            event_joined = True
         filters.append(EventORM.source == source)
 
     # Filter by alert delivery channels (stored as JSON array)
