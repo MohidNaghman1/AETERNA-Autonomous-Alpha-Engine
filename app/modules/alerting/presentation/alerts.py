@@ -28,6 +28,7 @@ def normalize_source(source: str) -> List[str]:
     """
     Normalize source names for flexible querying.
     Handles common variations:
+    - "ethereum" → matches blockchain events (onchain)
     - "coindesk" → matches "www.coindesk.com" or "coindesk.com"
     - "cointelegraph" → matches "cointelegraph.com"
     - "decrypt" → matches "decrypt.co"
@@ -39,6 +40,9 @@ def normalize_source(source: str) -> List[str]:
     
     # Map shorthand names to actual stored values
     normalization_map = {
+        "ethereum": ["ethereum"],
+        "onchain": ["ethereum"],
+        "blockchain": ["ethereum"],
         "coindesk": ["www.coindesk.com", "coindesk.com", "coindesk"],
         "cointelegraph": ["cointelegraph.com", "cointelegraph"],
         "decrypt": ["decrypt.co", "decrypt"],
@@ -294,7 +298,7 @@ async def alert_history(
     ),
     source: Optional[str] = Query(
         None,
-        description="Filter by data provider/feed (e.g., 'coindesk', 'coingecko', 'cointelegraph')",
+        description="Filter by data provider/feed (e.g., 'ethereum', 'coindesk', 'coingecko', 'cointelegraph')",
     ),
     channels: Optional[str] = Query(
         None,
@@ -313,8 +317,8 @@ async def alert_history(
     - start_date: Filter alerts after this date (ISO format)
     - end_date: Filter alerts before this date (ISO format)
     - priority: Filter by priority (HIGH, MEDIUM, LOW)
-    - entity: Filter by cryptocurrency/token name (e.g., Bitcoin, Ethereum, Solana)
-    - source: Filter by data provider/feed (e.g., CoinDesk, CoinGecko, CoinMarketCap, Cointelegraph)
+    - entity: Filter by cryptocurrency/token name (e.g., Bitcoin, Ethereum, Solana, ETH, USDT)
+    - source: Filter by data provider/feed (e.g., ethereum, CoinDesk, CoinGecko, CoinMarketCap, Cointelegraph)
     - channels: Filter by how you receive alerts (email, telegram, sms, in-app, webhook)
 
     Returns:

@@ -46,7 +46,12 @@ kombu==5.6.2
 amqp==5.3.1
 billiard==4.2.4
 vine==5.1.0
-apscheduler==3.10.4
+
+
+# Blockchain Interaction
+web3==6.11.3
+eth-keys==0.4.0
+eth-account==0.9.9
 
 # Data Ingestion & Feed Processing
 feedparser==6.0.12

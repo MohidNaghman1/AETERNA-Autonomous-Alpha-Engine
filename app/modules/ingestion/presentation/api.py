@@ -21,6 +21,7 @@ def normalize_source(source: str) -> List[str]:
     """
     Normalize source names for flexible querying.
     Handles common variations:
+    - "ethereum" → matches blockchain events (onchain)
     - "coindesk" → matches "www.coindesk.com" or "coindesk.com"
     - "cointelegraph" → matches "cointelegraph.com"
     - "decrypt" → matches "decrypt.co"
@@ -32,6 +33,9 @@ def normalize_source(source: str) -> List[str]:
 
     # Map shorthand names to actual stored values
     normalization_map = {
+        "ethereum": ["ethereum"],
+        "onchain": ["ethereum"],
+        "blockchain": ["ethereum"],
         "coindesk": ["www.coindesk.com", "coindesk.com", "coindesk"],
         "cointelegraph": ["cointelegraph.com", "cointelegraph"],
         "decrypt": ["decrypt.co", "decrypt"],
@@ -82,11 +86,11 @@ async def list_events(
     limit: int = Query(100, ge=1, le=500),
     source: Optional[str] = Query(
         None,
-        description="Filter by data provider (coindesk, coingecko, decrypt, cointelegraph, etc)",
+        description="Filter by data provider (ethereum, coindesk, coingecko, decrypt, cointelegraph, etc)",
     ),
     event_type: Optional[str] = Query(
         None,
-        description="Filter by event type (news, price, etc)"
+        description="Filter by event type (news, price, onchain, etc)"
     ),
     start_date: Optional[datetime] = Query(
         None,
@@ -104,8 +108,8 @@ async def list_events(
     Query Parameters:
     - skip: Offset for pagination (default: 0)
     - limit: Number of events to return (default: 100, max: 500)
-    - source: Filter by data provider source (e.g., "coindesk", "coingecko", "cointelegraph", "decrypt")
-    - event_type: Filter by event type (e.g., "news", "price")
+    - source: Filter by data provider source (e.g., "ethereum", "coindesk", "coingecko", "cointelegraph", "decrypt")
+    - event_type: Filter by event type (e.g., "news", "price", "onchain")
     - start_date: Filter events after this date (ISO format)
     - end_date: Filter events before this date (ISO format)
 
@@ -153,9 +157,10 @@ async def list_events_by_source(
     limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ):
-    """Filter events by source (e.g., coindesk, coingecko, decrypt, cointelegraph).
+    """Filter events by source (e.g., ethereum, coindesk, coingecko, decrypt, cointelegraph).
     
     Source names are normalized, so you can use shorthand names:
+    - "ethereum" matches "ethereum" (on-chain events)
     - "coindesk" matches "www.coindesk.com" or "coindesk.com"
     - "cointelegraph" matches "cointelegraph.com"
     - "decrypt" matches "decrypt.co"
@@ -237,6 +242,7 @@ async def get_available_sources(db: AsyncSession = Depends(get_db)):
         "total_unique_sources": len(sources),
         "total_events": total,
         "filter_usage": {
+            "ethereum": "Try: ?source=ethereum (for on-chain events)",
             "coindesk": "Try: ?source=coindesk (matches www.coindesk.com)",
             "cointelegraph": "Try: ?source=cointelegraph",
             "decrypt": "Try: ?source=decrypt",
