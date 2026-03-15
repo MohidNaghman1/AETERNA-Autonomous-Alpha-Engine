@@ -131,7 +131,6 @@ async def fetch_eth_price() -> float:
                 price = data["ethereum"]["usd"]
                 eth_price_cache["price"] = price
                 eth_price_cache["timestamp"] = time.time()
-                logger.debug(f"ETH price fetched: ${price}")
                 return price
             else:
                 logger.warning(f"CoinGecko API error: {resp.status}")
