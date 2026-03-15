@@ -62,7 +62,7 @@ class OnChainConfig:
     # Event Filtering
     MIN_ETH_AMOUNT = int(os.getenv("MIN_ETH_AMOUNT", "100"))
     MIN_STABLECOIN_AMOUNT = int(os.getenv("MIN_STABLECOIN_AMOUNT", "1000000"))
-    MIN_TRANSACTION_VALUE_USD = int(os.getenv("MIN_TRANSACTION_VALUE_USD", "1000000"))
+    MIN_TRANSACTION_VALUE_USD = int(os.getenv("MIN_TRANSACTION_VALUE_USD", "10000"))  # $10k for testing
     
     # Confirmation Blocks (security)
     CONFIRMATION_BLOCKS = int(os.getenv("CONFIRMATION_BLOCKS", "12"))
