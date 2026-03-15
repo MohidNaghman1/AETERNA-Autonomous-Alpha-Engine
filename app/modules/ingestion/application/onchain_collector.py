@@ -206,6 +206,10 @@ def normalize_transfer_event(
 
         timestamp = datetime.fromtimestamp(block_timestamp)
 
+        # Create human-readable alert details
+        title = f"Large {token} Transfer: ${usd_value:,.0f}"
+        summary = f"{exchange_name} activity: {exchange_from or 'Unknown'} → {exchange_to or 'Unknown'} | {token} | ${usd_value:,.0f} USD"
+
         content = {
             "transaction_hash": tx_hash,
             "from_address": from_address,
@@ -219,9 +223,14 @@ def normalize_transfer_event(
             "exchange_detected": exchange_name,
             "transaction_type": "transfer",
             "blockchain": "ethereum",
+            # Alert metadata
+            "title": title,
+            "summary": summary,
+            "mentions": [token, exchange_name] if exchange_name else [token],
+            "alert_reason": f"Large {token} transfer detected on-chain",
         }
 
-        entities = [token]
+        entities = [token, exchange_name] if exchange_name else [token]
 
         event = Event.create(
             source="ethereum",
@@ -229,7 +238,7 @@ def normalize_transfer_event(
             timestamp=timestamp,
             content=content,
             entities=entities,
-            quality_score=85,
+            quality_score=90,  # High confidence blockchain data
         )
 
         return event
@@ -257,6 +266,10 @@ def normalize_dex_swap_event(
         
         timestamp = datetime.fromtimestamp(block_timestamp)
 
+        # Create human-readable alert details
+        title = f"Large {dex_name} Swap: ${usd_value:,.0f}"
+        summary = f"{dex_name} swap: {token_in} → {token_out} | ${usd_value:,.0f} USD"
+
         content = {
             "transaction_hash": tx_hash,
             "event_type": "dex_swap",
@@ -267,9 +280,14 @@ def normalize_dex_swap_event(
             "amount_out": str(amount_out),
             "usd_value": usd_value,
             "blockchain": "ethereum",
+            # Alert metadata
+            "title": title,
+            "summary": summary,
+            "mentions": [token_in, token_out, dex_name],
+            "alert_reason": f"Large DEX swap detected on-chain ({dex_name})",
         }
 
-        entities = [token_in, token_out]
+        entities = [token_in, token_out, dex_name]
 
         event = Event.create(
             source="ethereum",
@@ -277,7 +295,7 @@ def normalize_dex_swap_event(
             timestamp=timestamp,
             content=content,
             entities=entities,
-            quality_score=80,
+            quality_score=90,  # High confidence blockchain data
         )
 
         return event
