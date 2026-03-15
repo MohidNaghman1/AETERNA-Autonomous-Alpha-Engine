@@ -273,6 +273,183 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
     return {"total_events": total, "by_source": sources, "by_type": types}
 
 
+@router.get("/debug/ethereum-connection")
+async def debug_ethereum_connection():
+    """
+    Test connection to Ethereum node via QuickNode.
+    Helps diagnose if blockchain connectivity is the issue.
+    
+    Returns:
+        - connected: Boolean if connection successful
+        - block_number: Current block if connected
+        - error: Error message if failed
+    
+    Example usage:
+        GET /ingestion/debug/ethereum-connection
+    """
+    import os
+    from web3 import Web3
+    from web3.providers import WebsocketProvider
+    
+    quicknode_url = os.getenv("QUICKNODE_URL", "")
+    
+    if not quicknode_url:
+        return {
+            "status": "⚠️ Not configured",
+            "error": "QUICKNODE_URL environment variable not set",
+            "diagnostic": "Set QUICKNODE_URL in .env to enable Ethereum monitoring"
+        }
+    
+    try:
+        logger.info("[ETHEREUM-DEBUG] Testing Web3 connection...")
+        start_time = time.time()
+        
+        w3 = Web3(WebsocketProvider(quicknode_url))
+        
+        # This may hang if QuickNode is unreachable
+        is_connected = w3.is_connected()
+        elapsed = time.time() - start_time
+        
+        if is_connected:
+            try:
+                block = w3.eth.block_number
+                chain_id = w3.eth.chain_id
+                return {
+                    "status": "✅ Connected",
+                    "connected": True,
+                    "block_number": block,
+                    "chain_id": chain_id,
+                    "connection_time_ms": round(elapsed * 1000, 2),
+                    "network": "Ethereum Mainnet"
+                }
+            except Exception as e:
+                logger.error(f"[ETHEREUM-DEBUG] Error getting block info: {e}")
+                return {
+                    "status": "⚠️ Connected but error getting data",
+                    "connected": True,
+                    "error": str(e),
+                    "connection_time_ms": round(elapsed * 1000, 2),
+                }
+        else:
+            return {
+                "status": "❌ Not connected",
+                "connected": False,
+                "error": "Web3 returned is_connected=False",
+                "connection_time_ms": round(elapsed * 1000, 2),
+                "diagnostic": "QuickNode may be unreachable or URL is invalid"
+            }
+    
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"[ETHEREUM-DEBUG] Connection error: {e}")
+        return {
+            "status": "❌ Connection Error",
+            "connected": False,
+            "error": str(e),
+            "connection_time_ms": round(elapsed * 1000, 2),
+            "diagnostic": "Network error or invalid QuickNode URL - check .env and network connectivity"
+        }
+
+
+@router.get("/debug/rabbitmq-queue-depth")
+async def debug_rabbitmq_queue_depth():
+    """
+    Check RabbitMQ queue depth to see if messages are stuck in the queue.
+    
+    Returns:
+        - queue_name: Name of the queue being monitored
+        - message_count: Number of messages in the queue
+        - connection_status: Whether we could connect to RabbitMQ
+        - helpful_commands: Debugging tips
+    
+    Example usage:
+        GET /ingestion/debug/rabbitmq-queue-depth
+    """
+    import pika
+    import os
+    
+    RABBITMQ_URL = os.getenv("RABBITMQ_URL")
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+    RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
+    RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")
+    RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+    RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+    RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
+    
+    try:
+        # Try to connect to RabbitMQ
+        if RABBITMQ_URL:
+            conn_params = pika.URLParameters(RABBITMQ_URL)
+        else:
+            credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+            conn_params = pika.ConnectionParameters(
+                host=RABBITMQ_HOST,
+                port=RABBITMQ_PORT,
+                virtual_host=RABBITMQ_VHOST,
+                credentials=credentials,
+            )
+        
+        connection = pika.BlockingConnection([conn_params] if isinstance(conn_params, pika.URLParameters) else conn_params)
+        channel = connection.channel()
+        
+        # Try to declare the queue (gets current status)
+        method = channel.queue_declare(queue=RABBITMQ_QUEUE, passive=True)
+        message_count = method.method.message_count
+        
+        connection.close()
+        
+        return {
+            "status": "✅ Connected",
+            "queue_name": RABBITMQ_QUEUE,
+            "message_count": message_count,
+            "connection_status": "connected",
+            "next_steps": (
+                f"✅ Queue is empty" if message_count == 0 
+                else f"⚠️ {message_count} messages in queue - messages may not be consumed"
+            ),
+            "diagnostic_tips": {
+                "no_messages_in_queue": "Messages may not be published - check on-chain collector logs",
+                "messages_stuck_in_queue": "Messages are published but not consumed - check consumer logs",
+                "check_consumer": f"Run: python -m app.modules.ingestion.application.consumer",
+            }
+        }
+        
+    except pika.exceptions.AMQPConnectionError as e:
+        logger.error(f"[RABBITMQ-DEBUG] Connection error: {e}")
+        return {
+            "status": "❌ Connection Failed",
+            "connection_status": "error",
+            "error": str(e),
+            "queue_name": RABBITMQ_QUEUE,
+            "message_count": None,
+            "diagnostic_tips": {
+                "check_rabbitmq": "Is RabbitMQ running? Check docker or local service",
+                "verify_credentials": f"Host: {RABBITMQ_HOST}:{RABBITMQ_PORT}, User: {RABBITMQ_USER}",
+                "check_url": f"RABBITMQ_URL: {RABBITMQ_URL if RABBITMQ_URL else 'Not set (using host-based)'}"
+            }
+        }
+    except pika.exceptions.AMQPChannelError as e:
+        logger.error(f"[RABBITMQ-DEBUG] Queue does not exist: {e}")
+        return {
+            "status": "❌ Queue Not Found",
+            "connection_status": "connected_but_queue_missing",
+            "error": f"Queue '{RABBITMQ_QUEUE}' does not exist",
+            "queue_name": RABBITMQ_QUEUE,
+            "message_count": None,
+            "diagnostic_tips": {
+                "create_queue": f"Queue will be created automatically when first event is published"
+            }
+        }
+    except Exception as e:
+        logger.error(f"[RABBITMQ-DEBUG] Unexpected error: {e}")
+        return {
+            "status": "❌ Error",
+            "error": str(e),
+            "queue_name": RABBITMQ_QUEUE,
+            "message_count": None,
+        }
+
+
 @router.get("/debug/database-contents")
 async def debug_database_contents(db: AsyncSession = Depends(get_db)):
     """
@@ -444,19 +621,62 @@ async def test_onchain_collector(db: AsyncSession = Depends(get_db)):
         from app.modules.ingestion.application.onchain_collector import run_collector
         from app.modules.ingestion.application.consumer import run_consumer_poll
         
-        run_collector()
+        # Run collector in timeout to prevent hanging
+        collector_start = time.time()
+        try:
+            # Use signal to timeout the collector if it takes too long
+            import signal
+            
+            def timeout_handler(signum, frame):
+                logger.warning("[TEST] Collector timed out after 30 seconds")
+                raise TimeoutError("Collector execution timed out")
+            
+            # Set timeout (Unix/Linux only, Windows will skip this)
+            old_handler = None
+            try:
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)  # 30 second timeout
+            except (AttributeError, ValueError):
+                # SIGALRM not available on Windows
+                logger.debug("[TEST] Timeout not available on this platform")
+            
+            try:
+                run_collector()
+            finally:
+                try:
+                    signal.alarm(0)  # Cancel alarm
+                    if old_handler:
+                        signal.signal(signal.SIGALRM, old_handler)
+                except (AttributeError, ValueError):
+                    pass
+            
+            collector_time = time.time() - collector_start
+            logger.info(f"[TEST] Collector completed in {collector_time:.2f}s")
+        except TimeoutError:
+            collector_time = time.time() - collector_start
+            logger.warning(f"[TEST] Collector timed out after {collector_time:.2f}s (likely Web3 connection issue)")
+        except Exception as e:
+            logger.error(f"[TEST] Collector error: {e}")
+            collector_time = time.time() - collector_start
         
         # CRITICAL FIX: Consume messages from RabbitMQ before checking database
         # The collector publishes to RabbitMQ, but we need to consume it
         logger.info("[TEST] Polling RabbitMQ to consume published events...")
-        for attempt in range(5):
+        total_consumed = 0
+        for attempt in range(10):  # Increased attempts
+            logger.debug(f"[TEST] Consume attempt {attempt + 1}/10...")
             consumed = run_consumer_poll(batch_size=50)
+            total_consumed += consumed
+            
             if consumed > 0:
-                logger.info(f"[TEST] Consumed {consumed} message(s) on attempt {attempt + 1}")
-                time.sleep(0.5)  # Brief wait for DB commit
+                logger.info(f"[TEST] ✅ Consumed {consumed} message(s) on attempt {attempt + 1}")
+                time.sleep(0.5)  # Wait for DB commit
                 break
-            if attempt < 4:
-                time.sleep(0.5)
+            else:
+                logger.debug(f"[TEST] No messages on attempt {attempt + 1}")
+            
+            if attempt < 9:
+                time.sleep(0.3)
         
         elapsed = time.time() - start_time
         
@@ -465,6 +685,21 @@ async def test_onchain_collector(db: AsyncSession = Depends(get_db)):
             select(func.count(EventORM.id)).where(EventORM.source == "ethereum")
         )
         ethereum_event_count = result.scalar() or 0
+        
+        # Diagnostic info
+        diagnostic = {
+            "collector_time_seconds": round(collector_time, 2),
+            "consumer_attempts": 10,
+            "total_messages_consumed": total_consumed,
+            "events_in_database": ethereum_event_count,
+        }
+        
+        if ethereum_event_count > 0:
+            status_msg = "✅ SUCCESS - Event published and stored in database"
+        elif total_consumed > 0:
+            status_msg = "⚠️ WARNING - Messages consumed but not in database (check consumer logs)"
+        else:
+            status_msg = "❌ ISSUE - No messages consumed from queue (event may not be published)"
         
         return {
             "status": "success",
@@ -476,7 +711,8 @@ async def test_onchain_collector(db: AsyncSession = Depends(get_db)):
             "chain_id": chain_id,
             "ethereum_events_in_database": ethereum_event_count,
             "event_published": True,
-            "notes": "✅ Event published and consumed from RabbitMQ before database check" if ethereum_event_count > 0 else "⚠️ Event may still be in RabbitMQ queue - check queue depth",
+            "diagnostic": diagnostic,
+            "status_message": status_msg,
             "message": "[OK] On-Chain collector test completed successfully"
         }
         
