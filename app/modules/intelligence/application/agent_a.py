@@ -402,6 +402,44 @@ def score_event(
         event_dict = event
 
     try:
+        # ========================================================================
+        # THRESHOLD-BASED PRIORITY OPTIMIZATION
+        # Check if event has priority_marker from on-chain collector
+        # If so, honor it as a fast-track determination (no complex scoring needed)
+        # ========================================================================
+        priority_marker = event_dict.get("content", {}).get("priority_marker")
+        priority_reason = event_dict.get("content", {}).get("priority_reason", "")
+        
+        if priority_marker in ("HIGH", "MEDIUM", "LOW"):
+            # Use on-chain collector's threshold-based priority
+            if priority_marker == "HIGH":
+                score = 95.0
+            elif priority_marker == "MEDIUM":
+                score = 70.0
+            else:  # LOW
+                score = 35.0
+            
+            priority = priority_marker
+            result = {
+                "multi_source": 0,
+                "engagement": 0,
+                "bot": 0,
+                "dedup": 0,
+                "score": score,
+                "priority": priority,
+                "technique": "threshold_based",  # ← Mark as threshold-based
+                "reason": priority_reason,
+            }
+            logger.info(
+                f"[PRIORITY] Fast-tracked on-chain event: {priority} "
+                f"(${event_dict.get('content', {}).get('usd_value', 'N/A')}). "
+                f"Reason: {priority_reason}"
+            )
+            return result
+        
+        # ========================================================================
+        # STANDARD AGENT A SCORING (for non-on-chain or borderline events)
+        # ========================================================================
         ms_score = multi_source_check(event_dict, config)
         eng_score = engagement_analysis(event_dict, config)
         bot_score = bot_detection(event_dict, config)
@@ -432,6 +470,7 @@ def score_event(
             "dedup": dedup_score,
             "score": weighted,
             "priority": priority,
+            "technique": "agent_a_scoring",  # ← Mark as AI scoring
         }
 
         if return_details:

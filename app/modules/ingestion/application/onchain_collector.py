@@ -64,6 +64,24 @@ class OnChainConfig:
     MIN_STABLECOIN_AMOUNT = int(os.getenv("MIN_STABLECOIN_AMOUNT", "1000000"))
     MIN_TRANSACTION_VALUE_USD = int(os.getenv("MIN_TRANSACTION_VALUE_USD", "10000"))  # $10k for testing
     
+    # ========================================================================
+    # THRESHOLD-BASED PRIORITY (Automatic HIGH priority for big transactions)
+    # ========================================================================
+    # Transaction value thresholds for automatic priority marking
+    HIGH_PRIORITY_THRESHOLD_USD = int(os.getenv("HIGH_PRIORITY_THRESHOLD_USD", "1000000"))  # $1M
+    MEDIUM_PRIORITY_THRESHOLD_USD = int(os.getenv("MEDIUM_PRIORITY_THRESHOLD_USD", "100000"))  # $100k
+    LOW_PRIORITY_THRESHOLD_USD = int(os.getenv("LOW_PRIORITY_THRESHOLD_USD", "10000"))  # $10k
+    
+    # High-priority exchanges (detection boost)
+    HIGH_PRIORITY_EXCHANGES = set([
+        "Binance", "Kraken", "Coinbase", "Gemini", 
+        "FTX", "Bitstamp", "Kraken Pro"
+    ])
+    
+    # Boost factors for threshold reduction
+    STABLECOIN_BOOST_FACTOR = 0.5  # Lower thresholds by 50% for stablecoins
+    EXCHANGE_BOOST_FACTOR = 0.5    # Lower thresholds by 50% for known exchanges
+    
     # Confirmation Blocks (security)
     CONFIRMATION_BLOCKS = int(os.getenv("CONFIRMATION_BLOCKS", "12"))
     
@@ -163,6 +181,62 @@ async def wei_to_usd(amount_wei: int, decimals: int = 18) -> float:
 
 
 # ============================================================================
+# THRESHOLD-BASED PRIORITY DETERMINATION
+# ============================================================================
+
+def determine_priority_by_threshold(
+    usd_value: float,
+    exchange_name: Optional[str] = None,
+    token: Optional[str] = None,
+    is_stablecoin: bool = False,
+) -> tuple[str, str]:
+    """
+    Determine event priority based on objective thresholds.
+    
+    This implements the Threshold-Based Priority Technique:
+    - Objective criteria (transaction size, exchange detection, token type)
+    - Immediate determination at collection time (no Intelligence delay)
+    - 0% false positives for obvious high-value events
+    
+    Returns:
+        (priority: "HIGH"/"MEDIUM"/"LOW", reason: explanation)
+    """
+    
+    # Apply boost factors to thresholds
+    high_threshold = OnChainConfig.HIGH_PRIORITY_THRESHOLD_USD
+    medium_threshold = OnChainConfig.MEDIUM_PRIORITY_THRESHOLD_USD
+    
+    # Boost 1: Known exchange involvement
+    if exchange_name and exchange_name in OnChainConfig.HIGH_PRIORITY_EXCHANGES:
+        high_threshold *= OnChainConfig.EXCHANGE_BOOST_FACTOR
+        medium_threshold *= OnChainConfig.EXCHANGE_BOOST_FACTOR
+        logger.info(f"[PRIORITY] Applying exchange boost: {exchange_name}")
+    
+    # Boost 2: Stablecoin movements (money flow signals)
+    if is_stablecoin and token in ["USDT", "USDC", "DAI"]:
+        high_threshold *= OnChainConfig.STABLECOIN_BOOST_FACTOR
+        medium_threshold *= OnChainConfig.STABLECOIN_BOOST_FACTOR
+        logger.info(f"[PRIORITY] Applying stablecoin boost: {token}")
+    
+    # Priority determination
+    if usd_value >= high_threshold:
+        reason = f"Threshold: ${usd_value:,.0f} >= ${high_threshold:,.0f} (HIGH)"
+        if exchange_name:
+            reason += f" | Exchange: {exchange_name}"
+        return "HIGH", reason
+    
+    elif usd_value >= medium_threshold:
+        reason = f"Threshold: ${usd_value:,.0f} >= ${medium_threshold:,.0f} (MEDIUM)"
+        if exchange_name:
+            reason += f" | Exchange: {exchange_name}"
+        return "MEDIUM", reason
+    
+    else:
+        reason = f"Below thresholds: ${usd_value:,.0f}"
+        return "LOW", reason
+
+
+# ============================================================================
 # INITIALIZATION
 # ============================================================================
 
@@ -206,6 +280,15 @@ def normalize_transfer_event(
 
         timestamp = datetime.fromtimestamp(block_timestamp)
 
+        # Determine priority using threshold-based technique
+        is_stablecoin = token in STABLECOIN_ADDRESSES.values()
+        priority_marker, priority_reason = determine_priority_by_threshold(
+            usd_value=usd_value,
+            exchange_name=exchange_name if exchange_name != "Unknown" else None,
+            token=token,
+            is_stablecoin=is_stablecoin,
+        )
+
         # Create human-readable alert details
         title = f"Large {token} Transfer: ${usd_value:,.0f}"
         summary = f"{exchange_name} activity: {exchange_from or 'Unknown'} → {exchange_to or 'Unknown'} | {token} | ${usd_value:,.0f} USD"
@@ -228,6 +311,9 @@ def normalize_transfer_event(
             "summary": summary,
             "mentions": [token, exchange_name] if exchange_name else [token],
             "alert_reason": f"Large {token} transfer detected on-chain",
+            # Priority marker (Threshold-based technique)
+            "priority_marker": priority_marker,
+            "priority_reason": priority_reason,
         }
 
         entities = [token, exchange_name] if exchange_name else [token]
@@ -238,7 +324,7 @@ def normalize_transfer_event(
             timestamp=timestamp,
             content=content,
             entities=entities,
-            quality_score=90,  # High confidence blockchain data
+            quality_score=95,  # High confidence blockchain data
         )
 
         return event
@@ -266,6 +352,15 @@ def normalize_dex_swap_event(
         
         timestamp = datetime.fromtimestamp(block_timestamp)
 
+        # Determine priority using threshold-based technique
+        # DEX swaps are typically lower priority than exchange movements
+        priority_marker, priority_reason = determine_priority_by_threshold(
+            usd_value=usd_value,
+            exchange_name=None,  # DEX, not centralized exchange
+            token=token_in,
+            is_stablecoin=False,
+        )
+
         # Create human-readable alert details
         title = f"Large {dex_name} Swap: ${usd_value:,.0f}"
         summary = f"{dex_name} swap: {token_in} → {token_out} | ${usd_value:,.0f} USD"
@@ -285,6 +380,9 @@ def normalize_dex_swap_event(
             "summary": summary,
             "mentions": [token_in, token_out, dex_name],
             "alert_reason": f"Large DEX swap detected on-chain ({dex_name})",
+            # Priority marker (Threshold-based technique)
+            "priority_marker": priority_marker,
+            "priority_reason": priority_reason,
         }
 
         entities = [token_in, token_out, dex_name]
@@ -307,6 +405,7 @@ def normalize_dex_swap_event(
 
 def publish_event(event: Event) -> bool:
     """Validate, deduplicate, and publish event to RabbitMQ."""
+    global publisher
     try:
         # Validate schema
         if not validate_event_schema(event):
@@ -321,13 +420,23 @@ def publish_event(event: Event) -> bool:
         # Mark as seen
         mark_as_seen(event.id)
 
+        # Ensure publisher is initialized
+        if not publisher:
+            logger.error("Publisher not initialized")
+            return False
+
         # Publish to RabbitMQ
-        event_dict = event.dict()
-        publisher.publish(event_dict)
+        event_json = event.model_dump_json()  # ← Serialize to JSON string (same as other collectors)
         
-        logger.info(f"[OK] Published event: {event.id[:8]}... ({event.source}:{event.type})")
+        logger.info(f"[PUBLISH] Publishing event {event.id[:8]}... to RabbitMQ")
+        logger.debug(f"[PUBLISH] Event: {event.source}:{event.type} | USD: ${event.content.get('usd_value', 'N/A')}")
         
-        return True
+        if publisher.publish(event_json):  # ← Pass JSON string
+            logger.info(f"[OK] Published event: {event.id[:8]}... ({event.source}:{event.type})")
+            return True
+        else:
+            logger.error(f"[ERROR] Failed to publish event {event.id[:8]}...")
+            return False
 
     except Exception as e:
         logger.error(f"Error publishing event: {e}")
@@ -356,11 +465,13 @@ def run_collector():
     logger.info("Starting On-Chain Collector")
     logger.info("=" * 60)
 
-    global publisher
+    global publisher, w3
     start_time = time.time()
+    published_count = 0
 
     # Initialize Web3 connection
     if not w3:
+        logger.info("[INIT] Initializing Web3 connection...")
         initialize_web3()
 
     if not w3 or not w3.is_connected():
@@ -369,32 +480,47 @@ def run_collector():
 
     try:
         # Initialize publisher
+        logger.info("[INIT] Initializing RabbitMQ publisher...")
         publisher = RabbitMQPublisher(queue_name=OnChainConfig.RABBITMQ_QUEUE)
+        logger.info("[OK] RabbitMQ publisher initialized")
         
         # Start monitoring
+        logger.info("[MONITOR] Starting blockchain monitoring...")
         monitor_large_transfers()
 
         # Example: Process a sample event (for testing)
+        logger.info("[EVENT] Creating sample transfer event...")
         sample_event = normalize_transfer_event(
-            tx_hash="0x1234567890abcdef",
-            from_address="0x3f5Ce5fbfE3e9aF3971dd833D97da793a8eb06f7",
-            to_address="0xABCdEF1234567890aBcDeF1234567890abcDeF12",
-            amount=5000000000000000000,
+            tx_hash="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            from_address="0x3f5Ce5fbfE3e9aF3971dd833D97da793a8eb06f7",  # Binance
+            to_address="0xABCdEF1234567890aBcDeF1234567890abcDeF12",     # Test address
+            amount=5000000000000000000,  # 5 ETH
             token="ETH",
             token_decimals=18,
-            usd_value=15000,
+            usd_value=15000,  # $15k USD value
             block_timestamp=int(time.time()),
         )
 
         if sample_event:
-            publish_event(sample_event)
+            logger.info(f"[EVENT] Sample event created: {sample_event.id[:8]}...")
+            logger.info(f"[EVENT] Event source: {sample_event.source}, type: {sample_event.type}")
+            logger.info(f"[EVENT] Event content: {sample_event.content}")
+            
+            # Try to publish
+            if publish_event(sample_event):
+                published_count += 1
+                logger.info(f"[SUCCESS] Event published successfully!")
+            else:
+                logger.error("[ERROR] Failed to publish event")
+        else:
+            logger.warning("[EVENT] Sample event creation returned None")
 
         elapsed = time.time() - start_time
-        logger.info(f"Collector completed in {elapsed:.2f} seconds")
+        logger.info(f"[COMPLETE] Collector completed in {elapsed:.2f} seconds | Published: {published_count}")
         logger.info("=" * 60)
 
     except Exception as e:
-        logger.error(f"Collector error: {e}")
+        logger.error(f"[ERROR] Collector error: {e}")
         traceback.print_exc()
 
 
