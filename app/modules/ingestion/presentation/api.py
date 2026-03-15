@@ -273,6 +273,65 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
     return {"total_events": total, "by_source": sources, "by_type": types}
 
 
+@router.get("/debug/database-contents")
+async def debug_database_contents(db: AsyncSession = Depends(get_db)):
+    """
+    Diagnostic endpoint showing EXACTLY what's in the database.
+    Helps debug filtering issues by showing all stored events with their source and type values.
+    
+    Returns:
+        - total_count: Total events in database
+        - by_source: Count of events for each source (shows actual stored values)
+        - by_type: Count of events for each type (shows actual stored values)
+        - sample_events: First 5 events with all details (to verify data structure)
+    
+    Example usage:
+        GET /ingestion/debug/database-contents
+    """
+    # Get total count
+    total_result = await db.execute(select(func.count(EventORM.id)))
+    total_count = total_result.scalar() or 0
+    
+    # Get breakdown by source (show ACTUAL stored values, not normalized)
+    source_result = await db.execute(
+        select(EventORM.source, func.count(EventORM.id)).group_by(EventORM.source).order_by(func.count(EventORM.id).desc())
+    )
+    by_source = {row[0]: row[1] for row in source_result.all()}
+    
+    # Get breakdown by type
+    type_result = await db.execute(
+        select(EventORM.type, func.count(EventORM.id)).group_by(EventORM.type).order_by(func.count(EventORM.id).desc())
+    )
+    by_type = {row[0]: row[1] for row in type_result.all()}
+    
+    # Get sample events to verify structure
+    sample_result = await db.execute(
+        select(EventORM).order_by(desc(EventORM.timestamp)).limit(5)
+    )
+    samples = []
+    for event in sample_result.scalars().all():
+        samples.append({
+            "id": event.id,
+            "source": event.source,
+            "type": event.type,
+            "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+            "title": event.content.get("title") if event.content else None,
+        })
+    
+    return {
+        "status": "✅ Ready for debugging",
+        "total_events": total_count,
+        "by_source": by_source,
+        "by_type": by_type,
+        "sample_events": samples,
+        "notes": {
+            "test_query": "To test filtering: GET /ingestion/events?source=ethereum&type=onchain",
+            "expected_sources": ["ethereum", "www.coindesk.com", "cointelegraph.com", "decrypt.co", "coingecko"],
+            "expected_types": ["onchain", "news", "price"],
+        }
+    }
+
+
 @router.get("/auto-update-status")
 async def auto_update_status(db: AsyncSession = Depends(get_db)):
     """Check if automatic updates are running.
