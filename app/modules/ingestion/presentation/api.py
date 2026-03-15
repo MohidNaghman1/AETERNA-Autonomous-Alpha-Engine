@@ -383,8 +383,21 @@ async def test_onchain_collector(db: AsyncSession = Depends(get_db)):
         # Run the collector
         logger.info("[TEST] Running on-chain collector...")
         from app.modules.ingestion.application.onchain_collector import run_collector
+        from app.modules.ingestion.application.consumer import run_consumer_poll
         
         run_collector()
+        
+        # CRITICAL FIX: Consume messages from RabbitMQ before checking database
+        # The collector publishes to RabbitMQ, but we need to consume it
+        logger.info("[TEST] Polling RabbitMQ to consume published events...")
+        for attempt in range(5):
+            consumed = run_consumer_poll(batch_size=50)
+            if consumed > 0:
+                logger.info(f"[TEST] Consumed {consumed} message(s) on attempt {attempt + 1}")
+                time.sleep(0.5)  # Brief wait for DB commit
+                break
+            if attempt < 4:
+                time.sleep(0.5)
         
         elapsed = time.time() - start_time
         
@@ -404,6 +417,7 @@ async def test_onchain_collector(db: AsyncSession = Depends(get_db)):
             "chain_id": chain_id,
             "ethereum_events_in_database": ethereum_event_count,
             "event_published": True,
+            "notes": "✅ Event published and consumed from RabbitMQ before database check" if ethereum_event_count > 0 else "⚠️ Event may still be in RabbitMQ queue - check queue depth",
             "message": "[OK] On-Chain collector test completed successfully"
         }
         
