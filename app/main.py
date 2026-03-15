@@ -33,6 +33,7 @@ from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
+from app.modules.ingestion.application.onchain_collector import run_collector as onchain_run
 
 load_dotenv()
 
@@ -73,6 +74,13 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
 
+        def run_onchain_collector():
+            try:
+                print(f"[ONCHAIN] Running at {time.strftime('%H:%M:%S')}")
+                onchain_run()
+            except Exception as e:
+                print(f"[ONCHAIN] Error: {e}")
+
         def run_consumer_polling():
             try:
                 count = run_consumer_poll(batch_size=50)
@@ -96,6 +104,9 @@ async def lifespan(app: FastAPI):
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
         background_scheduler.add_job(
+            run_onchain_collector, "interval", seconds=180, id="onchain_collector"
+        )
+        background_scheduler.add_job(
             run_consumer_polling, "interval", seconds=3, id="consumer_poller"
         )
         background_scheduler.add_job(
@@ -103,7 +114,7 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s), Intelligence(50events/5s)"
+            "[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), OnChain(180s), Consumer(50msgs/3s), Intelligence(50events/5s)"
         )
     except Exception as e:
         print(f"[STARTUP] ❌ Scheduler failed: {e}")
