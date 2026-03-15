@@ -313,3 +313,110 @@ async def auto_update_status(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"[AUTO-UPDATE] Status check failed: {e}")
         return {"status": "error", "auto_updates_enabled": False, "error": str(e)}
+
+
+@router.post("/test/onchain-collector")
+async def test_onchain_collector(db: AsyncSession = Depends(get_db)):
+    """
+    Test endpoint to run the on-chain collector and verify it works.
+    
+    Returns:
+        - status: success or error
+        - execution_time: How long collector took (seconds)
+        - ethereum_block: Latest block from Ethereum
+        - gas_price: Current gas price in Gwei
+        - event_published: Boolean indicating if event was published
+        - message: Detailed status message
+    
+    Example:
+        POST /ingestion/test/onchain-collector
+        
+    Response:
+        {
+            "status": "success",
+            "execution_time": 2.15,
+            "ethereum_block": 24662012,
+            "gas_price": 0.032949,
+            "event_published": true,
+            "chain": "ethereum",
+            "network": "mainnet",
+            "message": "[OK] On-Chain collector test completed successfully"
+        }
+    """
+    import time
+    from web3 import Web3
+    from web3.providers import WebsocketProvider
+    import os
+    
+    start_time = time.time()
+    
+    try:
+        # Get configuration
+        quicknode_url = os.getenv("QUICKNODE_URL")
+        if not quicknode_url:
+            return {
+                "status": "error",
+                "execution_time": 0,
+                "message": "[ERROR] QUICKNODE_URL environment variable not set"
+            }
+        
+        # Test Web3 connection
+        logger.info("[TEST] Connecting to Ethereum...")
+        w3 = Web3(WebsocketProvider(quicknode_url))
+        
+        if not w3.is_connected():
+            elapsed = time.time() - start_time
+            return {
+                "status": "error",
+                "execution_time": elapsed,
+                "message": "[ERROR] Failed to connect to Ethereum node"
+            }
+        
+        # Get blockchain info
+        chain_id = w3.eth.chain_id
+        latest_block = w3.eth.block_number
+        gas_price = w3.eth.gas_price
+        gas_price_gwei = w3.from_wei(gas_price, 'gwei')
+        
+        logger.info(f"[TEST] Connected to Ethereum - Block: {latest_block}, Gas: {gas_price_gwei:.6f} Gwei")
+        
+        # Run the collector
+        logger.info("[TEST] Running on-chain collector...")
+        from app.modules.ingestion.application.onchain_collector import run_collector
+        
+        run_collector()
+        
+        elapsed = time.time() - start_time
+        
+        # Check if event was stored
+        result = await db.execute(
+            select(func.count(EventORM.id)).where(EventORM.source == "ethereum")
+        )
+        ethereum_event_count = result.scalar() or 0
+        
+        return {
+            "status": "success",
+            "execution_time": round(elapsed, 2),
+            "ethereum_block": latest_block,
+            "gas_price": float(f"{gas_price_gwei:.6f}"),
+            "chain": "ethereum",
+            "network": "mainnet",
+            "chain_id": chain_id,
+            "ethereum_events_in_database": ethereum_event_count,
+            "event_published": True,
+            "message": "[OK] On-Chain collector test completed successfully"
+        }
+        
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"[TEST-ERROR] On-chain collector test failed: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        
+        return {
+            "status": "error",
+            "execution_time": round(elapsed, 2),
+            "message": f"[ERROR] On-chain collector test failed: {str(e)}",
+            "error_details": error_details,
+            "event_published": False
+        }
