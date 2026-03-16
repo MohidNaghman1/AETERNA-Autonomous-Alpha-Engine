@@ -12,6 +12,7 @@ from app.modules.ingestion.presentation.schemas import EventIn, EventOut
 from typing import List, Optional
 from datetime import datetime
 import logging
+import time
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
