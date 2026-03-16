@@ -151,6 +151,11 @@ def process_event(ch, method, properties, body):
         if "event_type" in data:
             data["type"] = data.pop("event_type")
 
+        # DEBUG: Log event type
+        event_type = data.get("type", "unknown")
+        if event_type == "onchain":
+            logger.info(f"[🔗 ON-CHAIN] Processing on-chain event. Data keys: {list(data.keys())}")
+
         try:
             event = Event(**data)
         except Exception as e:
@@ -170,6 +175,8 @@ def process_event(ch, method, properties, body):
         # Validate event schema
         is_valid, validation_error = validate_event_schema(event.model_dump())
         if not is_valid:
+            if event_type == "onchain":
+                logger.warning(f"[🔗 ON-CHAIN VALIDATION FAILED] {validation_error}")
             logger.warning(
                 f"[VALIDATION-FAILED] Event {getattr(event, 'id', None)}: {validation_error}"
             )

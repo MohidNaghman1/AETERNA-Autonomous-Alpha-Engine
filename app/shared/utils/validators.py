@@ -43,17 +43,19 @@ class RSSContentSchema(ContentSchema):
 class OnChainContentSchema(ContentSchema):
     """Validation schema for on-chain blockchain events"""
 
-    tx_hash: str = Field(..., min_length=64, max_length=66)  # 0x + 64 hex chars
-    event_type: str = Field(..., pattern="^(transfer|swap|mint|burn|liquidation)$")
-    from_address: str = Field(..., min_length=40, max_length=42)  # 0x + 40 hex chars
+    tx_hash: Optional[str] = Field(None, min_length=64, max_length=66)
+    event_type: Optional[str] = Field(None, pattern="^(transfer|swap|mint|burn|liquidation|Unknown)?$")
+    from_address: Optional[str] = Field(None, min_length=40, max_length=42)
     to_address: Optional[str] = Field(None, max_length=42)
-    amount: float = Field(..., ge=0)
+    amount: Optional[float] = Field(None, ge=0)
     token: Optional[str] = Field(None, max_length=100)
-    usd_value: float = Field(..., ge=0)
-    block_number: int = Field(..., gt=0)
+    usd_value: Optional[float] = Field(None, ge=0)
+    block_number: Optional[int] = Field(None, gt=0)
     gas_used: Optional[int] = Field(None, ge=0)
     priority_marker: Optional[str] = Field(None, pattern="^(HIGH|MEDIUM|LOW)$")
     contract_address: Optional[str] = Field(None, max_length=42)
+    # Allow any additional fields from on-chain events
+    description: Optional[str] = Field(None, max_length=1000)
 
 
 class PriceContentSchema(ContentSchema):
@@ -230,7 +232,9 @@ def validate_event(event: Dict[str, Any]) -> tuple[bool, Optional[str]]:
     Safer than raising exceptions - can be used in pipelines.
     """
     try:
-        EventSchema(**event)
+        schema = EventSchema(**event)
+        # Perform type-specific validation
+        schema.validate_by_type()
         return True, None
     except Exception as e:
         return False, str(e)
