@@ -408,8 +408,9 @@ def publish_event(event: Event) -> bool:
     global publisher
     try:
         # Validate schema
-        if not validate_event_schema(event):
-            logger.warning(f"Event validation failed: {event.id}")
+        is_valid, validation_error = validate_event_schema(event.model_dump())
+        if not is_valid:
+            logger.warning(f"[🔗 ON-CHAIN PUBLISH] Event validation failed: {event.id} | Error: {validation_error}")
             return False
 
         # Check for duplicates
