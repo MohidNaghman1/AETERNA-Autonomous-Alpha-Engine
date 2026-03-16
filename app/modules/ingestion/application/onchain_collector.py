@@ -635,8 +635,8 @@ def monitor_large_transfers():
         traceback.print_exc()
 
 
-async def run_collector():
-    """Main collector function - uses real blockchain monitoring (async)."""
+def run_collector():
+    """Main collector function - uses real blockchain monitoring (sync wrapper)."""
     logger.info("=" * 60)
     logger.info("Starting On-Chain Collector (REAL MONITORING)")
     logger.info("=" * 60)
@@ -655,20 +655,14 @@ async def run_collector():
         return
 
     try:
-        # BUG FIX: Initialize HTTP session inside async context
-        if not http_session:
-            logger.info("[INIT] Initializing aiohttp session...")
-            http_session = aiohttp.ClientSession()
-        
         # Initialize publisher
         logger.info("[INIT] Initializing RabbitMQ publisher...")
         publisher = RabbitMQPublisher(queue_name=OnChainConfig.RABBITMQ_QUEUE)
         logger.info("[OK] RabbitMQ publisher initialized")
         
-        # BUG FIX: Use await instead of asyncio.run() to work in event loop
-        # Update ETH price
-        logger.info("[PRICE] Updating ETH price...")
-        await fetch_eth_price()
+        # BUG FIX: Don't create http_session here - use cached ETH price instead
+        # Update ETH price from cache (no async calls in sync context)
+        logger.info("[PRICE] Using cached ETH price...")
         logger.info(f"[OK] ETH price: ${eth_price_cache.get('price', 3000)}")
         
         # Start REAL blockchain monitoring
@@ -686,4 +680,4 @@ async def run_collector():
 
 if __name__ == "__main__":
     start_metrics_server()
-    asyncio.run(run_collector())
+    run_collector()
