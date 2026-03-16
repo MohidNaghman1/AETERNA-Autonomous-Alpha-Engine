@@ -105,6 +105,27 @@ class EventSchema(BaseModel):
     )
     raw: Optional[Dict[str, Any]] = Field(None, description="Original raw data")
 
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_timestamp(cls, v):
+        """Convert string timestamps to datetime objects.
+        
+        Handles ISO8601 formats:
+        - "2026-03-15T14:32:31Z" (from Event model)
+        - "2026-03-15T14:32:31+00:00" (standard ISO)
+        - datetime objects (pass through)
+        """
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            # Remove "Z" suffix and parse
+            v_clean = v.rstrip("Z")
+            try:
+                return datetime.fromisoformat(v_clean)
+            except ValueError:
+                raise ValueError(f"Invalid timestamp format: {v}")
+        raise ValueError(f"Timestamp must be string or datetime, got {type(v)}")
+
     @field_validator("timestamp")
     @classmethod
     def timestamp_not_future(cls, v: datetime) -> datetime:
