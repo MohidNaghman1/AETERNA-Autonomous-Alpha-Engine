@@ -315,6 +315,8 @@ def normalize_transfer_event(
             # Priority marker (Threshold-based technique)
             "priority_marker": priority_marker,
             "priority_reason": priority_reason,
+            # BUG FIX: Add engagement_rate to avoid validation warnings
+            "engagement_rate": 0.0,
         }
 
         entities = [token, exchange_name] if exchange_name else [token]
@@ -351,7 +353,8 @@ def normalize_dex_swap_event(
         if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
         
-        timestamp = datetime.fromtimestamp(block_timestamp)
+        # BUG FIX: Use UTC timezone for timestamp to match validator expectations
+        timestamp = datetime.fromtimestamp(block_timestamp, tz=timezone.utc)
 
         # Determine priority using threshold-based technique
         # DEX swaps are typically lower priority than exchange movements
@@ -384,6 +387,8 @@ def normalize_dex_swap_event(
             # Priority marker (Threshold-based technique)
             "priority_marker": priority_marker,
             "priority_reason": priority_reason,
+            # BUG FIX: Add engagement_rate to avoid validation warnings
+            "engagement_rate": 0.0,
         }
 
         entities = [token_in, token_out, dex_name]
@@ -630,8 +635,8 @@ def monitor_large_transfers():
         traceback.print_exc()
 
 
-def run_collector():
-    """Main collector function - uses real blockchain monitoring."""
+async def run_collector():
+    """Main collector function - uses real blockchain monitoring (async)."""
     logger.info("=" * 60)
     logger.info("Starting On-Chain Collector (REAL MONITORING)")
     logger.info("=" * 60)
@@ -650,8 +655,9 @@ def run_collector():
         return
 
     try:
-        # Initialize HTTP session for price fetches
+        # BUG FIX: Initialize HTTP session inside async context
         if not http_session:
+            logger.info("[INIT] Initializing aiohttp session...")
             http_session = aiohttp.ClientSession()
         
         # Initialize publisher
@@ -659,9 +665,10 @@ def run_collector():
         publisher = RabbitMQPublisher(queue_name=OnChainConfig.RABBITMQ_QUEUE)
         logger.info("[OK] RabbitMQ publisher initialized")
         
+        # BUG FIX: Use await instead of asyncio.run() to work in event loop
         # Update ETH price
         logger.info("[PRICE] Updating ETH price...")
-        asyncio.run(fetch_eth_price())
+        await fetch_eth_price()
         logger.info(f"[OK] ETH price: ${eth_price_cache.get('price', 3000)}")
         
         # Start REAL blockchain monitoring
@@ -679,4 +686,4 @@ def run_collector():
 
 if __name__ == "__main__":
     start_metrics_server()
-    run_collector()
+    asyncio.run(run_collector())

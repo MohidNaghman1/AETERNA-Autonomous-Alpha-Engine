@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import pika
 import redis
 import os
-import threading
+import asyncio
 import traceback
 import time
 from dotenv import load_dotenv
@@ -77,7 +77,15 @@ async def lifespan(app: FastAPI):
         def run_onchain_collector():
             try:
                 print(f"[ONCHAIN] Running at {time.strftime('%H:%M:%S')}")
-                onchain_run()
+                # BUG FIX: onchain_run() is now async, so we need to handle it properly
+                try:
+                    # Try to get the current event loop (in case we're in an async context)
+                    loop = asyncio.get_running_loop()
+                    # If we get here, we're already in an event loop, create a task
+                    loop.create_task(onchain_run())
+                except RuntimeError:
+                    # No running loop, create one
+                    asyncio.run(onchain_run())
             except Exception as e:
                 print(f"[ONCHAIN] Error: {e}")
 
