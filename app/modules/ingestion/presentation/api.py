@@ -56,22 +56,6 @@ def ingestion_health():
     return {"status": "ok"}
 
 
-@router.post("/events", response_model=EventOut, status_code=201)
-async def create_event(event: EventIn, db: AsyncSession = Depends(get_db)):
-    """Create an event directly via API."""
-    try:
-        db_event = EventORM(**event.dict())
-        db.add(db_event)
-        await db.commit()
-        await db.refresh(db_event)
-        logger.info(f"[✅ API] Event created: {db_event.id}")
-        return db_event
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"[❌ API] Failed to create event: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Failed to store event: {e}")
-
-
 @router.get("/events/{event_id}", response_model=EventOut)
 async def get_event(event_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(EventORM).where(EventORM.id == event_id))
@@ -105,18 +89,28 @@ async def list_events(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    List events with optional filtering.
+    Get events with flexible filtering support.
+    
+    Supports filtering by source, type, and date range. 
+    All filters are optional and can be combined.
 
     Query Parameters:
-    - skip: Offset for pagination (default: 0)
-    - limit: Number of events to return (default: 100, max: 500)
-    - source: Filter by data provider source (e.g., "ethereum", "coindesk", "coingecko", "cointelegraph", "decrypt")
-    - type: Filter by event type (e.g., "news", "price", "onchain")
-    - start_date: Filter events after this date (ISO format)
-    - end_date: Filter events before this date (ISO format)
+    - skip: Pagination offset (default: 0)
+    - limit: Number of results to return (default: 100, max: 500)
+    - source: Filter by source - use shorthand (ethereum, coindesk, decrypt, cointelegraph, coingecko) or full name
+    - type: Filter by event type (news, price, onchain)
+    - start_date: Get events after this date (ISO format, e.g., 2026-03-16T10:00:00)
+    - end_date: Get events before this date (ISO format)
+
+    Examples:
+    - GET /ingestion/events?source=ethereum&type=onchain&limit=10
+    - GET /ingestion/events?source=decrypt&type=news&limit=5
+    - GET /ingestion/events?type=price&limit=50
+    - GET /ingestion/events?skip=100&limit=50
+    - GET /ingestion/events?source=coindesk&start_date=2026-03-15T00:00:00
 
     Returns:
-        List of events matching all provided filters
+        List of events matching all filters, ordered by timestamp (newest first)
     """
     query = select(EventORM)
 
@@ -150,79 +144,30 @@ async def list_events(
         f"[✓] Retrieved {len(events)} events with filters: source={source}, type={event_type}"
     )
     return events
-
-
-@router.get("/search/by-source/{source}", response_model=List[EventOut])
-async def list_events_by_source(
-    source: str,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-    db: AsyncSession = Depends(get_db),
-):
-    """Filter events by source (e.g., ethereum, coindesk, coingecko, decrypt, cointelegraph).
-    
-    Source names are normalized, so you can use shorthand names:
-    - "ethereum" matches "ethereum" (on-chain events)
-    - "coindesk" matches "www.coindesk.com" or "coindesk.com"
-    - "cointelegraph" matches "cointelegraph.com"
-    - "decrypt" matches "decrypt.co"
-    - "coingecko" matches "coingecko"
-    """
-    # Normalize source and create OR filter for all possible variations
-    possible_sources = normalize_source(source)
-    logger.info(f"[DEBUG] Querying by source: {source} → {possible_sources}")
-    
-    source_filter = or_(*[EventORM.source == s for s in possible_sources])
-    result = await db.execute(
-        select(EventORM)
-        .where(source_filter)
-        .order_by(desc(EventORM.timestamp))
-        .offset(skip)
-        .limit(limit)
-    )
-    events = result.scalars().all()
-    logger.info(f"[✓] Retrieved {len(events)} events from source: {source}")
-    return events
-
-
-@router.get("/search/by-type/{event_type}", response_model=List[EventOut])
-async def list_events_by_type(
-    event_type: str,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-    db: AsyncSession = Depends(get_db),
-):
-    """Filter events by type (news or price)."""
-    result = await db.execute(
-        select(EventORM)
-        .where(EventORM.type == event_type)
-        .order_by(desc(EventORM.timestamp))
-        .offset(skip)
-        .limit(limit)
-    )
-    events = result.scalars().all()
-    logger.info(f"Retrieved {len(events)} events of type: {event_type}")
-    return events
-
-
 @router.get("/sources")
 async def get_available_sources(db: AsyncSession = Depends(get_db)):
     """
     Get all available data sources with event counts.
     
-    Returns:
-        List of sources and number of events from each source
-        
+    Returns all sources currently in the database with statistics.
+    Use these source names in filters: ?source=coindesk, ?source=ethereum, etc.
+    
     Example response:
         {
             "sources": {
-                "www.coindesk.com": 42,
-                "cointelegraph.com": 85,
-                "decrypt.co": 67,
-                "coingecko": 234
+                "www.coindesk.com": 2143,
+                "cointelegraph.com": 2506,
+                "decrypt.co": 3091,
+                "coingecko": 1628,
+                "ethereum": 11
             },
-            "total_unique_sources": 4,
-            "total_events": 428
+            "total_unique_sources": 5,
+            "total_events": 9379,
+            "filter_usage": {
+                "ethereum": "Try: ?source=ethereum (for on-chain events)",
+                "coindesk": "Try: ?source=coindesk (matches www.coindesk.com)",
+                ...
+            }
         }
     """
     # Get all unique sources with event counts
@@ -255,24 +200,66 @@ async def get_available_sources(db: AsyncSession = Depends(get_db)):
 
 @router.get("/stats")
 async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
-    """Get statistics about ingested events."""
+    """
+    Get comprehensive statistics about ingested events.
+    
+    Returns:
+        - total_events: Total number of events in database
+        - by_source: Count grouped by data source
+        - by_type: Count grouped by event type (news, price, onchain)
+        - last_updated: Timestamp of most recent event
+        
+    Example response:
+        {
+            "total_events": 9379,
+            "by_source": {
+                "decrypt.co": 3091,
+                "cointelegraph.com": 2506,
+                "www.coindesk.com": 2143,
+                "coingecko": 1628,
+                "ethereum": 11
+            },
+            "by_type": {
+                "news": 6840,
+                "price": 1460,
+                "onchain": 11
+            },
+            "last_updated": "2026-03-16T14:25:07"
+        }
+    """
     # Count total events
     total_result = await db.execute(select(func.count(EventORM.id)))
     total = total_result.scalar() or 0
 
     # Count by source
     source_result = await db.execute(
-        select(EventORM.source, func.count(EventORM.id)).group_by(EventORM.source)
+        select(EventORM.source, func.count(EventORM.id))
+        .group_by(EventORM.source)
+        .order_by(func.count(EventORM.id).desc())
     )
     sources = {row[0]: row[1] for row in source_result.all()}
 
     # Count by type
     type_result = await db.execute(
-        select(EventORM.type, func.count(EventORM.id)).group_by(EventORM.type)
+        select(EventORM.type, func.count(EventORM.id))
+        .group_by(EventORM.type)
+        .order_by(func.count(EventORM.id).desc())
     )
     types = {row[0]: row[1] for row in type_result.all()}
+    
+    # Get last updated timestamp
+    latest_result = await db.execute(
+        select(EventORM.timestamp).order_by(desc(EventORM.timestamp)).limit(1)
+    )
+    latest_timestamp = latest_result.scalar()
+    last_updated = latest_timestamp.isoformat() if latest_timestamp else None
 
-    return {"total_events": total, "by_source": sources, "by_type": types}
+    return {
+        "total_events": total,
+        "by_source": sources,
+        "by_type": types,
+        "last_updated": last_updated
+    }
 
 
 @router.get("/debug/ethereum-connection")
@@ -510,224 +497,3 @@ async def debug_database_contents(db: AsyncSession = Depends(get_db)):
         }
     }
 
-
-@router.get("/auto-update-status")
-async def auto_update_status(db: AsyncSession = Depends(get_db)):
-    """Check if automatic updates are running.
-
-    Returns:
-    - auto_updates_enabled: True if scheduler is running
-    - update_frequency: How often news is fetched
-    - last_event_time: Timestamp of most recent event in database
-    """
-    try:
-        from app.main import background_scheduler
-
-        # Get latest event timestamp
-        latest_result = await db.execute(
-            select(EventORM.timestamp).order_by(desc(EventORM.timestamp)).limit(1)
-        )
-        latest_event = latest_result.scalar()
-        last_event_time = latest_event.isoformat() if latest_event else None
-
-        # Check scheduler status
-        scheduler_running = background_scheduler and background_scheduler.running
-
-        return {
-            "status": "active" if scheduler_running else "inactive",
-            "auto_updates_enabled": scheduler_running,
-            "update_frequency": {
-                "rss_collection": "every 60 seconds",
-                "consumer_processing": "every 3 seconds (50 messages per batch)",
-                "price_collection": "every 120 seconds",
-            },
-            "last_event_timestamp": last_event_time,
-            "message": (
-                "🔄 Automatic updates RUNNING - new events fetched every 60 seconds"
-                if scheduler_running
-                else "⚠️  Scheduler not running"
-            ),
-        }
-    except Exception as e:
-        logger.error(f"[AUTO-UPDATE] Status check failed: {e}")
-        return {"status": "error", "auto_updates_enabled": False, "error": str(e)}
-
-
-@router.post("/test/onchain-collector")
-async def test_onchain_collector(db: AsyncSession = Depends(get_db)):
-    """
-    Test endpoint to run the on-chain collector and verify it works.
-    
-    Returns:
-        - status: success or error
-        - execution_time: How long collector took (seconds)
-        - ethereum_block: Latest block from Ethereum
-        - gas_price: Current gas price in Gwei
-        - event_published: Boolean indicating if event was published
-        - message: Detailed status message
-    
-    Example:
-        POST /ingestion/test/onchain-collector
-        
-    Response:
-        {
-            "status": "success",
-            "execution_time": 2.15,
-            "ethereum_block": 24662012,
-            "gas_price": 0.032949,
-            "event_published": true,
-            "chain": "ethereum",
-            "network": "mainnet",
-            "message": "[OK] On-Chain collector test completed successfully"
-        }
-    """
-    import time
-    from web3 import Web3
-    from web3.providers import WebsocketProvider
-    import os
-    
-    start_time = time.time()
-    
-    try:
-        # Get configuration
-        quicknode_url = os.getenv("QUICKNODE_URL")
-        if not quicknode_url:
-            return {
-                "status": "error",
-                "execution_time": 0,
-                "message": "[ERROR] QUICKNODE_URL environment variable not set"
-            }
-        
-        # Test Web3 connection
-        logger.info("[TEST] Connecting to Ethereum...")
-        w3 = Web3(WebsocketProvider(quicknode_url))
-        
-        if not w3.is_connected():
-            elapsed = time.time() - start_time
-            return {
-                "status": "error",
-                "execution_time": elapsed,
-                "message": "[ERROR] Failed to connect to Ethereum node"
-            }
-        
-        # Get blockchain info
-        chain_id = w3.eth.chain_id
-        latest_block = w3.eth.block_number
-        gas_price = w3.eth.gas_price
-        gas_price_gwei = w3.from_wei(gas_price, 'gwei')
-        
-        logger.info(f"[TEST] Connected to Ethereum - Block: {latest_block}, Gas: {gas_price_gwei:.6f} Gwei")
-        
-        # Run the collector
-        logger.info("[TEST] Running on-chain collector...")
-        from app.modules.ingestion.application.onchain_collector import run_collector
-        from app.modules.ingestion.application.consumer import run_consumer_poll
-        
-        # Run collector in timeout to prevent hanging
-        collector_start = time.time()
-        try:
-            # Use signal to timeout the collector if it takes too long
-            import signal
-            
-            def timeout_handler(signum, frame):
-                logger.warning("[TEST] Collector timed out after 30 seconds")
-                raise TimeoutError("Collector execution timed out")
-            
-            # Set timeout (Unix/Linux only, Windows will skip this)
-            old_handler = None
-            try:
-                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(30)  # 30 second timeout
-            except (AttributeError, ValueError):
-                # SIGALRM not available on Windows
-                logger.debug("[TEST] Timeout not available on this platform")
-            
-            try:
-                run_collector()
-            finally:
-                try:
-                    signal.alarm(0)  # Cancel alarm
-                    if old_handler:
-                        signal.signal(signal.SIGALRM, old_handler)
-                except (AttributeError, ValueError):
-                    pass
-            
-            collector_time = time.time() - collector_start
-            logger.info(f"[TEST] Collector completed in {collector_time:.2f}s")
-        except TimeoutError:
-            collector_time = time.time() - collector_start
-            logger.warning(f"[TEST] Collector timed out after {collector_time:.2f}s (likely Web3 connection issue)")
-        except Exception as e:
-            logger.error(f"[TEST] Collector error: {e}")
-            collector_time = time.time() - collector_start
-        
-        # CRITICAL FIX: Consume messages from RabbitMQ before checking database
-        # The collector publishes to RabbitMQ, but we need to consume it
-        logger.info("[TEST] Polling RabbitMQ to consume published events...")
-        total_consumed = 0
-        for attempt in range(10):  # Increased attempts
-            logger.debug(f"[TEST] Consume attempt {attempt + 1}/10...")
-            consumed = run_consumer_poll(batch_size=50)
-            total_consumed += consumed
-            
-            if consumed > 0:
-                logger.info(f"[TEST] ✅ Consumed {consumed} message(s) on attempt {attempt + 1}")
-                time.sleep(0.5)  # Wait for DB commit
-                break
-            else:
-                logger.debug(f"[TEST] No messages on attempt {attempt + 1}")
-            
-            if attempt < 9:
-                time.sleep(0.3)
-        
-        elapsed = time.time() - start_time
-        
-        # Check if event was stored
-        result = await db.execute(
-            select(func.count(EventORM.id)).where(EventORM.source == "ethereum")
-        )
-        ethereum_event_count = result.scalar() or 0
-        
-        # Diagnostic info
-        diagnostic = {
-            "collector_time_seconds": round(collector_time, 2),
-            "consumer_attempts": 10,
-            "total_messages_consumed": total_consumed,
-            "events_in_database": ethereum_event_count,
-        }
-        
-        if ethereum_event_count > 0:
-            status_msg = "✅ SUCCESS - Event published and stored in database"
-        elif total_consumed > 0:
-            status_msg = "⚠️ WARNING - Messages consumed but not in database (check consumer logs)"
-        else:
-            status_msg = "❌ ISSUE - No messages consumed from queue (event may not be published)"
-        
-        return {
-            "status": "success",
-            "execution_time": round(elapsed, 2),
-            "ethereum_block": latest_block,
-            "gas_price": float(f"{gas_price_gwei:.6f}"),
-            "chain": "ethereum",
-            "network": "mainnet",
-            "chain_id": chain_id,
-            "ethereum_events_in_database": ethereum_event_count,
-            "event_published": True,
-            "diagnostic": diagnostic,
-            "status_message": status_msg,
-            "message": "[OK] On-Chain collector test completed successfully"
-        }
-        
-    except Exception as e:
-        elapsed = time.time() - start_time
-        logger.error(f"[TEST-ERROR] On-chain collector test failed: {e}")
-        import traceback
-        error_details = traceback.format_exc()
-        
-        return {
-            "status": "error",
-            "execution_time": round(elapsed, 2),
-            "message": f"[ERROR] On-chain collector test failed: {str(e)}",
-            "error_details": error_details,
-            "event_published": False
-        }
