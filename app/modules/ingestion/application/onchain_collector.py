@@ -92,21 +92,20 @@ class OnChainConfig:
     RPC_CALLS_PER_SECOND = int(os.getenv("RPC_CALLS_PER_SECOND", "100"))
 
 
-# Token Addresses (Ethereum Mainnet)
+# Token Addresses (Ethereum Mainnet) - Using checksummed addresses for Web3.py compatibility
 STABLECOIN_ADDRESSES = {
-    "0xdac17f958d2ee523a2206206994597c13d831ec7": "USDT",
-    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
-    "0x6b175474e89094c44da98b954eedeac495271d0f": "DAI",
-    "0x0000000000085d4780b73119b8b580991dee8d52": "GUSD",
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": "USDT",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "USDC",
+    "0x6B175474E89094C44Da98b954EedeAC495271d0F": "DAI",
+    "0x056Fd409E1d7A124BD7017459dFEa2F387b6d5Cd": "GUSD",
 }
 
-# Popular Exchange Addresses
 EXCHANGE_ADDRESSES = {
-    "0x3f5ce5fbfe3e9af3971dd833d97da793a8eb06f7": "Binance",
-    "0x1688a1c8f3b10b2cfbbf9b1cccc09d8c7ba8d79e": "Binance",
-    "0xeb1aef396a02aa67d4bb4cea1847fb0a7b682a24": "Bitfinex",
-    "0x2f3ab9fd633e34c2db4b9c0d1e15ae47f8a2a2e8": "Kraken",
-    "0xfe854845c1f59a64ab9d0ff266ffdb565106b5ca": "OpenSea",
+    "0x3f5cE5FBFe3e9af3971Dd833d97Da793A8Eb06f7": "Binance",
+    "0x1688A1C8F3B10B2cFbBF9b1CCcC09D8c7bA8d79E": "Binance",
+    "0xEB1aEf396A02aa67D4Bb4CEA1847fb0a7b682A24": "Bitfinex",
+    "0x2f3ab9FD633e34C2Db4b9c0d1E15Ae47F8a2A2e8": "Kraken",
+    "0xfE854845C1f59a64aB9D0FF266fFdB565106b5cA": "OpenSea",
 }
 
 # ============================================================================
