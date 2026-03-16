@@ -17,7 +17,7 @@ import traceback
 import signal
 import asyncio
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from decimal import Decimal
 from functools import wraps
@@ -278,7 +278,8 @@ def normalize_transfer_event(
         exchange_to = get_exchange_name(to_address)
         exchange_name = exchange_from or exchange_to or "Unknown"
 
-        timestamp = datetime.fromtimestamp(block_timestamp)
+        # BUG FIX: Use UTC timezone for timestamp to match validator expectations
+        timestamp = datetime.fromtimestamp(block_timestamp, tz=timezone.utc)
 
         # Determine priority using threshold-based technique
         is_stablecoin = token in STABLECOIN_ADDRESSES.values()
