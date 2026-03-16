@@ -89,7 +89,7 @@ async def list_events(
         None,
         description="Filter by data provider (ethereum, coindesk, coingecko, decrypt, cointelegraph, etc)",
     ),
-    event_type: Optional[str] = Query(
+    type: Optional[str] = Query(
         None,
         description="Filter by event type (news, price, onchain, etc)"
     ),
@@ -110,7 +110,7 @@ async def list_events(
     - skip: Offset for pagination (default: 0)
     - limit: Number of events to return (default: 100, max: 500)
     - source: Filter by data provider source (e.g., "ethereum", "coindesk", "coingecko", "cointelegraph", "decrypt")
-    - event_type: Filter by event type (e.g., "news", "price", "onchain")
+    - type: Filter by event type (e.g., "news", "price", "onchain")
     - start_date: Filter events after this date (ISO format)
     - end_date: Filter events before this date (ISO format)
 
@@ -127,9 +127,9 @@ async def list_events(
         logger.info(f"[DEBUG] Filtering by source: {source} → {possible_sources}")
         source_filter = or_(*[EventORM.source == s for s in possible_sources])
         filters.append(source_filter)
-    if event_type:
-        logger.info(f"[DEBUG] Filtering by event_type: {event_type}")
-        filters.append(EventORM.type == event_type)
+    if type:
+        logger.info(f"[DEBUG] Filtering by type: {type}")
+        filters.append(EventORM.type == type)
     if start_date:
         logger.info(f"[DEBUG] Filtering by start_date: {start_date}")
         filters.append(EventORM.timestamp >= start_date)
