@@ -114,14 +114,23 @@ class EventSchema(BaseModel):
         - "2026-03-15T14:32:31Z" (from Event model)
         - "2026-03-15T14:32:31+00:00" (standard ISO)
         - datetime objects (pass through)
+        
+        Ensures all datetimes are timezone-aware (UTC).
         """
         if isinstance(v, datetime):
+            # Ensure timezone-aware
+            if v.tzinfo is None:
+                return v.replace(tzinfo=timezone.utc)
             return v
         if isinstance(v, str):
             # Remove "Z" suffix and parse
             v_clean = v.rstrip("Z")
             try:
-                return datetime.fromisoformat(v_clean)
+                dt = datetime.fromisoformat(v_clean)
+                # Ensure timezone-aware
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
             except ValueError:
                 raise ValueError(f"Invalid timestamp format: {v}")
         raise ValueError(f"Timestamp must be string or datetime, got {type(v)}")
