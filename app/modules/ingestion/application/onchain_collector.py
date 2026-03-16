@@ -68,9 +68,9 @@ class OnChainConfig:
     # THRESHOLD-BASED PRIORITY (Automatic HIGH priority for big transactions)
     # ========================================================================
     # Transaction value thresholds for automatic priority marking
-    HIGH_PRIORITY_THRESHOLD_USD = int(os.getenv("HIGH_PRIORITY_THRESHOLD_USD", "1000000"))  # $1M
-    MEDIUM_PRIORITY_THRESHOLD_USD = int(os.getenv("MEDIUM_PRIORITY_THRESHOLD_USD", "100000"))  # $100k
-    LOW_PRIORITY_THRESHOLD_USD = int(os.getenv("LOW_PRIORITY_THRESHOLD_USD", "10000"))  # $10k
+    HIGH_PRIORITY_THRESHOLD_USD = int(os.getenv("HIGH_PRIORITY_THRESHOLD_USD", "100000"))  # $100k ✅ FIXED
+    MEDIUM_PRIORITY_THRESHOLD_USD = int(os.getenv("MEDIUM_PRIORITY_THRESHOLD_USD", "10000"))  # $10k ✅ FIXED
+    LOW_PRIORITY_THRESHOLD_USD = int(os.getenv("LOW_PRIORITY_THRESHOLD_USD", "5000"))  # $5k
     
     # High-priority exchanges (detection boost)
     HIGH_PRIORITY_EXCHANGES = set([
@@ -446,28 +446,197 @@ def publish_event(event: Event) -> bool:
         return False
 
 
+def process_erc20_transfer_event(log_entry: Dict[str, Any]) -> bool:
+    """
+    Process ERC20 Transfer event log from blockchain.
+    Decodes the event, calculates USD value, and normalizes for storage.
+    """
+    try:
+        # Extract data from log entry
+        tx_hash = log_entry.get("transactionHash", "").hex() if isinstance(log_entry.get("transactionHash"), bytes) else log_entry.get("transactionHash", "0x")
+        from_address = "0x" + log_entry["topics"][1].hex()[-40:] if len(log_entry.get("topics", [])) > 1 else "0x"
+        to_address = "0x" + log_entry["topics"][2].hex()[-40:] if len(log_entry.get("topics", [])) > 2 else "0x"
+        
+        # Decode amount from data field
+        data_hex = log_entry.get("data", "0x")
+        amount = int(data_hex, 16) if data_hex and data_hex != "0x" else 0
+        
+        token_address = log_entry.get("address", "").lower()
+        token = get_token_symbol(token_address)
+        
+        # Get token decimals (assume 6 for stablecoins)
+        token_decimals = 6 if token != "ETH" else 18
+        
+        # Convert to USD (stablecoins typically 1:1)
+        token_amount = float(Decimal(amount) / Decimal(10**token_decimals))
+        usd_value = token_amount  # Stablecoins assumed 1:1 with USD
+        
+        logger.info(f"[ERC20] {token}: {token_amount} tokens (~${usd_value:,.0f}) | TX: {tx_hash[:10]}...")
+        
+        # Filter by minimum value
+        if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+            logger.debug(f"[ERC20] Skipping {token} transfer: ${usd_value:,.0f} < ${OnChainConfig.MIN_TRANSACTION_VALUE_USD:,.0f}")
+            return False
+        
+        # Get block timestamp
+        block_number = log_entry.get("blockNumber", 0)
+        block_timestamp = int(time.time())  # Use current time as approximation
+        
+        try:
+            if block_number > 0:
+                block = w3.eth.get_block(block_number)
+                block_timestamp = block.get("timestamp", int(time.time()))
+        except Exception as e:
+            logger.debug(f"Could not get block timestamp: {e}")
+        
+        # Normalize and publish
+        event = normalize_transfer_event(
+            tx_hash=tx_hash,
+            from_address=from_address,
+            to_address=to_address,
+            amount=amount,
+            token=token,
+            token_decimals=token_decimals,
+            usd_value=usd_value,
+            block_timestamp=block_timestamp,
+        )
+        
+        if event:
+            return publish_event(event)
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error processing ERC20 transfer: {e}")
+        return False
+
+
+def process_exchange_transaction(tx_hash: str) -> bool:
+    """
+    Process exchange transaction (ETH transfer to/from known exchange).
+    Gets full TX details and normalizes for storage.
+    """
+    try:
+        # Get transaction details
+        tx = w3.eth.get_transaction(tx_hash)
+        receipt = w3.eth.get_transaction_receipt(tx_hash)
+        
+        from_address = tx.get("from", "0x")
+        to_address = tx.get("to", "0x")
+        amount_wei = tx.get("value", 0)
+        
+        # Convert to USD
+        eth_price = eth_price_cache.get("price", 3000)
+        eth_amount = float(Decimal(amount_wei) / Decimal(10**18))
+        usd_value = eth_amount * eth_price
+        
+        logger.info(f"[ETH] Transfer: {eth_amount:.2f} ETH (~${usd_value:,.0f}) | TX: {tx_hash[:10]}...")
+        
+        # Filter by minimum value
+        if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+            logger.debug(f"[ETH] Skipping ETH transfer: ${usd_value:,.0f} < ${OnChainConfig.MIN_TRANSACTION_VALUE_USD:,.0f}")
+            return False
+        
+        # Get block timestamp
+        block_number = receipt.get("blockNumber", 0)
+        block_timestamp = int(time.time())
+        
+        try:
+            if block_number > 0:
+                block = w3.eth.get_block(block_number)
+                block_timestamp = block.get("timestamp", int(time.time()))
+        except Exception as e:
+            logger.debug(f"Could not get block timestamp: {e}")
+        
+        # Normalize and publish
+        event = normalize_transfer_event(
+            tx_hash=tx_hash,
+            from_address=from_address,
+            to_address=to_address,
+            amount=amount_wei,
+            token="ETH",
+            token_decimals=18,
+            usd_value=usd_value,
+            block_timestamp=block_timestamp,
+        )
+        
+        if event:
+            return publish_event(event)
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error processing exchange transaction: {e}")
+        return False
+
+
 def monitor_large_transfers():
-    """Monitor large ETH and stablecoin transfers."""
+    """
+    Monitor large ETH and stablecoin transfers using Web3 event filters.
+    Real-time blockchain monitoring implementation.
+    """
     if not w3 or not w3.is_connected():
-        logger.warning("Web3 not connected")
+        logger.warning("[MONITOR] Web3 not connected")
         return
 
     try:
         current_block = w3.eth.block_number
-        logger.info(f"Monitoring transfers from block {current_block}")
-        logger.info("Transfer monitoring started (note: full implementation requires event subscription)")
+        logger.info(f"[MONITOR] Current block: {current_block}")
+        
+        # FILTER 1: ERC20 Transfers (Stablecoins)
+        # Topic 0 = Transfer(address indexed from, address indexed to, uint256 value)
+        transfer_signature = w3.keccak(text="Transfer(address,address,uint256)")
+        
+        logger.info("[MONITOR] Creating ERC20 Transfer event filter for stablecoins...")
+        erc20_filter = w3.eth.filter({
+            "address": list(STABLECOIN_ADDRESSES.keys()),
+            "topics": [transfer_signature.hex()],
+            "fromBlock": current_block - 100,
+            "toBlock": "latest"
+        })
+        
+        # Get new ERC20 transfer events
+        erc20_events = erc20_filter.get_new_entries()
+        logger.info(f"[ERC20] Found {len(erc20_events)} ERC20 transfer events")
+        
+        for log_event in erc20_events:
+            process_erc20_transfer_event(log_event)
+        
+        # FILTER 2: ETH transfers to/from exchanges
+        logger.info("[MONITOR] Checking exchange addresses for ETH transfers...")
+        exchange_addrs = list(EXCHANGE_ADDRESSES.keys())
+        
+        eth_filter = w3.eth.filter({
+            "address": exchange_addrs,
+            "fromBlock": current_block - 100,
+            "toBlock": "latest"
+        })
+        
+        # Get new ETH transfer events (transactions)
+        try:
+            eth_events = eth_filter.get_new_entries()
+            logger.info(f"[ETH] Found {len(eth_events)} ETH transfer events")
+            
+            for tx_hash in eth_events:
+                if isinstance(tx_hash, bytes):
+                    process_exchange_transaction(tx_hash.hex())
+                else:
+                    process_exchange_transaction(tx_hash)
+        except Exception as e:
+            logger.warning(f"[ETH] Could not retrieve ETH transfer events: {e}")
+        
+        logger.info("[MONITOR] Transfer monitoring cycle complete")
+        
     except Exception as e:
-        logger.error(f"Error monitoring transfers: {e}")
+        logger.error(f"[ERROR] Error monitoring transfers: {e}")
         traceback.print_exc()
 
 
 def run_collector():
-    """Main collector function (called by Celery or directly)."""
+    """Main collector function - uses real blockchain monitoring."""
     logger.info("=" * 60)
-    logger.info("Starting On-Chain Collector")
+    logger.info("Starting On-Chain Collector (REAL MONITORING)")
     logger.info("=" * 60)
 
-    global publisher, w3
+    global publisher, w3, http_session
     start_time = time.time()
     published_count = 0
 
@@ -481,44 +650,26 @@ def run_collector():
         return
 
     try:
+        # Initialize HTTP session for price fetches
+        if not http_session:
+            http_session = aiohttp.ClientSession()
+        
         # Initialize publisher
         logger.info("[INIT] Initializing RabbitMQ publisher...")
         publisher = RabbitMQPublisher(queue_name=OnChainConfig.RABBITMQ_QUEUE)
         logger.info("[OK] RabbitMQ publisher initialized")
         
-        # Start monitoring
-        logger.info("[MONITOR] Starting blockchain monitoring...")
+        # Update ETH price
+        logger.info("[PRICE] Updating ETH price...")
+        asyncio.run(fetch_eth_price())
+        logger.info(f"[OK] ETH price: ${eth_price_cache.get('price', 3000)}")
+        
+        # Start REAL blockchain monitoring
+        logger.info("[MONITOR] Starting REAL blockchain monitoring...")
         monitor_large_transfers()
 
-        # Example: Process a sample event (for testing)
-        logger.info("[EVENT] Creating sample transfer event...")
-        sample_event = normalize_transfer_event(
-            tx_hash="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            from_address="0x3f5Ce5fbfE3e9aF3971dd833D97da793a8eb06f7",  # Binance
-            to_address="0xABCdEF1234567890aBcDeF1234567890abcDeF12",     # Test address
-            amount=5000000000000000000,  # 5 ETH
-            token="ETH",
-            token_decimals=18,
-            usd_value=15000,  # $15k USD value
-            block_timestamp=int(time.time()),
-        )
-
-        if sample_event:
-            logger.info(f"[EVENT] Sample event created: {sample_event.id[:8]}...")
-            logger.info(f"[EVENT] Event source: {sample_event.source}, type: {sample_event.type}")
-            logger.info(f"[EVENT] Event content: {sample_event.content}")
-            
-            # Try to publish
-            if publish_event(sample_event):
-                published_count += 1
-                logger.info(f"[SUCCESS] Event published successfully!")
-            else:
-                logger.error("[ERROR] Failed to publish event")
-        else:
-            logger.warning("[EVENT] Sample event creation returned None")
-
         elapsed = time.time() - start_time
-        logger.info(f"[COMPLETE] Collector completed in {elapsed:.2f} seconds | Published: {published_count}")
+        logger.info(f"[COMPLETE] Collector cycle completed in {elapsed:.2f} seconds")
         logger.info("=" * 60)
 
     except Exception as e:
