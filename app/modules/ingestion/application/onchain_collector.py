@@ -575,8 +575,8 @@ def process_exchange_transaction(tx_hash: str) -> bool:
 
 def monitor_large_transfers():
     """
-    Monitor large ETH and stablecoin transfers using Web3 event filters.
-    Real-time blockchain monitoring implementation.
+    Monitor large ETH and stablecoin transfers using eth_getLogs (more reliable).
+    Queries recent blocks for Transfer events and exchange transactions.
     """
     if not w3 or not w3.is_connected():
         logger.warning("[MONITOR] Web3 not connected")
@@ -585,50 +585,124 @@ def monitor_large_transfers():
     try:
         current_block = w3.eth.block_number
         logger.info(f"[MONITOR] Current block: {current_block}")
+        logger.info(f"[MONITOR] Querying blocks {current_block - 100} to {current_block}")
         
-        # FILTER 1: ERC20 Transfers (Stablecoins)
-        # Topic 0 = Transfer(address indexed from, address indexed to, uint256 value)
+        # ==== STRATEGY 1: Query ERC20 Transfers (Stablecoins) ====
         transfer_signature = w3.keccak(text="Transfer(address,address,uint256)")
         
-        logger.info("[MONITOR] Creating ERC20 Transfer event filter for stablecoins...")
-        erc20_filter = w3.eth.filter({
-            "address": list(STABLECOIN_ADDRESSES.keys()),
-            "topics": [transfer_signature.hex()],
-            "fromBlock": current_block - 100,
-            "toBlock": "latest"
-        })
+        logger.info(f"[MONITOR] Creating ERC20 Transfer filter for {len(STABLECOIN_ADDRESSES)} stablecoins...")
         
-        # Get new ERC20 transfer events
-        erc20_events = erc20_filter.get_new_entries()
-        logger.info(f"[ERC20] Found {len(erc20_events)} ERC20 transfer events")
-        
-        for log_event in erc20_events:
-            process_erc20_transfer_event(log_event)
-        
-        # FILTER 2: ETH transfers to/from exchanges
-        logger.info("[MONITOR] Checking exchange addresses for ETH transfers...")
-        exchange_addrs = list(EXCHANGE_ADDRESSES.keys())
-        
-        eth_filter = w3.eth.filter({
-            "address": exchange_addrs,
-            "fromBlock": current_block - 100,
-            "toBlock": "latest"
-        })
-        
-        # Get new ETH transfer events (transactions)
         try:
-            eth_events = eth_filter.get_new_entries()
-            logger.info(f"[ETH] Found {len(eth_events)} ETH transfer events")
+            # Query logs for ERC20 transfers
+            erc20_logs = w3.eth.get_logs({
+                "address": list(STABLECOIN_ADDRESSES.keys()),
+                "topics": [transfer_signature.hex()],
+                "fromBlock": current_block - 100,
+                "toBlock": "latest"
+            })
             
-            for tx_hash in eth_events:
-                if isinstance(tx_hash, bytes):
-                    process_exchange_transaction(tx_hash.hex())
-                else:
-                    process_exchange_transaction(tx_hash)
+            logger.info(f"[ERC20] 📊 Found {len(erc20_logs)} ERC20 transfer events")
+            
+            if len(erc20_logs) == 0:
+                logger.info("[ERC20] No recent transfers found (this is normal if no large transfers)")
+            
+            for log_event in erc20_logs:
+                process_erc20_transfer_event(log_event)
+                
         except Exception as e:
-            logger.warning(f"[ETH] Could not retrieve ETH transfer events: {e}")
+            logger.warning(f"[ERC20] Could not query ERC20 logs: {e}")
         
-        logger.info("[MONITOR] Transfer monitoring cycle complete")
+        # ==== STRATEGY 2: Query ETH Transfers (Check exchange addresses) ====
+        logger.info("[MONITOR] Checking exchange addresses for ETH transfers...")
+        
+        try:
+            # Query all transactions in recent blocks that involve known exchange addresses
+            for exchange_addr in EXCHANGE_ADDRESSES.keys():
+                try:
+                    # Look for outgoing transactions from exchange
+                    tx_logs = w3.eth.get_logs({
+                        "address": exchange_addr,
+                        "fromBlock": current_block - 50,  # Fewer blocks for ETH (faster)
+                        "toBlock": "latest"
+                    })
+                    
+                    if len(tx_logs) > 0:
+                        logger.info(f"[ETH] Found {len(tx_logs)} transaction logs involving {EXCHANGE_ADDRESSES[exchange_addr]}")
+                        
+                except Exception as e:
+                    logger.debug(f"[ETH] Could not query logs for {exchange_addr}: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"[ETH] Could not query exchange addresses: {e}")
+        
+        # ==== STRATEGY 3: Query recent blocks directly ====
+        logger.info("[MONITOR] Scanning recent blocks for large ETH transfers...")
+        
+        try:
+            blocks_to_scan = 10  # Scan last 10 blocks for transactions
+            eth_price = eth_price_cache.get("price", 3000)
+            
+            for block_offset in range(1, blocks_to_scan + 1):
+                block_num = current_block - block_offset
+                
+                try:
+                    block = w3.eth.get_block(block_num)
+                    
+                    if not block or not block.get("transactions"):
+                        continue
+                    
+                    # Check transactions in this block
+                    for tx_hash in block["transactions"][:10]:  # Limit to first 10 txs per block
+                        try:
+                            # Get transaction details
+                            tx = w3.eth.get_transaction(tx_hash)
+                            
+                            if not tx:
+                                continue
+                            
+                            # Check if it's a large ETH transfer
+                            value_wei = tx.get("value", 0)
+                            from_addr = tx.get("from", "").lower()
+                            to_addr = tx.get("to", "").lower()
+                            
+                            # Check if from or to is a known exchange
+                            exchange_from = get_exchange_name(from_addr)
+                            exchange_to = get_exchange_name(to_addr)
+                            
+                            if value_wei > 0 and (exchange_from or exchange_to):
+                                eth_amount = float(Decimal(value_wei) / Decimal(10**18))
+                                usd_value = eth_amount * eth_price
+                                
+                                if usd_value >= OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+                                    logger.info(f"[ETH] 🔍 Found large ETH transfer: {eth_amount:.2f} ETH (~${usd_value:,.0f})")
+                                    
+                                    # Process this transaction
+                                    event = normalize_transfer_event(
+                                        tx_hash=tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash,
+                                        from_address=from_addr,
+                                        to_address=to_addr or "0x",
+                                        amount=value_wei,
+                                        token="ETH",
+                                        token_decimals=18,
+                                        usd_value=usd_value,
+                                        block_timestamp=int(time.time()),
+                                    )
+                                    
+                                    if event:
+                                        publish_event(event)
+                        
+                        except Exception as e:
+                            logger.debug(f"[ETH] Error processing transaction: {e}")
+                            continue
+                
+                except Exception as e:
+                    logger.debug(f"[MONITOR] Error scanning block {block_num}: {e}")
+                    continue
+        
+        except Exception as e:
+            logger.warning(f"[MONITOR] Error in block scanning strategy: {e}")
+        
+        logger.info("[MONITOR] Transfer monitoring cycle complete ✅")
         
     except Exception as e:
         logger.error(f"[ERROR] Error monitoring transfers: {e}")
