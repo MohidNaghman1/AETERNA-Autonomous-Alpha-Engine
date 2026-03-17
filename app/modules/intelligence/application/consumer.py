@@ -77,7 +77,7 @@ def _generate_alert_for_scored_event(event_orm, event_dict, priority, score):
         event_id_str = str(event_orm.id)
         if alert:
             logger.info(
-                f"[ALERT] 🚨 Generated {priority} priority alert for event {event_id_str}..."
+                f"[ALERT] Generated {priority} priority alert for event {event_id_str}..."
             )
             return alert
         else:

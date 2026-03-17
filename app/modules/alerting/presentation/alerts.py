@@ -223,7 +223,7 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                             f"[DEBUG] Parsed JSON string content for event {alert.event_id}"
                         )
                     except json.JSONDecodeError as e:
-                        logger.error(f"[✗] Failed to parse JSON content: {e}")
+                        logger.error(f"[ERROR] Failed to parse JSON content: {e}")
                         content_data = {}
 
                 if content_data and isinstance(content_data, dict):
@@ -254,19 +254,19 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                     entity = mentions[0] if mentions else None
 
                     logger.info(
-                        f"[✓] Extracted: title='{title[:50]}...', priority={priority}, entity={entity}, source={source}"
+                        f"[OK] Extracted: title='{title[:50]}...', priority={priority}, entity={entity}, source={source}"
                     )
                 else:
                     logger.warning(
-                        f"[⚠] Event {alert.event_id} has no content or invalid format"
+                        f"[WARN] Event {alert.event_id} has no content or invalid format"
                     )
             else:
                 logger.warning(
-                    f"[⚠] Event {alert.event_id} not found for alert {alert.id}"
+                    f"[WARN] Event {alert.event_id} not found for alert {alert.id}"
                 )
         except Exception as e:
             logger.error(
-                f"[✗] Error fetching event {alert.event_id} for alert {alert.id}: {e}",
+                f"[ERROR] Error fetching event {alert.event_id} for alert {alert.id}: {e}",
                 exc_info=True,
             )
     else:

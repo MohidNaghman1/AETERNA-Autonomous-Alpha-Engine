@@ -239,7 +239,7 @@ def process_event(ch, method, properties, body):
                 db.refresh(db_event)
 
                 logger.info(
-                    f"[✅] Event {event.id} | {getattr(event, 'source', 'unknown')} | {data.get('content', {}).get('title', 'N/A')[:40]}"
+                    f"[OK] Event {event.id} | {getattr(event, 'source', 'unknown')} | {data.get('content', {}).get('title', 'N/A')[:40]}"
                 )
 
                 success = True
