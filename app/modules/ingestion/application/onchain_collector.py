@@ -92,20 +92,20 @@ class OnChainConfig:
     RPC_CALLS_PER_SECOND = int(os.getenv("RPC_CALLS_PER_SECOND", "100"))
 
 
-# Token Addresses (Ethereum Mainnet) - Using checksummed addresses for Web3.py compatibility
+# Token Addresses (Ethereum Mainnet) - Lowercase for consistent lookups
 STABLECOIN_ADDRESSES = {
-    "0xdAC17F958D2ee523a2206206994597C13D831ec7": "USDT",
-    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "USDC",
-    "0x6B175474E89094C44Da98b954EedeAC495271d0F": "DAI",
-    "0x056Fd409E1d7A124BD7017459dFEa2F387b6d5Cd": "GUSD",
+    "0xdac17f958d2ee523a2206206994597c13d831ec7": "USDT",
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
+    "0x6b175474e89094c44da98b954eedeac495271d0f": "DAI",
+    "0x056fd409e1d7a124bd7017459dfea2f387b6d5cd": "GUSD",
 }
 
 EXCHANGE_ADDRESSES = {
-    "0x3f5cE5FBFe3e9af3971Dd833d97Da793A8Eb06f7": "Binance",
-    "0x1688A1C8F3B10B2cFbBF9b1CCcC09D8c7bA8d79E": "Binance",
-    "0xEB1aEf396A02aa67D4Bb4CEA1847fb0a7b682A24": "Bitfinex",
-    "0x2f3ab9FD633e34C2Db4b9c0d1E15Ae47F8a2A2e8": "Kraken",
-    "0xfE854845C1f59a64aB9D0FF266fFdB565106b5cA": "OpenSea",
+    "0x3f5ce5fbfe3e9af3971dd833d97da793a8eb06f7": "Binance",
+    "0x1688a1c8f3b10b2cfbbf9b1cccc09d8c7ba8d79e": "Binance",
+    "0xeb1aef396a02aa67d4bb4cea1847fb0a7b682a24": "Bitfinex",
+    "0x2f3ab9fd633e34c2db4b9c0d1e15ae47f8a2a2e8": "Kraken",
+    "0xfe854845c1f59a64ab9d0ff266ffdb565106b5ca": "OpenSea",
 }
 
 # ============================================================================
@@ -124,13 +124,13 @@ graceful_shutdown = False
 # ============================================================================
 
 def get_token_symbol(address: str) -> str:
-    """Get token symbol from address."""
-    return STABLECOIN_ADDRESSES.get(address.lower(), "UNKNOWN")
+    """Get token symbol from address (address should be lowercase)."""
+    return STABLECOIN_ADDRESSES.get(address, "UNKNOWN")
 
 
 def get_exchange_name(address: str) -> Optional[str]:
-    """Detect if address is a known exchange."""
-    return EXCHANGE_ADDRESSES.get(address.lower())
+    """Detect if address is a known exchange (address should be lowercase)."""
+    return EXCHANGE_ADDRESSES.get(address)
 
 
 async def fetch_eth_price() -> float:
@@ -272,9 +272,9 @@ def normalize_transfer_event(
         if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
         
-        # Detect exchange involvement
-        exchange_from = get_exchange_name(from_address)
-        exchange_to = get_exchange_name(to_address)
+        # Detect exchange involvement (addresses must be lowercased for lookup)
+        exchange_from = get_exchange_name(from_address.lower())
+        exchange_to = get_exchange_name(to_address.lower())
         exchange_name = exchange_from or exchange_to or "Unknown"
 
         # BUG FIX: Use UTC timezone for timestamp to match validator expectations
@@ -458,8 +458,8 @@ def process_erc20_transfer_event(log_entry: Dict[str, Any]) -> bool:
     try:
         # Extract data from log entry
         tx_hash = log_entry.get("transactionHash", "").hex() if isinstance(log_entry.get("transactionHash"), bytes) else log_entry.get("transactionHash", "0x")
-        from_address = "0x" + log_entry["topics"][1].hex()[-40:] if len(log_entry.get("topics", [])) > 1 else "0x"
-        to_address = "0x" + log_entry["topics"][2].hex()[-40:] if len(log_entry.get("topics", [])) > 2 else "0x"
+        from_address = ("0x" + log_entry["topics"][1].hex()[-40:]).lower() if len(log_entry.get("topics", [])) > 1 else "0x"
+        to_address = ("0x" + log_entry["topics"][2].hex()[-40:]).lower() if len(log_entry.get("topics", [])) > 2 else "0x"
         
         # Decode amount from data field
         data_hex = log_entry.get("data", "0x")
@@ -468,8 +468,9 @@ def process_erc20_transfer_event(log_entry: Dict[str, Any]) -> bool:
         token_address = log_entry.get("address", "").lower()
         token = get_token_symbol(token_address)
         
-        # Get token decimals (assume 6 for stablecoins)
-        token_decimals = 6 if token != "ETH" else 18
+        # Get token decimals (6 for USDT/USDC/GUSD, 18 for DAI/ETH)
+        # DAI: 0x6b175474e89094c44da98b954eedeac495271d0f
+        token_decimals = 18 if token == "DAI" else (6 if token != "ETH" else 18)
         
         # Convert to USD (stablecoins typically 1:1)
         token_amount = float(Decimal(amount) / Decimal(10**token_decimals))
@@ -524,8 +525,8 @@ def process_exchange_transaction(tx_hash: str) -> bool:
         tx = w3.eth.get_transaction(tx_hash)
         receipt = w3.eth.get_transaction_receipt(tx_hash)
         
-        from_address = tx.get("from", "0x")
-        to_address = tx.get("to", "0x")
+        from_address = tx.get("from", "0x").lower()
+        to_address = (tx.get("to", "") or "0x").lower()
         amount_wei = tx.get("value", 0)
         
         # Convert to USD
@@ -581,35 +582,50 @@ def monitor_large_transfers():
         logger.warning("[MONITOR] Web3 not connected")
         return
 
+    events_found_total = 0
+
     try:
         current_block = w3.eth.block_number
         logger.info(f"[MONITOR] Current block: {current_block}")
-        logger.info(f"[MONITOR] Querying blocks {current_block - 100} to {current_block}")
+        
+        # NOTE: QuickNode Free tier limits eth_getLogs to 10-block range
+        # Using 10 blocks (instead of 100) to comply with free tier
+        block_range = 10
+        logger.info(f"[MONITOR] Querying blocks {current_block - block_range} to {current_block}")
+        logger.info(f"[MONITOR] STABLECOIN_ADDRESSES: {list(STABLECOIN_ADDRESSES.keys())}")
+        logger.info(f"[MONITOR] EXCHANGE_ADDRESSES: {list(EXCHANGE_ADDRESSES.keys())}")
         
         # ==== STRATEGY 1: Query ERC20 Transfers (Stablecoins) ====
         transfer_signature = w3.keccak(text="Transfer(address,address,uint256)")
         
         logger.info(f"[MONITOR] Creating ERC20 Transfer filter for {len(STABLECOIN_ADDRESSES)} stablecoins...")
+        logger.info(f"[MONITOR] Transfer signature: {transfer_signature.hex()}")
         
         try:
             # Query logs for ERC20 transfers
+            logger.info(f"[ERC20] Calling eth_getLogs with: address={list(STABLECOIN_ADDRESSES.keys())}, topics=[{transfer_signature.hex()}]")
+            # NOTE: Block numbers MUST be hex strings for QuickNode compatibility
             erc20_logs = w3.eth.get_logs({
                 "address": list(STABLECOIN_ADDRESSES.keys()),
                 "topics": [transfer_signature.hex()],
-                "fromBlock": current_block - 100,
-                "toBlock": "latest"
+                "fromBlock": hex(current_block - block_range),
+                "toBlock": hex(current_block)
             })
             
-            logger.info(f"[ERC20] 📊 Found {len(erc20_logs)} ERC20 transfer events")
+            logger.info(f"[ERC20] SUCCESS: Found {len(erc20_logs)} ERC20 transfer events")
+            events_found_total += len(erc20_logs)
             
             if len(erc20_logs) == 0:
-                logger.info("[ERC20] No recent transfers found (this is normal if no large transfers)")
+                logger.info("[ERC20] No recent transfers found")
+            else:
+                logger.info(f"[ERC20] Processing {len(erc20_logs)} events...")
             
             for log_event in erc20_logs:
                 process_erc20_transfer_event(log_event)
                 
         except Exception as e:
-            logger.warning(f"[ERC20] Could not query ERC20 logs: {e}")
+            logger.error(f"[ERC20] ERROR querying ERC20 logs: {e}")
+            logger.error(f"[ERC20] Traceback: {traceback.format_exc()}")
         
         # ==== STRATEGY 2: Query ETH Transfers (Check exchange addresses) ====
         logger.info("[MONITOR] Checking exchange addresses for ETH transfers...")
@@ -618,11 +634,12 @@ def monitor_large_transfers():
             # Query all transactions in recent blocks that involve known exchange addresses
             for exchange_addr in EXCHANGE_ADDRESSES.keys():
                 try:
-                    # Look for outgoing transactions from exchange
+                    # Look for outgoing transactions from exchange (use 10-block limit)
+                    # NOTE: Block numbers MUST be hex strings for QuickNode compatibility
                     tx_logs = w3.eth.get_logs({
                         "address": exchange_addr,
-                        "fromBlock": current_block - 50,  # Fewer blocks for ETH (faster)
-                        "toBlock": "latest"
+                        "fromBlock": hex(current_block - block_range),
+                        "toBlock": hex(current_block)
                     })
                     
                     if len(tx_logs) > 0:
@@ -673,7 +690,7 @@ def monitor_large_transfers():
                                 usd_value = eth_amount * eth_price
                                 
                                 if usd_value >= OnChainConfig.MIN_TRANSACTION_VALUE_USD:
-                                    logger.info(f"[ETH] 🔍 Found large ETH transfer: {eth_amount:.2f} ETH (~${usd_value:,.0f})")
+                                    logger.info(f"[ETH] Found large ETH transfer: {eth_amount:.2f} ETH (~${usd_value:,.0f})")
                                     
                                     # Process this transaction
                                     event = normalize_transfer_event(
@@ -701,22 +718,31 @@ def monitor_large_transfers():
         except Exception as e:
             logger.warning(f"[MONITOR] Error in block scanning strategy: {e}")
         
-        logger.info("[MONITOR] Transfer monitoring cycle complete ✅")
+        logger.info("[MONITOR] ========================================")
+        logger.info(f"[MONITOR] MONITORING CYCLE COMPLETE")
+        logger.info(f"[MONITOR] Total real events found: {events_found_total}")
+        logger.info("[MONITOR] ========================================")
+        
+        if events_found_total == 0:
+            logger.warning("[MONITOR] NO REAL BLOCKCHAIN EVENTS FOUND")
+            logger.warning("[MONITOR] This could mean:")
+            logger.warning("[MONITOR]   1. QuickNode connection is failing silently")
+            logger.warning("[MONITOR]   2. No large transfers in queried blocks")
+            logger.warning("[MONITOR]   3. eth_getLogs() is not working properly")
         
     except Exception as e:
         logger.error(f"[ERROR] Error monitoring transfers: {e}")
         traceback.print_exc()
 
 
-def run_collector():
-    """Main collector function - uses real blockchain monitoring (sync wrapper)."""
+async def run_collector_async():
+    """Main async collector function - uses real blockchain monitoring."""
     logger.info("=" * 60)
     logger.info("Starting On-Chain Collector (REAL MONITORING)")
     logger.info("=" * 60)
 
-    global publisher, w3, http_session
+    global publisher, w3
     start_time = time.time()
-    published_count = 0
 
     # Initialize Web3 connection
     if not w3:
@@ -733,9 +759,9 @@ def run_collector():
         publisher = RabbitMQPublisher(queue_name=OnChainConfig.RABBITMQ_QUEUE)
         logger.info("[OK] RabbitMQ publisher initialized")
         
-        # BUG FIX: Don't create http_session here - use cached ETH price instead
-        # Update ETH price from cache (no async calls in sync context)
-        logger.info("[PRICE] Using cached ETH price...")
+        # Fetch live ETH price
+        logger.info("[PRICE] Fetching live ETH price...")
+        await fetch_eth_price()
         logger.info(f"[OK] ETH price: ${eth_price_cache.get('price', 3000)}")
         
         # Start REAL blockchain monitoring
@@ -751,6 +777,17 @@ def run_collector():
         traceback.print_exc()
 
 
+async def main():
+    """Main entry point with async event loop and HTTP session."""
+    global http_session
+    
+    # Create HTTP session for price fetching
+    async with aiohttp.ClientSession() as session:
+        http_session = session
+        await run_collector_async()
+        http_session = None
+
+
 if __name__ == "__main__":
     start_metrics_server()
-    run_collector()
+    asyncio.run(main())

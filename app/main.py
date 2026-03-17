@@ -33,7 +33,7 @@ from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
-from app.modules.ingestion.application.onchain_collector import run_collector as onchain_run
+from app.modules.ingestion.application.onchain_collector import main as onchain_main
 
 load_dotenv()
 
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
     if not alert_consumer:
         alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
         alert_consumer.start()
-        print("[STARTUP] ✅ Alert consumer started")
+        print("[STARTUP] Alert consumer started")
 
     # Start Scheduled Collectors
     print("[STARTUP] Starting automatic collectors...")
@@ -77,8 +77,8 @@ async def lifespan(app: FastAPI):
         def run_onchain_collector():
             try:
                 print(f"[ONCHAIN] Running at {time.strftime('%H:%M:%S')}")
-                # run_collector() is sync and now uses cached ETH price
-                onchain_run()
+                # Call async main() from background thread (BackgroundScheduler runs in separate thread)
+                asyncio.run(onchain_main())
             except Exception as e:
                 print(f"[ONCHAIN] Error: {e}")
 
@@ -115,10 +115,10 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] ✅ Scheduler started: RSS(60s), Price(120s), OnChain(180s), Consumer(50msgs/3s), Intelligence(50events/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), OnChain(180s), Consumer(50msgs/3s), Intelligence(50events/5s)"
         )
     except Exception as e:
-        print(f"[STARTUP] ❌ Scheduler failed: {e}")
+        print(f"[STARTUP] Scheduler failed: {e}")
 
     yield
 
