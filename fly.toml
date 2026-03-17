@@ -1,56 +1,26 @@
-# Fly.io Configuration for AETERNA On-Chain Worker
-# This file tells Fly.io how to build and deploy the worker
-
 app = "aeterna-autonomous-alpha-engine"
-primary_region = "iad"  # Change to your closest region
+primary_region = "iad"
 
 [build]
 dockerfile = "Dockerfile"
-# The existing Dockerfile works as-is for the worker
 
 [env]
-# Service type tells start.sh to run the on-chain worker
 SERVICE_TYPE = "onchain-worker"
 PYTHONUNBUFFERED = "1"
 
 [processes]
-# Single process for the worker (unlike API which runs multiple)
 worker = "python onchain_worker.py"
 
 [[services]]
 internal_port = 8000
-# Worker doesn't expose HTTP, but keep this for health checks
-processes = ["worker"]
 
 [[services.ports]]
 port = 8000
 handlers = ["http"]
 
-# Health check - verify worker is alive
-[checks]
-healthcheck = {
-  cmd = "/bin/sh -c 'ps aux | grep onchain_worker | grep -v grep'",
-  interval = "30s",
-  timeout = "5s"
-}
-
-# Fly.io will automatically restart if worker crashes
 [deploy]
 strategy = "immediate"
-release_command = "alembic upgrade head"  # Run migrations on deploy
-
-# Keep worker running continuously
-[[processes]]
-name = "worker"
-cmd = "python onchain_worker.py"
-auto_start = true
-auto_stop = true
-
-# Resource limits (free tier)
-[http_service]
-internal_port = 8000
-min_machines_running = 1
-processes = ["worker"]
+release_command = "alembic upgrade head"
 
 [[vm]]
 cpu_kind = "shared"
