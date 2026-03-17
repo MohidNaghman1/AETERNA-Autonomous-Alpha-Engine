@@ -1,7 +1,7 @@
 # Fly.io Configuration for AETERNA On-Chain Worker
 # This file tells Fly.io how to build and deploy the worker
 
-app = "aeterna-worker"
+app = "aeterna-autonomous-alpha-engine"
 primary_region = "iad"  # Change to your closest region
 
 [build]
