@@ -34,11 +34,11 @@ def _init_redis():
         # Test connection
         _redis.ping()
         _redis_available = True
-        logger.info("✅ Redis deduplication cache connected")
+        logger.info("[OK] Redis deduplication cache connected")
     except Exception as e:
         _redis_available = False
         logger.warning(
-            f"⚠️  Redis unavailable, using in-memory cache for deduplication: {e}"
+            f"[WARN] Redis unavailable, using in-memory cache for deduplication: {e}"
         )
 
 
