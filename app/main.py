@@ -33,7 +33,6 @@ from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
-from app.modules.ingestion.application.onchain_collector import main as onchain_main
 
 load_dotenv()
 
@@ -41,14 +40,13 @@ load_dotenv()
 # Global scheduler and alert consumer
 background_scheduler = None
 alert_consumer = None
-onchain_task = None  # Track the background task
 
 
 # Startup and Shutdown Events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager: starts scheduler and alert consumer on startup."""
-    global alert_consumer, background_scheduler, onchain_task
+    global alert_consumer, background_scheduler
 
     # Start Alert Consumer
     if not alert_consumer:
@@ -75,23 +73,6 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
 
-
-        async def run_onchain_collector_task():
-            """Background task: Run on-chain collector continuously (not every 180s)."""
-            print("[ONCHAIN] Background task started")
-            while True:
-                try:
-                    print(f"[ONCHAIN] Cycle at {time.strftime('%H:%M:%S')}")
-                    await onchain_main()
-                except Exception as e:
-                    print(f"[ONCHAIN] Error: {e}")
-                    traceback.print_exc()
-                    # Wait before retrying on error
-                    await asyncio.sleep(60)
-                else:
-                    # Sleep 180s between successful cycles
-                    await asyncio.sleep(180)
-
         def run_consumer_polling():
             try:
                 count = run_consumer_poll(batch_size=50)
@@ -101,7 +82,7 @@ async def lifespan(app: FastAPI):
                 print(f"[CONSUMER] Error: {e}")
 
         def run_intelligence_scoring():
-            
+
             try:
                 count = run_intelligence_poll(batch_size=50)
                 if count > 0:
@@ -115,10 +96,6 @@ async def lifespan(app: FastAPI):
         background_scheduler.add_job(
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
-        # NOTE: On-chain collector is now a background async task, not a scheduler job
-        # background_scheduler.add_job(
-        #     run_onchain_collector, "interval", seconds=180, id="onchain_collector"
-        # )
         background_scheduler.add_job(
             run_consumer_polling, "interval", seconds=3, id="consumer_poller"
         )
@@ -129,26 +106,13 @@ async def lifespan(app: FastAPI):
         print(
             "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s), Intelligence(50events/5s)"
         )
-        print("[STARTUP] On-chain collector starting as background task...")
-        
-        # Create async background task for on-chain collector
-        # This runs continuously without creating/destroying event loops every 180s
-        onchain_task = asyncio.create_task(run_onchain_collector_task())
-        print("[STARTUP] On-chain collector task created")
+        print("[STARTUP] Note: On-chain collector runs as separate worker process (onchain_worker.py)")
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")
 
     yield
 
     # Cleanup on shutdown
-    # Cancel on-chain background task
-    if onchain_task and not onchain_task.done():
-        onchain_task.cancel()
-        try:
-            await onchain_task
-        except asyncio.CancelledError:
-            print("[SHUTDOWN] On-chain collector task cancelled")
-    
     if background_scheduler and background_scheduler.running:
         background_scheduler.shutdown()
 
