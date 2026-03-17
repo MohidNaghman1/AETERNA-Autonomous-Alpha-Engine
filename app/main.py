@@ -41,13 +41,14 @@ load_dotenv()
 # Global scheduler and alert consumer
 background_scheduler = None
 alert_consumer = None
+onchain_task = None  # Track the background task
 
 
 # Startup and Shutdown Events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager: starts scheduler and alert consumer on startup."""
-    global alert_consumer, background_scheduler
+    global alert_consumer, background_scheduler, onchain_task
 
     # Start Alert Consumer
     if not alert_consumer:
@@ -74,13 +75,22 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
 
-        def run_onchain_collector():
-            try:
-                print(f"[ONCHAIN] Running at {time.strftime('%H:%M:%S')}")
-                # Call async main() from background thread (BackgroundScheduler runs in separate thread)
-                asyncio.run(onchain_main())
-            except Exception as e:
-                print(f"[ONCHAIN] Error: {e}")
+
+        async def run_onchain_collector_task():
+            """Background task: Run on-chain collector continuously (not every 180s)."""
+            print("[ONCHAIN] Background task started")
+            while True:
+                try:
+                    print(f"[ONCHAIN] Cycle at {time.strftime('%H:%M:%S')}")
+                    await onchain_main()
+                except Exception as e:
+                    print(f"[ONCHAIN] Error: {e}")
+                    traceback.print_exc()
+                    # Wait before retrying on error
+                    await asyncio.sleep(60)
+                else:
+                    # Sleep 180s between successful cycles
+                    await asyncio.sleep(180)
 
         def run_consumer_polling():
             try:
@@ -104,9 +114,10 @@ async def lifespan(app: FastAPI):
         background_scheduler.add_job(
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
-        background_scheduler.add_job(
-            run_onchain_collector, "interval", seconds=180, id="onchain_collector"
-        )
+        # NOTE: On-chain collector is now a background async task, not a scheduler job
+        # background_scheduler.add_job(
+        #     run_onchain_collector, "interval", seconds=180, id="onchain_collector"
+        # )
         background_scheduler.add_job(
             run_consumer_polling, "interval", seconds=3, id="consumer_poller"
         )
@@ -115,14 +126,30 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), OnChain(180s), Consumer(50msgs/3s), Intelligence(50events/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(50msgs/3s), Intelligence(50events/5s)"
         )
+        print("[STARTUP] On-chain collector starting as background task...")
+        
+        # Create async background task for on-chain collector
+        # This runs continuously without creating/destroying event loops every 180s
+        onchain_task = asyncio.create_task(run_onchain_collector_task())
+        print("[STARTUP] On-chain collector task created")
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")
 
     yield
 
     # Cleanup on shutdown
+    global onchain_task
+    
+    # Cancel on-chain background task
+    if onchain_task and not onchain_task.done():
+        onchain_task.cancel()
+        try:
+            await onchain_task
+        except asyncio.CancelledError:
+            print("[SHUTDOWN] On-chain collector task cancelled")
+    
     if background_scheduler and background_scheduler.running:
         background_scheduler.shutdown()
 
@@ -196,27 +223,27 @@ def system_health():
     try:
         connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
         connection.close()
-        diagnostics["rabbitmq"] = "✅ Connected"
+        diagnostics["rabbitmq"] = "[OK] Connected"
     except Exception as e:
-        diagnostics["rabbitmq"] = f"❌ Error: {str(e)}"
+        diagnostics["rabbitmq"] = f"[ERROR] {str(e)}"
 
     # Check Redis
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
         r = redis.from_url(redis_url, decode_responses=True)
         r.ping()
-        diagnostics["redis"] = "✅ Connected"
+        diagnostics["redis"] = "[OK] Connected"
     except Exception as e:
-        diagnostics["redis"] = f"❌ Error: {str(e)}"
+        diagnostics["redis"] = f"[ERROR] {str(e)}"
 
     # Check PostgreSQL
     try:
         db = SessionLocal()
         db.execute("SELECT 1")
         db.close()
-        diagnostics["postgresql"] = "✅ Connected"
+        diagnostics["postgresql"] = "[OK] Connected"
     except Exception as e:
-        diagnostics["postgresql"] = f"❌ Error: {str(e)}"
+        diagnostics["postgresql"] = f"[ERROR] {str(e)}"
 
     return diagnostics
 
