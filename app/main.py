@@ -101,6 +101,7 @@ async def lifespan(app: FastAPI):
                 print(f"[CONSUMER] Error: {e}")
 
         def run_intelligence_scoring():
+            
             try:
                 count = run_intelligence_poll(batch_size=50)
                 if count > 0:
@@ -140,8 +141,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup on shutdown
-    global onchain_task
-    
     # Cancel on-chain background task
     if onchain_task and not onchain_task.done():
         onchain_task.cancel()
