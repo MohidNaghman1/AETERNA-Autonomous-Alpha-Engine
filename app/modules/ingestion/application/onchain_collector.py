@@ -605,8 +605,10 @@ def monitor_large_transfers():
             # Query logs for ERC20 transfers
             logger.info(f"[ERC20] Calling eth_getLogs with: address={list(STABLECOIN_ADDRESSES.keys())}, topics=[{transfer_signature.hex()}]")
             # NOTE: Block numbers MUST be hex strings for QuickNode compatibility
+            # NOTE: Addresses MUST be checksummed (EIP-55) format for web3.py
+            checksum_addresses = [Web3.to_checksum_address(addr) for addr in STABLECOIN_ADDRESSES.keys()]
             erc20_logs = w3.eth.get_logs({
-                "address": list(STABLECOIN_ADDRESSES.keys()),
+                "address": checksum_addresses,
                 "topics": [transfer_signature.hex()],
                 "fromBlock": hex(current_block - block_range),
                 "toBlock": hex(current_block)
@@ -636,8 +638,10 @@ def monitor_large_transfers():
                 try:
                     # Look for outgoing transactions from exchange (use 10-block limit)
                     # NOTE: Block numbers MUST be hex strings for QuickNode compatibility
+                    # NOTE: Addresses MUST be checksummed (EIP-55) format for web3.py
+                    checksum_exchange_addr = Web3.to_checksum_address(exchange_addr)
                     tx_logs = w3.eth.get_logs({
-                        "address": exchange_addr,
+                        "address": checksum_exchange_addr,
                         "fromBlock": hex(current_block - block_range),
                         "toBlock": hex(current_block)
                     })
