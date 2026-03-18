@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
         background_scheduler.add_job(
-            run_consumer_polling, "interval", seconds=1, id="consumer_poller"  # Reduced from 3s to 1s to drain queue faster
+            run_consumer_polling, "interval", seconds=1, id="consumer_poller", max_instances=10  # Allow up to 10 concurrent instances to drain queue rapidly
         )
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
