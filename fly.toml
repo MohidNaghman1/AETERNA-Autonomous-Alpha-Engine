@@ -11,13 +11,6 @@ PYTHONUNBUFFERED = "1"
 [processes]
 worker = "python onchain_worker.py"
 
-[[services]]
-internal_port = 8000
-
-[[services.ports]]
-port = 8000
-handlers = ["http"]
-
 [deploy]
 strategy = "immediate"
 release_command = "alembic upgrade head"
