@@ -461,8 +461,10 @@ def process_erc20_transfer_event(log_entry: Dict[str, Any]) -> bool:
         from_address = ("0x" + log_entry["topics"][1].hex()[-40:]).lower() if len(log_entry.get("topics", [])) > 1 else "0x"
         to_address = ("0x" + log_entry["topics"][2].hex()[-40:]).lower() if len(log_entry.get("topics", [])) > 2 else "0x"
         
-        # Decode amount from data field
+        # Decode amount from data field (handle both bytes and hex string)
         data_hex = log_entry.get("data", "0x")
+        if isinstance(data_hex, bytes):
+            data_hex = data_hex.hex()
         amount = int(data_hex, 16) if data_hex and data_hex != "0x" else 0
         
         token_address = log_entry.get("address", "").lower()
