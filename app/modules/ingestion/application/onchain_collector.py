@@ -588,9 +588,9 @@ def monitor_large_transfers():
         current_block = w3.eth.block_number
         logger.info(f"[MONITOR] Current block: {current_block}")
         
-        # NOTE: QuickNode Free tier limits eth_getLogs to 10-block range
-        # Using 10 blocks (instead of 100) to comply with free tier
-        block_range = 10
+        # NOTE: QuickNode Free tier limits eth_getLogs to 10-block range (inclusive on both ends)
+        # block_range = 9 means: fromBlock = current - 9, toBlock = current = 10 blocks total
+        block_range = 9
         logger.info(f"[MONITOR] Querying blocks {current_block - block_range} to {current_block}")
         logger.info(f"[MONITOR] STABLECOIN_ADDRESSES: {list(STABLECOIN_ADDRESSES.keys())}")
         logger.info(f"[MONITOR] EXCHANGE_ADDRESSES: {list(EXCHANGE_ADDRESSES.keys())}")
