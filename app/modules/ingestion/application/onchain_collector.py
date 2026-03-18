@@ -803,6 +803,21 @@ async def main():
         http_session = None
 
 
+def run_collector():
+    """Single collection run - fetches on-chain events once and returns.
+    
+    This is suitable for being called by Celery Beat which handles scheduling.
+    Do NOT use this as an infinite loop - let Celery Beat manage the schedule.
+    """
+    try:
+        logger.info("[CELERY] Starting on-chain collector via Celery Beat")
+        asyncio.run(main())
+        logger.info("[CELERY] On-chain collector completed successfully")
+    except Exception as e:
+        logger.error(f"[CELERY] Error in on-chain collector: {e}")
+        traceback.print_exc()
+
+
 if __name__ == "__main__":
     start_metrics_server()
     asyncio.run(main())
