@@ -75,9 +75,12 @@ async def lifespan(app: FastAPI):
 
         def run_consumer_polling():
             try:
-                count = run_consumer_poll(batch_size=1000)  # Increased from 50 to 1000 to drain the queue faster
+                # Increased to 5000 to drain massive backlog faster
+                count = run_consumer_poll(batch_size=5000)
                 if count > 0:
-                    print(f"[CONSUMER] Processed {count} messages")
+                    print(f"[CONSUMER] ✅ Processed {count} messages (queue draining...)")
+                else:
+                    print(f"[CONSUMER] Queue empty or no more messages this cycle")
             except Exception as e:
                 print(f"[CONSUMER] Error: {e}")
 
@@ -97,14 +100,14 @@ async def lifespan(app: FastAPI):
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
         background_scheduler.add_job(
-            run_consumer_polling, "interval", seconds=1, id="consumer_poller", max_instances=10  # Allow up to 10 concurrent instances to drain queue rapidly
+            run_consumer_polling, "interval", seconds=0.5, id="consumer_poller", max_instances=20  # Allow 20 concurrent instances to drain queue as fast as possible
         )
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(1000msgs/1s), Intelligence(50events/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(5000msgs/0.5s, max20 parallel), Intelligence(50events/5s)"
         )
         print("[STARTUP] Note: On-chain collector runs as separate worker process (onchain_worker.py)")
     except Exception as e:
