@@ -601,33 +601,36 @@ def monitor_large_transfers():
         logger.info(f"[MONITOR] Creating ERC20 Transfer filter for {len(STABLECOIN_ADDRESSES)} stablecoins...")
         logger.info(f"[MONITOR] Transfer signature: {transfer_signature.hex()}")
         
-        try:
-            # Query logs for ERC20 transfers
-            logger.info(f"[ERC20] Calling eth_getLogs with: address={list(STABLECOIN_ADDRESSES.keys())}, topics=[{transfer_signature.hex()}]")
-            # NOTE: Block numbers MUST be hex strings for QuickNode compatibility
-            # NOTE: Addresses MUST be checksummed (EIP-55) format for web3.py
-            checksum_addresses = [Web3.to_checksum_address(addr) for addr in STABLECOIN_ADDRESSES.keys()]
-            erc20_logs = w3.eth.get_logs({
-                "address": checksum_addresses,
-                "topics": [transfer_signature.hex()],
-                "fromBlock": hex(current_block - block_range),
-                "toBlock": hex(current_block)
-            })
-            
-            logger.info(f"[ERC20] SUCCESS: Found {len(erc20_logs)} ERC20 transfer events")
-            events_found_total += len(erc20_logs)
-            
-            if len(erc20_logs) == 0:
-                logger.info("[ERC20] No recent transfers found")
-            else:
-                logger.info(f"[ERC20] Processing {len(erc20_logs)} events...")
-            
-            for log_event in erc20_logs:
-                process_erc20_transfer_event(log_event)
+        # Query each stablecoin separately to avoid timeout errors
+        for token_addr, token_symbol in STABLECOIN_ADDRESSES.items():
+            try:
+                logger.info(f"[ERC20] Querying {token_symbol} at {token_addr}")
+                # NOTE: Block numbers MUST be hex strings for QuickNode compatibility
+                # NOTE: Addresses MUST be checksummed (EIP-55) format for web3.py
+                checksum_address = Web3.to_checksum_address(token_addr)
+                erc20_logs = w3.eth.get_logs({
+                    "address": checksum_address,
+                    "topics": [transfer_signature.hex()],
+                    "fromBlock": hex(current_block - block_range),
+                    "toBlock": hex(current_block)
+                })
                 
-        except Exception as e:
-            logger.error(f"[ERC20] ERROR querying ERC20 logs: {e}")
-            logger.error(f"[ERC20] Traceback: {traceback.format_exc()}")
+                logger.info(f"[ERC20] {token_symbol}: Found {len(erc20_logs)} transfer events")
+                events_found_total += len(erc20_logs)
+                
+                if len(erc20_logs) > 0:
+                    logger.info(f"[ERC20] Processing {len(erc20_logs)} {token_symbol} events...")
+                
+                for log_event in erc20_logs:
+                    process_erc20_transfer_event(log_event)
+                    
+            except Exception as e:
+                logger.error(f"[ERC20] ERROR querying {token_symbol}: {e}")
+                logger.debug(f"[ERC20] Traceback: {traceback.format_exc()}")
+                continue
+            
+            # Small delay to avoid rate limiting
+            time.sleep(0.5)
         
         # ==== STRATEGY 2: Query ETH Transfers (Check exchange addresses) ====
         logger.info("[MONITOR] Checking exchange addresses for ETH transfers...")
@@ -651,6 +654,9 @@ def monitor_large_transfers():
                         
                 except Exception as e:
                     logger.debug(f"[ETH] Could not query logs for {exchange_addr}: {e}")
+                finally:
+                    # Small delay to avoid rate limiting
+                    time.sleep(0.3)
                     
         except Exception as e:
             logger.warning(f"[ETH] Could not query exchange addresses: {e}")
@@ -718,6 +724,9 @@ def monitor_large_transfers():
                 except Exception as e:
                     logger.debug(f"[MONITOR] Error scanning block {block_num}: {e}")
                     continue
+                finally:
+                    # Small delay to avoid rate limiting
+                    time.sleep(0.2)
         
         except Exception as e:
             logger.warning(f"[MONITOR] Error in block scanning strategy: {e}")
