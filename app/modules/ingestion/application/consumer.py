@@ -357,15 +357,22 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
     channel = None
 
     try:
+        # Diagnostic: Log which connection method will be used
+        if RABBITMQ_URL:
+            logger.info(f"[CONSUMER-POLL] Using CloudAMQP URL connection (RABBITMQ_URL is set)")
+        else:
+            logger.warning(f"[CONSUMER-POLL] ⚠️  RABBITMQ_URL not set! Falling back to localhost (this won't work on Render)")
+        
         # Prefer URL-based connection (CloudAMQP format)
         if RABBITMQ_URL:
             try:
-                logger.debug(f"[CONSUMER-POLL] Connecting via URL...")
+                logger.info(f"[CONSUMER-POLL] Connecting to CloudAMQP via URL...")
                 conn_params = pika.URLParameters(RABBITMQ_URL)
                 connection = pika.BlockingConnection([conn_params])
+                logger.info(f"[CONSUMER-POLL] ✓ Connected to CloudAMQP successfully")
             except Exception as e:
-                logger.error(f"[CONSUMER-POLL] Failed to connect via URL: {e}")
-                logger.debug(
+                logger.error(f"[CONSUMER-POLL] ❌ Failed to connect via URL: {type(e).__name__}: {str(e)[:100]}")
+                logger.info(
                     f"[CONSUMER-POLL] Falling back to host-based connection..."
                 )
                 connection = pika.BlockingConnection(
@@ -377,7 +384,7 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                     )
                 )
         else:
-            logger.debug(f"[CONSUMER-POLL] Connecting via host/user/password...")
+            logger.warning(f"[CONSUMER-POLL] Connecting via localhost (host={RABBITMQ_HOST}, port={RABBITMQ_PORT})...")
             connection = pika.BlockingConnection(
                 pika.ConnectionParameters(
                     host=RABBITMQ_HOST,
@@ -392,8 +399,19 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
         # Set prefetch to batch_size so RabbitMQ sends multiple messages at once (not just 1)
         channel.basic_qos(prefetch_count=min(batch_size, 1000))
 
+        # Get queue status
+        try:
+            queue_method = channel.queue_declare(queue=RABBITMQ_QUEUE, passive=True)
+            messages_waiting = queue_method.method.message_count
+            logger.info(
+                f"[CONSUMER-POLL] ✓ Queue '{RABBITMQ_QUEUE}' has {messages_waiting} messages waiting"
+            )
+        except Exception as e:
+            logger.warning(f"[CONSUMER-POLL] Could not get queue status: {e}")
+            messages_waiting = 0
+
         logger.info(
-            f"[CONSUMER-POLL] Processing up to {batch_size} messages (prefetch={min(batch_size, 1000)})"
+            f"[CONSUMER-POLL] Processing up to {batch_size} messages from queue (prefetch={min(batch_size, 1000)})"
         )
         for attempt in range(batch_size):
             try:
