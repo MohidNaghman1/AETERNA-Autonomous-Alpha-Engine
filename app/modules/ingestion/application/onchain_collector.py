@@ -410,7 +410,6 @@ def normalize_dex_swap_event(
 
 def publish_event(event: Event) -> bool:
     """Validate, deduplicate, and publish event to RabbitMQ."""
-    global publisher
     try:
         # Validate schema
         is_valid, validation_error = validate_event_schema(event.model_dump())
@@ -756,7 +755,7 @@ async def run_collector_async():
     logger.info("Starting On-Chain Collector (REAL MONITORING)")
     logger.info("=" * 60)
 
-    global publisher, w3
+    global publisher,w3
     start_time = time.time()
 
     # Initialize Web3 connection
