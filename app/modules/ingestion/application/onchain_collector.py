@@ -241,7 +241,6 @@ def determine_priority_by_threshold(
 
 def initialize_web3():
     """Initialize Web3 connection to Ethereum node."""
-    global w3
     try:
         w3 = Web3(WebsocketProvider(OnChainConfig.QUICKNODE_URL))
         if w3.is_connected():
