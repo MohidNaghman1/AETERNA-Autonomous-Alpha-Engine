@@ -754,7 +754,7 @@ async def run_collector_async():
     logger.info("Starting On-Chain Collector (REAL MONITORING)")
     logger.info("=" * 60)
 
-    global publisher,w3
+    global publisher
     start_time = time.time()
 
     # Initialize Web3 connection
