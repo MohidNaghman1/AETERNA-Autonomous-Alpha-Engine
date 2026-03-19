@@ -21,26 +21,40 @@ logger = logging.getLogger(__name__)
 def normalize_source(source: str) -> List[str]:
     """
     Normalize source names for flexible querying.
-    Handles common variations:
-    - "ethereum" → matches blockchain events (onchain)
+    Maps user-friendly names to actual database values.
+    
+    Blockchain sources:
+    - "ethereum_blockchain" or "ethereum" → matches blockchain events (stored as "ethereum")
+    
+    News sources:
     - "coindesk" → matches "www.coindesk.com" or "coindesk.com"
     - "cointelegraph" → matches "cointelegraph.com"
     - "decrypt" → matches "decrypt.co"
+    
+    Price sources:
     - "coingecko" → matches "coingecko" (exact)
 
-    Returns: normalized source name(s) as regex or exact match
+    Returns: list of possible source names to match in database
     """
     source_lower = source.lower().strip()
 
-    # Map shorthand names to actual stored values
+    # Map user-friendly names to actual stored values in database
     normalization_map = {
-        "ethereum": ["ethereum"],
+        # Blockchain sources (user-friendly name → database value)
+        "ethereum_blockchain": ["ethereum"],
+        "ethereum": ["ethereum"],  # Keep backward compatibility
         "onchain": ["ethereum"],
         "blockchain": ["ethereum"],
+        
+        # News sources
         "coindesk": ["www.coindesk.com", "coindesk.com", "coindesk"],
         "cointelegraph": ["cointelegraph.com", "cointelegraph"],
         "decrypt": ["decrypt.co", "decrypt"],
+        
+        # Price sources
         "coingecko": ["coingecko"],
+        
+        # Exact source names (fallback)
         "www.coindesk.com": ["www.coindesk.com"],
         "coindesk.com": ["coindesk.com"],
         "cointelegraph.com": ["cointelegraph.com"],
@@ -48,6 +62,42 @@ def normalize_source(source: str) -> List[str]:
     }
 
     return normalization_map.get(source_lower, [source])
+
+
+def normalize_type(event_type: str) -> List[str]:
+    """
+    Normalize event type names for flexible querying.
+    Maps user-friendly names to actual database values.
+    
+    Blockchain types:
+    - "token_transfer" or "onchain" → matches blockchain events (stored as "onchain")
+    
+    News types:
+    - "news" → matches news articles (stored as "news")
+    
+    Price types:
+    - "price" → matches price data (stored as "price")
+    
+    Returns: list of possible type names to match in database
+    """
+    type_lower = event_type.lower().strip()
+    
+    # Map user-friendly names to actual stored values in database
+    normalization_map = {
+        # Blockchain types (user-friendly name → database value)
+        "token_transfer": ["onchain"],
+        "onchain": ["onchain"],  # Keep backward compatibility
+        "blockchain": ["onchain"],
+        "erc20_transfer": ["onchain"],
+        
+        # News types
+        "news": ["news"],
+        
+        # Price types
+        "price": ["price"],
+    }
+    
+    return normalization_map.get(type_lower, [event_type])
 
 
 # Example endpoint (health check for ingestion)
@@ -71,7 +121,7 @@ async def list_events(
     limit: int = Query(100, ge=1, le=500),
     source: Optional[str] = Query(
         None,
-        description="Filter by data provider (ethereum, coindesk, coingecko, decrypt, cointelegraph, etc)",
+        description="Filter by data source (ethereum_blockchain, coindesk, coingecko, decrypt, cointelegraph, etc)",
     ),
     event_type: Optional[str] = Query(
         None,
@@ -103,11 +153,11 @@ async def list_events(
     - end_date: Get events before this date (ISO format)
 
     Examples:
-    - GET /ingestion/events?source=ethereum&type=onchain&limit=10
-    - GET /ingestion/events?source=decrypt&type=news&limit=5
-    - GET /ingestion/events?type=price&limit=50
-    - GET /ingestion/events?skip=100&limit=50
-    - GET /ingestion/events?source=coindesk&start_date=2026-03-15T00:00:00
+    - GET /ingestion/events?source=ethereum_blockchain&limit=10 - Get blockchain token transfers
+    - GET /ingestion/events?source=decrypt&type=news&limit=5 - Get Decrypt news
+    - GET /ingestion/events?type=price&limit=50 - Get all price events
+    - GET /ingestion/events?skip=100&limit=50 - Paginate results
+    - GET /ingestion/events?source=coindesk&start_date=2026-03-15T00:00:00 - CoinDesk after date
 
     Returns:
         List of events matching all filters, ordered by timestamp (newest first)
@@ -123,8 +173,11 @@ async def list_events(
         source_filter = or_(*[EventORM.source == s for s in possible_sources])
         filters.append(source_filter)
     if event_type:
-        logger.info(f"[DEBUG] Filtering by type: {event_type}")
-        filters.append(EventORM.type == event_type)
+        # Normalize type and create OR filter for all possible variations
+        possible_types = normalize_type(event_type)
+        logger.info(f"[DEBUG] Filtering by type: {event_type} → {possible_types}")
+        type_filter = or_(*[EventORM.type == t for t in possible_types])
+        filters.append(type_filter)
     if start_date:
         logger.info(f"[DEBUG] Filtering by start_date: {start_date}")
         filters.append(EventORM.timestamp >= start_date)
@@ -189,11 +242,12 @@ async def get_available_sources(db: AsyncSession = Depends(get_db)):
         "total_unique_sources": len(sources),
         "total_events": total,
         "filter_usage": {
-            "ethereum": "Try: ?source=ethereum (for on-chain events)",
-            "coindesk": "Try: ?source=coindesk (matches www.coindesk.com)",
-            "cointelegraph": "Try: ?source=cointelegraph",
-            "decrypt": "Try: ?source=decrypt",
-            "coingecko": "Try: ?source=coingecko"
+            "ethereum_blockchain": "Try: ?source=ethereum_blockchain (for on-chain blockchain transfers)",
+            "ethereum": "Try: ?source=ethereum (backward compatible alias)",
+            "coindesk": "Try: ?source=coindesk (matches www.coindesk.com news)",
+            "cointelegraph": "Try: ?source=cointelegraph (matches cointelegraph.com news)",
+            "decrypt": "Try: ?source=decrypt (matches decrypt.co news)",
+            "coingecko": "Try: ?source=coingecko (price data)"
         }
     }
 
@@ -491,7 +545,13 @@ async def debug_database_contents(db: AsyncSession = Depends(get_db)):
         "by_type": by_type,
         "sample_events": samples,
         "notes": {
-            "test_query": "To test filtering: GET /ingestion/events?source=ethereum&type=onchain",
+            "test_query": "To test filtering: GET /ingestion/events?source=ethereum_blockchain (for blockchain events)",
+            "filter_names": {
+                "ethereum": "in database as 'ethereum', filter with ?source=ethereum_blockchain or ?source=ethereum",
+                "onchain": "in database as 'onchain', represents blockchain token transfers",
+                "news": "news articles from various feeds",
+                "price": "price data from CoinGecko"
+            },
             "expected_sources": ["ethereum", "www.coindesk.com", "cointelegraph.com", "decrypt.co", "coingecko"],
             "expected_types": ["onchain", "news", "price"],
         }

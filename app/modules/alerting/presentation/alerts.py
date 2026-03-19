@@ -27,26 +27,40 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 def normalize_source(source: str) -> List[str]:
     """
     Normalize source names for flexible querying.
-    Handles common variations:
-    - "ethereum" → matches blockchain events (onchain)
+    Maps user-friendly names to actual database values.
+    
+    Blockchain sources:
+    - "ethereum_blockchain" or "ethereum" → matches blockchain events (stored as "ethereum")
+    
+    News sources:
     - "coindesk" → matches "www.coindesk.com" or "coindesk.com"
     - "cointelegraph" → matches "cointelegraph.com"
     - "decrypt" → matches "decrypt.co"
+    
+    Price sources:
     - "coingecko" → matches "coingecko" (exact)
     
-    Returns: list of possible source names to match
+    Returns: list of possible source names to match in database
     """
     source_lower = source.lower().strip()
     
-    # Map shorthand names to actual stored values
+    # Map user-friendly names to actual stored values in database
     normalization_map = {
-        "ethereum": ["ethereum"],
+        # Blockchain sources (user-friendly name → database value)
+        "ethereum_blockchain": ["ethereum"],
+        "ethereum": ["ethereum"],  # Keep backward compatibility
         "onchain": ["ethereum"],
         "blockchain": ["ethereum"],
+        
+        # News sources
         "coindesk": ["www.coindesk.com", "coindesk.com", "coindesk"],
         "cointelegraph": ["cointelegraph.com", "cointelegraph"],
         "decrypt": ["decrypt.co", "decrypt"],
+        
+        # Price sources
         "coingecko": ["coingecko"],
+        
+        # Exact source names (fallback)
         "www.coindesk.com": ["www.coindesk.com"],
         "coindesk.com": ["coindesk.com"],
         "cointelegraph.com": ["cointelegraph.com"],
@@ -54,6 +68,42 @@ def normalize_source(source: str) -> List[str]:
     }
     
     return normalization_map.get(source_lower, [source])
+
+
+def normalize_type(event_type: str) -> List[str]:
+    """
+    Normalize event type names for flexible querying.
+    Maps user-friendly names to actual database values.
+    
+    Blockchain types:
+    - "token_transfer" or "onchain" → matches blockchain events (stored as "onchain")
+    
+    News types:
+    - "news" → matches news articles (stored as "news")
+    
+    Price types:
+    - "price" → matches price data (stored as "price")
+    
+    Returns: list of possible type names to match in database
+    """
+    type_lower = event_type.lower().strip()
+    
+    # Map user-friendly names to actual stored values in database
+    normalization_map = {
+        # Blockchain types (user-friendly name → database value)
+        "token_transfer": ["onchain"],
+        "onchain": ["onchain"],  # Keep backward compatibility
+        "blockchain": ["onchain"],
+        "erc20_transfer": ["onchain"],
+        
+        # News types
+        "news": ["news"],
+        
+        # Price types
+        "price": ["price"],
+    }
+    
+    return normalization_map.get(type_lower, [event_type])
 
 
 async def get_alerts_query(
@@ -64,6 +114,7 @@ async def get_alerts_query(
     priority: Optional[str] = None,
     entity: Optional[str] = None,
     source: Optional[str] = None,
+    event_type: Optional[str] = None,
     channels: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
@@ -78,7 +129,8 @@ async def get_alerts_query(
         end_date: Filter events before this date
         priority: Filter by priority (HIGH, MEDIUM, LOW)
         entity: Filter by entity/token (from event mentions)
-        source: Filter by data provider/feed source (e.g., 'coindesk', 'coingecko', 'cointelegraph')
+        source: Filter by data provider/feed source (e.g., 'ethereum_blockchain', 'coindesk', 'coingecko', 'cointelegraph')
+        event_type: Filter by event type (e.g., 'token_transfer', 'news', 'price')
         channels: Filter by alert delivery channel (e.g., 'email', 'telegram', 'sms')
         skip: Offset for pagination
         limit: Number of results (max 100)
@@ -132,6 +184,21 @@ async def get_alerts_query(
         source_or_clause = or_(*[EventORM.source == s for s in possible_sources])
         logger.info(f"[DEBUG] Source filter clause: {source_or_clause}")
         filters.append(source_or_clause)
+
+    # Filter by event type (e.g., token_transfer, news, price)
+    # Use INNER JOIN for type to only get alerts with matching events
+    if event_type:
+        if not event_joined:
+            query = query.join(EventORM, AlertORM.event_id == EventORM.id)
+            event_joined = True
+        # Normalize type and filter by any matching variation
+        possible_types = normalize_type(event_type)
+        logger.info(f"[DEBUG] Filtering by event type: {event_type} → {possible_types}")
+        logger.info(f"[DEBUG] Creating OR filter with {len(possible_types)} type options")
+        # Build OR clause for all possible type matches
+        type_or_clause = or_(*[EventORM.type == t for t in possible_types])
+        logger.info(f"[DEBUG] Type filter clause: {type_or_clause}")
+        filters.append(type_or_clause)
 
     # Filter by alert delivery channels (stored as JSON array)
     if channels:
@@ -298,7 +365,11 @@ async def alert_history(
     ),
     source: Optional[str] = Query(
         None,
-        description="Filter by data provider/feed (e.g., 'ethereum', 'coindesk', 'coingecko', 'cointelegraph')",
+        description="Filter by data source (e.g., 'ethereum_blockchain', 'coindesk', 'coingecko', 'cointelegraph')",
+    ),
+    event_type: Optional[str] = Query(
+        None,
+        description="Filter by event type (e.g., 'token_transfer', 'news', 'price')",
     ),
     channels: Optional[str] = Query(
         None,
@@ -318,11 +389,19 @@ async def alert_history(
     - end_date: Filter alerts before this date (ISO format)
     - priority: Filter by priority (HIGH, MEDIUM, LOW)
     - entity: Filter by cryptocurrency/token name (e.g., Bitcoin, Ethereum, Solana, ETH, USDT)
-    - source: Filter by data provider/feed (e.g., ethereum, CoinDesk, CoinGecko, CoinMarketCap, Cointelegraph)
+    - source: Filter by data provider/feed (e.g., ethereum_blockchain, coindesk, coingecko, cointelegraph)
+    - event_type: Filter by event type (e.g., token_transfer, news, price)
     - channels: Filter by how you receive alerts (email, telegram, sms, in-app, webhook)
 
     Returns:
         List of alerts for the current authenticated user
+    
+    Examples:
+    - GET /api/alerts/history?source=ethereum_blockchain - Only blockchain transfers
+    - GET /api/alerts/history?source=ethereum_blockchain&event_type=token_transfer - Blockchain token transfers
+    - GET /api/alerts/history?source=coindesk - Only CoinDesk news
+    - GET /api/alerts/history?event_type=news - Only news alerts
+    - GET /api/alerts/history?source=ethereum_blockchain&priority=HIGH - Blockchain HIGH priority only
     """
     try:
         alerts = await get_alerts_query(
@@ -333,6 +412,7 @@ async def alert_history(
             priority=priority,
             entity=entity,
             source=source,
+            event_type=event_type,
             channels=channels,
             skip=skip,
             limit=limit,
