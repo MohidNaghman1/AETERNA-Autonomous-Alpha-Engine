@@ -409,7 +409,7 @@ def score_event(
         # ========================================================================
         priority_marker = event_dict.get("content", {}).get("priority_marker")
         priority_reason = event_dict.get("content", {}).get("priority_reason", "")
-        
+
         if priority_marker in ("HIGH", "MEDIUM", "LOW"):
             # Use on-chain collector's threshold-based priority
             if priority_marker == "HIGH":
@@ -418,7 +418,7 @@ def score_event(
                 score = 70.0
             else:  # LOW
                 score = 35.0
-            
+
             priority = priority_marker
             result = {
                 "multi_source": 0,
@@ -436,7 +436,7 @@ def score_event(
                 f"Reason: {priority_reason}"
             )
             return result
-        
+
         # ========================================================================
         # STANDARD AGENT A SCORING (for non-on-chain or borderline events)
         # ========================================================================

@@ -100,7 +100,7 @@ def save_alert(alert: dict) -> Alert:
             user_id = 0
         else:
             user_id = int(user_id)
-        
+
         # Event ID can be None for some alerts
         event_id = alert.get("event_id")
         if event_id is not None:
@@ -143,28 +143,32 @@ def generate_alert(
     """
     event_id = event.get("id", "unknown")
     priority = event.get("priority")
-    
+
     if priority not in ("HIGH", "MEDIUM"):
-        print(f"[ALERT-FILTER] Event {event_id}: Priority {priority} not HIGH/MEDIUM - SKIPPED")
+        print(
+            f"[ALERT-FILTER] Event {event_id}: Priority {priority} not HIGH/MEDIUM - SKIPPED"
+        )
         return None
-    
+
     user_id = event.get("user_id")
     user_prefs = user_prefs or {}
-    
+
     if user_id and is_rate_limited(user_id):
         print(f"[ALERT-FILTER] Event {event_id} User {user_id}: Rate limited - SKIPPED")
         return None
-    
+
     if is_within_quiet_hours(user_prefs):
         print(f"[ALERT-FILTER] Event {event_id}: Quiet hours - SKIPPED")
         return None
-    
+
     channels = filter_channels_by_prefs(user_prefs, ["telegram", "email", "web"])
     if not channels:
         print(f"[ALERT-FILTER] Event {event_id}: No channels available - SKIPPED")
         return None
-    
-    print(f"[ALERT-GENERATE] Event {event_id}: Passed all filters. Priority={priority}, Channels={channels}")
+
+    print(
+        f"[ALERT-GENERATE] Event {event_id}: Passed all filters. Priority={priority}, Channels={channels}"
+    )
     # Extract content dict (where enriched fields are stored)
     content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
 
@@ -206,30 +210,36 @@ def generate_alert(
         "urls": content.get("urls", [])[:3],  # Top 3 relevant URLs
         "link": content.get("link"),  # Original source link
     }
-    
+
     # Save alert to database
     try:
         save_alert(alert)
         print(f"[ALERT-SAVED] Event {event_id}: Alert saved to database")
     except Exception as e:
-        print(f"[ALERT-ERROR] Event {event_id}: Failed to save alert - {type(e).__name__}: {str(e)[:100]}")
+        print(
+            f"[ALERT-ERROR] Event {event_id}: Failed to save alert - {type(e).__name__}: {str(e)[:100]}"
+        )
         raise  # Re-raise so caller knows it failed
-    
+
     # Record time for rate limiting
     if user_id:
         try:
             record_alert_time(user_id)
         except Exception as e:
-            print(f"[ALERT-ERROR] Event {event_id}: Failed to record alert time - {str(e)[:100]}")
-    
+            print(
+                f"[ALERT-ERROR] Event {event_id}: Failed to record alert time - {str(e)[:100]}"
+            )
+
     # Trigger email delivery if configured
     if "email" in alert["channels"]:
         try:
             deliver_email_alert(alert, user_prefs)
             print(f"[ALERT-EMAIL] Event {event_id}: Email delivery triggered")
         except Exception as e:
-            print(f"[ALERT-ERROR] Event {event_id}: Email delivery failed - {type(e).__name__}: {str(e)[:100]}")
+            print(
+                f"[ALERT-ERROR] Event {event_id}: Email delivery failed - {type(e).__name__}: {str(e)[:100]}"
+            )
             # Don't re-raise - email failure shouldn't prevent alert creation
-    
+
     print(f"[ALERT-SUCCESS] Event {event_id}: Alert created and saved successfully")
     return alert

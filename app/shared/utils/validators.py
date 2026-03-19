@@ -45,43 +45,47 @@ class OnChainContentSchema(ContentSchema):
 
     # Primary fields (as used by onchain_collector)
     transaction_hash: Optional[str] = Field(None, min_length=64, max_length=66)
-    transaction_type: Optional[str] = Field(None, pattern="^(transfer|swap|mint|burn|liquidation|Unknown)?$")
-    
+    transaction_type: Optional[str] = Field(
+        None, pattern="^(transfer|swap|mint|burn|liquidation|Unknown)?$"
+    )
+
     # Address fields
     from_address: Optional[str] = Field(None, min_length=40, max_length=42)
     to_address: Optional[str] = Field(None, max_length=42)
-    
+
     # Amount fields
     amount: Optional[str] = Field(None)  # Can be string representation of large numbers
     token: Optional[str] = Field(None, max_length=100)
     token_decimals: Optional[int] = Field(None, ge=0)
     usd_value: Optional[float] = Field(None, ge=0)
-    
+
     # Transaction metadata
     block_number: Optional[int] = Field(None, gt=0)
     gas_used: Optional[int] = Field(None, ge=0)
     blockchain: Optional[str] = Field(None, max_length=50)
-    
+
     # Exchange detection
     exchange_from: Optional[str] = Field(None, max_length=100)
     exchange_to: Optional[str] = Field(None, max_length=100)
     exchange_detected: Optional[str] = Field(None, max_length=100)
-    
+
     # Priority and quality
     priority_marker: Optional[str] = Field(None, pattern="^(HIGH|MEDIUM|LOW)$")
     priority_reason: Optional[str] = Field(None, max_length=500)
     engagement_rate: Optional[float] = Field(None, ge=0)
     event_hash: Optional[str] = Field(None, max_length=100)
-    
+
     # Alert fields
     title: Optional[str] = Field(None, max_length=500)
     summary: Optional[str] = Field(None, max_length=2000)
     mentions: Optional[List[str]] = Field(None, max_items=50)
     alert_reason: Optional[str] = Field(None, max_length=500)
-    
+
     # Legacy/alternate field names (for backward compatibility)
     tx_hash: Optional[str] = Field(None, min_length=64, max_length=66)
-    event_type: Optional[str] = Field(None, pattern="^(transfer|swap|mint|burn|liquidation|Unknown)?$")
+    event_type: Optional[str] = Field(
+        None, pattern="^(transfer|swap|mint|burn|liquidation|Unknown)?$"
+    )
     contract_address: Optional[str] = Field(None, max_length=42)
     description: Optional[str] = Field(None, max_length=1000)
 
@@ -155,12 +159,12 @@ class EventSchema(BaseModel):
     @classmethod
     def parse_timestamp(cls, v):
         """Convert string timestamps to datetime objects.
-        
+
         Handles ISO8601 formats:
         - "2026-03-15T14:32:31Z" (from Event model)
         - "2026-03-15T14:32:31+00:00" (standard ISO)
         - datetime objects (pass through)
-        
+
         Ensures all datetimes are timezone-aware (UTC).
         """
         if isinstance(v, datetime):

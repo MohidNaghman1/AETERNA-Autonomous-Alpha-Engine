@@ -15,6 +15,7 @@ router = APIRouter(
 
 class CreateUserRequest(BaseModel):
     """Request model for creating a new user."""
+
     id: int
     email: EmailStr
     password: str
@@ -22,6 +23,7 @@ class CreateUserRequest(BaseModel):
 
 class UserResponse(BaseModel):
     """Response model for user data."""
+
     id: int
     email: str
     created_at: str
@@ -30,55 +32,56 @@ class UserResponse(BaseModel):
 @router.post("/", response_model=UserResponse)
 def create_user(request: CreateUserRequest):
     """Create a new user with specified id, email, and password.
-    
+
     Args:
         request: CreateUserRequest with id, email, password
-        
+
     Returns:
         Created user details
-        
+
     Raises:
         HTTPException: If user with id already exists or email is invalid
     """
     db = SessionLocal()
     try:
         # Check if user already exists
-        existing_user = db.query(User).filter(
-            (User.id == request.id) | (User.email == request.email)
-        ).first()
-        
+        existing_user = (
+            db.query(User)
+            .filter((User.id == request.id) | (User.email == request.email))
+            .first()
+        )
+
         if existing_user:
             raise HTTPException(
-                status_code=409, 
-                detail=f"User with id {request.id} or email {request.email} already exists"
+                status_code=409,
+                detail=f"User with id {request.id} or email {request.email} already exists",
             )
-        
+
         # Hash the password
         hashed_password = hash_password(request.password)
-        
+
         # Create new user
         new_user = User(
             id=request.id,
             email=request.email,
             password_hash=hashed_password,
-            email_verified=False
+            email_verified=False,
         )
-        
+
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        
+
         return UserResponse(
             id=new_user.id,
             email=new_user.email,
-            created_at=new_user.created_at.isoformat() if new_user.created_at else None
+            created_at=new_user.created_at.isoformat() if new_user.created_at else None,
         )
-        
+
     except IntegrityError as e:
         db.rollback()
         raise HTTPException(
-            status_code=400,
-            detail="Failed to create user - constraint violation"
+            status_code=400, detail="Failed to create user - constraint violation"
         )
     except Exception as e:
         db.rollback()

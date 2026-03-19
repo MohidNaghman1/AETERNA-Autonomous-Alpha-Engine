@@ -4,7 +4,7 @@ Provides REST endpoints for users to access their alert history with filtering a
 All endpoints require authentication and enforce user ownership of alerts.
 """
 
-from fastapi import APIRouter, HTTPException, Query, Depends, status
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, or_, func
@@ -28,22 +28,22 @@ def normalize_source(source: str) -> List[str]:
     """
     Normalize source names for flexible querying.
     Maps user-friendly names to actual database values.
-    
+
     Blockchain sources:
     - "ethereum_blockchain" or "ethereum" → matches blockchain events (stored as "ethereum")
-    
+
     News sources:
     - "coindesk" → matches "www.coindesk.com" or "coindesk.com"
     - "cointelegraph" → matches "cointelegraph.com"
     - "decrypt" → matches "decrypt.co"
-    
+
     Price sources:
     - "coingecko" → matches "coingecko" (exact)
-    
+
     Returns: list of possible source names to match in database
     """
     source_lower = source.lower().strip()
-    
+
     # Map user-friendly names to actual stored values in database
     normalization_map = {
         # Blockchain sources (user-friendly name → database value)
@@ -51,22 +51,19 @@ def normalize_source(source: str) -> List[str]:
         "ethereum": ["ethereum"],  # Keep backward compatibility
         "onchain": ["ethereum"],
         "blockchain": ["ethereum"],
-        
         # News sources
         "coindesk": ["www.coindesk.com", "coindesk.com", "coindesk"],
         "cointelegraph": ["cointelegraph.com", "cointelegraph"],
         "decrypt": ["decrypt.co", "decrypt"],
-        
         # Price sources
         "coingecko": ["coingecko"],
-        
         # Exact source names (fallback)
         "www.coindesk.com": ["www.coindesk.com"],
         "coindesk.com": ["coindesk.com"],
         "cointelegraph.com": ["cointelegraph.com"],
         "decrypt.co": ["decrypt.co"],
     }
-    
+
     return normalization_map.get(source_lower, [source])
 
 
@@ -74,20 +71,20 @@ def normalize_type(event_type: str) -> List[str]:
     """
     Normalize event type names for flexible querying.
     Maps user-friendly names to actual database values.
-    
+
     Blockchain types:
     - "token_transfer" or "onchain" → matches blockchain events (stored as "onchain")
-    
+
     News types:
     - "news" → matches news articles (stored as "news")
-    
+
     Price types:
     - "price" → matches price data (stored as "price")
-    
+
     Returns: list of possible type names to match in database
     """
     type_lower = event_type.lower().strip()
-    
+
     # Map user-friendly names to actual stored values in database
     normalization_map = {
         # Blockchain types (user-friendly name → database value)
@@ -95,14 +92,12 @@ def normalize_type(event_type: str) -> List[str]:
         "onchain": ["onchain"],  # Keep backward compatibility
         "blockchain": ["onchain"],
         "erc20_transfer": ["onchain"],
-        
         # News types
         "news": ["news"],
-        
         # Price types
         "price": ["price"],
     }
-    
+
     return normalization_map.get(type_lower, [event_type])
 
 
@@ -179,7 +174,9 @@ async def get_alerts_query(
         # Normalize source and filter by any matching variation
         possible_sources = normalize_source(source)
         logger.info(f"[DEBUG] Filtering by source: {source} → {possible_sources}")
-        logger.info(f"[DEBUG] Creating OR filter with {len(possible_sources)} source options")
+        logger.info(
+            f"[DEBUG] Creating OR filter with {len(possible_sources)} source options"
+        )
         # Build OR clause for all possible source matches
         source_or_clause = or_(*[EventORM.source == s for s in possible_sources])
         logger.info(f"[DEBUG] Source filter clause: {source_or_clause}")
@@ -194,7 +191,9 @@ async def get_alerts_query(
         # Normalize type and filter by any matching variation
         possible_types = normalize_type(event_type)
         logger.info(f"[DEBUG] Filtering by event type: {event_type} → {possible_types}")
-        logger.info(f"[DEBUG] Creating OR filter with {len(possible_types)} type options")
+        logger.info(
+            f"[DEBUG] Creating OR filter with {len(possible_types)} type options"
+        )
         # Build OR clause for all possible type matches
         type_or_clause = or_(*[EventORM.type == t for t in possible_types])
         logger.info(f"[DEBUG] Type filter clause: {type_or_clause}")
@@ -279,7 +278,9 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                 # Store event metadata
                 source = event.source
                 event_type = event.type
-                event_timestamp = event.timestamp.isoformat() if event.timestamp else None
+                event_timestamp = (
+                    event.timestamp.isoformat() if event.timestamp else None
+                )
 
                 # Handle both dict and JSON string content
                 content_data = event.content
@@ -395,7 +396,7 @@ async def alert_history(
 
     Returns:
         List of alerts for the current authenticated user
-    
+
     Examples:
     - GET /api/alerts/history?source=ethereum_blockchain - Only blockchain transfers
     - GET /api/alerts/history?source=ethereum_blockchain&event_type=token_transfer - Blockchain token transfers
@@ -802,12 +803,12 @@ async def list_available_sources(
     db: AsyncSession = Depends(get_db),
 ):
     """Get list of all available sources in the system with event counts.
-    
+
     This endpoint shows:
     - All unique source names in the database
     - How many events each source has
     - How many alerts link to those events
-    
+
     Useful for troubleshooting filter issues and understanding data ingestion.
     """
     try:
@@ -818,35 +819,38 @@ async def list_available_sources(
             .order_by(desc(func.count(EventORM.id)))
         )
         sources_data = result.all()
-        
+
         # Build response with source normalization info
         sources_info = []
         for source, event_count in sources_data:
             # Get alert count for this source
             alert_result = await db.execute(
-                select(func.count(AlertORM.id)).select_from(AlertORM)
+                select(func.count(AlertORM.id))
+                .select_from(AlertORM)
                 .join(EventORM, AlertORM.event_id == EventORM.id)
                 .where(EventORM.source == source)
             )
             alert_count = alert_result.scalar() or 0
-            
+
             # Get normalized versions
             normalized = normalize_source(source)
-            
-            sources_info.append({
-                "actual_source": source,
-                "event_count": event_count,
-                "alert_count": alert_count,
-                "normalized_names": normalized,
-                "filterable_as": [source] + normalized,  # Show all ways to filter it
-            })
-        
-        logger.info(f"[DEBUG] Available sources: {[s['actual_source'] for s in sources_info]}")
-        
-        return {
-            "total_unique_sources": len(sources_info),
-            "sources": sources_info
-        }
+
+            sources_info.append(
+                {
+                    "actual_source": source,
+                    "event_count": event_count,
+                    "alert_count": alert_count,
+                    "normalized_names": normalized,
+                    "filterable_as": [source]
+                    + normalized,  # Show all ways to filter it
+                }
+            )
+
+        logger.info(
+            f"[DEBUG] Available sources: {[s['actual_source'] for s in sources_info]}"
+        )
+
+        return {"total_unique_sources": len(sources_info), "sources": sources_info}
     except Exception as e:
         logger.error(f"Error fetching available sources: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching sources")

@@ -154,7 +154,9 @@ def process_event(ch, method, properties, body):
         # DEBUG: Log event type
         event_type = data.get("type", "unknown")
         if event_type == "onchain":
-            logger.info(f"[🔗 ON-CHAIN] Processing on-chain event. Data keys: {list(data.keys())}")
+            logger.info(
+                f"[🔗 ON-CHAIN] Processing on-chain event. Data keys: {list(data.keys())}"
+            )
 
         try:
             event = Event(**data)
@@ -359,10 +361,14 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
     try:
         # Diagnostic: Log which connection method will be used
         if RABBITMQ_URL:
-            logger.info(f"[CONSUMER-POLL] Using CloudAMQP URL connection (RABBITMQ_URL is set)")
+            logger.info(
+                f"[CONSUMER-POLL] Using CloudAMQP URL connection (RABBITMQ_URL is set)"
+            )
         else:
-            logger.warning(f"[CONSUMER-POLL] ⚠️  RABBITMQ_URL not set! Falling back to localhost (this won't work on Render)")
-        
+            logger.warning(
+                f"[CONSUMER-POLL] ⚠️  RABBITMQ_URL not set! Falling back to localhost (this won't work on Render)"
+            )
+
         # Prefer URL-based connection (CloudAMQP format)
         if RABBITMQ_URL:
             try:
@@ -371,10 +377,10 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                 connection = pika.BlockingConnection([conn_params])
                 logger.info(f"[CONSUMER-POLL] ✓ Connected to CloudAMQP successfully")
             except Exception as e:
-                logger.error(f"[CONSUMER-POLL] ❌ Failed to connect via URL: {type(e).__name__}: {str(e)[:100]}")
-                logger.info(
-                    f"[CONSUMER-POLL] Falling back to host-based connection..."
+                logger.error(
+                    f"[CONSUMER-POLL] ❌ Failed to connect via URL: {type(e).__name__}: {str(e)[:100]}"
                 )
+                logger.info(f"[CONSUMER-POLL] Falling back to host-based connection...")
                 connection = pika.BlockingConnection(
                     pika.ConnectionParameters(
                         host=RABBITMQ_HOST,
@@ -384,7 +390,9 @@ def run_consumer_poll(batch_size: int = 1000) -> int:
                     )
                 )
         else:
-            logger.warning(f"[CONSUMER-POLL] Connecting via localhost (host={RABBITMQ_HOST}, port={RABBITMQ_PORT})...")
+            logger.warning(
+                f"[CONSUMER-POLL] Connecting via localhost (host={RABBITMQ_HOST}, port={RABBITMQ_PORT})..."
+            )
             connection = pika.BlockingConnection(
                 pika.ConnectionParameters(
                     host=RABBITMQ_HOST,
