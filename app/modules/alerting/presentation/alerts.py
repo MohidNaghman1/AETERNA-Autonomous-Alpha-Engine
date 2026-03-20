@@ -30,7 +30,7 @@ def normalize_source(source: str) -> List[str]:
     Maps user-friendly names to actual database values.
 
     Blockchain sources:
-    - "ethereum_blockchain" or "ethereum" → matches blockchain events (stored as "ethereum")
+    - "ethereum_blockchain" or "ethereum" → matches blockchain events in db (stored as "ethereum")
 
     News sources:
     - "coindesk" → matches "www.coindesk.com" or "coindesk.com"
