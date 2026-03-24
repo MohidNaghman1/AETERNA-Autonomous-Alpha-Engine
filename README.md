@@ -290,12 +290,7 @@ AETERNA-Autonomous-Alpha-Engine/
 ├── tests/                         # Unit, integration & performance tests
 ├── docs/                          # Documentation
 │   ├── API.md                     # Public API reference
-│   └── internal/                  # Private docs (gitignored)
-│       ├── API_DOCUMENTATION_COMPLETE.md
-│       ├── ARCHITECTURE.md
-│       ├── PRD.md
-│       ├── ROADMAP.md
-│       └── SRS.md
+│   └── internal/                  # Private docs (local-only, excluded from GitHub)
 ├── alembic/                       # Database migrations
 ├── scripts/                       # Dev startup scripts
 ├── onchain_worker.py              # Standalone on-chain blockchain worker
