@@ -289,11 +289,13 @@ AETERNA-Autonomous-Alpha-Engine/
 │       └── presentation/          # Health endpoints
 ├── tests/                         # Unit, integration & performance tests
 ├── docs/                          # Documentation
-│   ├── API_DOCUMENTATION_COMPLETE.md
-│   ├── ARCHITECTURE.md
-│   ├── PRD.md
-│   ├── ROADMAP.md
-│   └── SRS.md
+│   ├── API.md                     # Public API reference
+│   └── internal/                  # Private docs (gitignored)
+│       ├── API_DOCUMENTATION_COMPLETE.md
+│       ├── ARCHITECTURE.md
+│       ├── PRD.md
+│       ├── ROADMAP.md
+│       └── SRS.md
 ├── alembic/                       # Database migrations
 ├── scripts/                       # Dev startup scripts
 ├── onchain_worker.py              # Standalone on-chain blockchain worker
@@ -310,13 +312,10 @@ AETERNA-Autonomous-Alpha-Engine/
 
 ## 📚 Documentation
 
-Comprehensive documentation is available in the `docs/` directory:
+- **[API Reference](docs/API.md)** — Public REST API documentation with endpoints, examples, and client code
+- **Interactive Docs** — `/docs` (Swagger UI) and `/redoc` (ReDoc) available on deployed instances
 
-- **[API Documentation](docs/API_DOCUMENTATION_COMPLETE.md)** — Full REST API reference
-- **[Architecture](docs/ARCHITECTURE.md)** — System architecture and design decisions
-- **[PRD](docs/PRD.md)** — Product Requirements Document
-- **[Roadmap](docs/ROADMAP.md)** — Development roadmap and milestones
-- **[SRS](docs/SRS.md)** — Software Requirements Specification
+> **Internal docs** (Architecture, PRD, Roadmap, SRS) are maintained in `docs/internal/` and excluded from the public repository via `.gitignore`.
 
 ---
 
