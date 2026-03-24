@@ -13,4 +13,4 @@ build/
 htmlcov/
 
 # Private documentation (internal only)
-docs/internal/
+docs/internal/
