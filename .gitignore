@@ -9,4 +9,8 @@ __pycache__/
 .mypy_cache/
 dist/
 build/
-.DS_Store   
+.DS_Store
+htmlcov/
+
+# Private documentation (internal only)
+docs/internal/
