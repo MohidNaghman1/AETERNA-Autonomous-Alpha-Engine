@@ -37,6 +37,23 @@ RABBITMQ_HOST = os.environ.get("RABBITMQ_HOST", "localhost")
 QUEUE_NAME = os.environ.get("RABBITMQ_QUEUE", "events")
 
 
+def _enrich_scoring_fields(event: dict) -> dict:
+    """Expose nested social fields at the top level for Agent A scoring."""
+    content = event.get("content") if isinstance(event.get("content"), dict) else {}
+    author = content.get("author") if isinstance(content.get("author"), dict) else {}
+
+    enriched = dict(event)
+    enriched.setdefault("sources", [event.get("source")] if event.get("source") else [])
+    enriched.setdefault("engagement_rate", content.get("engagement_rate", 0))
+    enriched.setdefault("verified", content.get("verified", author.get("verified", False)))
+    enriched.setdefault("username", author.get("username", ""))
+    enriched.setdefault(
+        "text",
+        content.get("text") or content.get("summary") or content.get("title") or "",
+    )
+    return enriched
+
+
 # Dummy function for DB embeddings lookup (to be replaced with real DB call)
 def get_recent_event_embeddings():
     # Return a list of embeddings from recent events (last 30 min)
@@ -141,6 +158,7 @@ def process_event(ch, method, properties, body):
     """
     try:
         event = json.loads(body)
+        event = _enrich_scoring_fields(event)
         db_embeddings = get_recent_event_embeddings()
         result = score_event(event, db_embeddings)
         event.update(result)
@@ -231,6 +249,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                     ),
                     "content": event_orm.content or {},
                 }
+                event_dict = _enrich_scoring_fields(event_dict)
 
                 scores = score_event(event_dict)
                 priority = scores.get("priority", "LOW")

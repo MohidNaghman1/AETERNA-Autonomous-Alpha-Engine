@@ -6,6 +6,9 @@ Tests Event model creation, validation, and quality scoring.
 import pytest
 from datetime import datetime
 from app.modules.ingestion.domain.models import Event
+from app.modules.ingestion.presentation.api import normalize_source, normalize_type
+from app.shared.utils.data_extractors import extract_twitter_tweet_detailed
+from app.shared.utils.validators import validate_event
 
 
 def test_event_id_deduplication():
@@ -132,6 +135,65 @@ def test_event_type_validation():
         pass
 
 
+def test_twitter_event_validation():
+    """Test Twitter/X social events validate successfully."""
+    tweet = {
+        "id": "1234567890",
+        "text": "Bitcoin and ETH are both moving higher. #bitcoin",
+        "created_at": "2026-03-09T12:49:30Z",
+        "lang": "en",
+        "public_metrics": {
+            "like_count": 120,
+            "retweet_count": 25,
+            "reply_count": 8,
+            "quote_count": 3,
+        },
+    }
+    author = {
+        "id": "42",
+        "name": "Crypto Whale",
+        "username": "crypto_whale",
+        "verified": True,
+        "public_metrics": {"followers_count": 50000, "tweet_count": 1000},
+    }
+    content = extract_twitter_tweet_detailed(tweet, author)
+    event = Event.create(
+        "twitter",
+        "social",
+        datetime.utcnow(),
+        content,
+        entities=["Bitcoin", "ETH"],
+    )
+
+    is_valid, error = validate_event(event.model_dump())
+    assert is_valid, error
+    assert event.content["author"]["username"] == "@crypto_whale"
+    assert event.content["engagement_rate"] > 0
+
+
+def test_twitter_event_content_structure():
+    """Test normalized Twitter/X payload exposes engagement and URL metadata."""
+    content = extract_twitter_tweet_detailed(
+        {
+            "id": "1234567890",
+            "text": "Watching BTC closely https://example.com #bitcoin",
+            "created_at": "2026-03-09T12:49:30Z",
+            "public_metrics": {"like_count": 10, "retweet_count": 2, "reply_count": 1},
+        },
+        {
+            "id": "7",
+            "name": "Alice",
+            "username": "alice_alpha",
+            "public_metrics": {"followers_count": 1000},
+        },
+    )
+
+    assert content["tweet_id"] == "1234567890"
+    assert content["url"].endswith("/status/1234567890")
+    assert content["engagement"]["likes"] == 10
+    assert "#bitcoin" in content["hashtags"]
+
+
 def test_event_content_structure():
     """Test Event handles various content structures."""
     ts = datetime.utcnow()
@@ -157,3 +219,11 @@ def test_event_quality_score_range():
     ts = datetime.utcnow()
     e = Event.create("coindesk", "news", ts, content)
     assert 0 <= e.quality_score <= 100, "Quality score should be 0-100"
+
+
+def test_twitter_filter_normalization():
+    """Test ingestion API normalizes twitter/social filters."""
+    assert normalize_source("twitter") == ["twitter"]
+    assert normalize_source("x") == ["twitter"]
+    assert normalize_type("social") == ["social"]
+    assert "social" in normalize_type("sentiment")

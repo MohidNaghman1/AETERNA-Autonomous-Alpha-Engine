@@ -19,6 +19,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.modules.ingestion.application.tasks.run_price_collector",
         "schedule": crontab(minute="*/1"),  # Every minute
     },
+    "run-twitter-collector": {
+        "task": "app.modules.ingestion.application.tasks.run_twitter_collector",
+        "schedule": crontab(minute="*/2"),  # Every 2 minutes
+    },
     "run-onchain-collector": {
         "task": "app.modules.ingestion.application.tasks.run_onchain_collector",
         "schedule": crontab(minute="*/1"),  # Every minute (or adjust as needed)

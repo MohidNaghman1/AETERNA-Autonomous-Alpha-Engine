@@ -4,6 +4,9 @@ from app.modules.ingestion.application.price_collector import run_collector as r
 from app.modules.ingestion.application.onchain_collector import (
     run_collector as run_onchain,
 )
+from app.modules.ingestion.application.twitter_collector import (
+    run_collector as run_twitter,
+)
 
 
 @celery_app.task(name="app.modules.ingestion.application.tasks.run_rss_collector")
@@ -14,6 +17,11 @@ def run_rss_collector():
 @celery_app.task(name="app.modules.ingestion.application.tasks.run_price_collector")
 def run_price_collector():
     run_price()
+
+
+@celery_app.task(name="app.modules.ingestion.application.tasks.run_twitter_collector")
+def run_twitter_collector():
+    run_twitter()
 
 
 @celery_app.task(name="app.modules.ingestion.application.tasks.run_onchain_collector")

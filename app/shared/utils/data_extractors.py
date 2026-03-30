@@ -1,5 +1,5 @@
 """
-Enhanced Data Extractors for RSS and Price feeds.
+Enhanced data extractors for RSS, price, and social feeds.
 Extracts detailed metadata and enriches event data.
 """
 
@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from html.parser import HTMLParser
+from urllib.parse import urlparse
 
 
 class HTMLTagStripper(HTMLParser):
@@ -221,6 +222,16 @@ def calculate_content_score(content: Dict[str, Any]) -> float:
         score += 5
 
     return min(100.0, score)
+
+
+def normalize_username(username: Optional[str]) -> str:
+    """Normalize social usernames to a consistent @handle format."""
+    if not username:
+        return ""
+    normalized = str(username).strip()
+    if normalized.startswith("@"):
+        return normalized
+    return f"@{normalized}"
 
 
 # ========== RSS SPECIFIC EXTRACTORS ==========
@@ -587,3 +598,108 @@ def identify_significant_changes(
         "should_alert": len(alerts) > 0,
         "alert_reasons": " | ".join(alerts) if alerts else None,
     }
+
+
+# ========== TWITTER/X SPECIFIC EXTRACTORS ==========
+
+
+def calculate_engagement_rate(
+    public_metrics: Dict[str, Any], followers_count: Optional[int]
+) -> float:
+    """Calculate a bounded engagement rate for social posts."""
+    if not public_metrics:
+        return 0.0
+
+    followers = max(int(followers_count or 0), 0)
+    likes = int(public_metrics.get("like_count", 0) or 0)
+    retweets = int(public_metrics.get("retweet_count", 0) or 0)
+    replies = int(public_metrics.get("reply_count", 0) or 0)
+    quotes = int(public_metrics.get("quote_count", 0) or 0)
+    bookmarks = int(public_metrics.get("bookmark_count", 0) or 0)
+    impressions = int(public_metrics.get("impression_count", 0) or 0)
+
+    engagements = likes + retweets + replies + quotes + bookmarks
+    denominator = followers or impressions
+    if denominator <= 0:
+        return 0.0
+
+    rate = engagements / denominator
+    return round(max(0.0, min(rate, 1.0)), 4)
+
+
+def extract_twitter_tweet_detailed(
+    tweet: Dict[str, Any], author: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Extract detailed metadata from a Twitter/X recent search result.
+
+    Returns a normalized social payload with author, engagement, URLs,
+    hashtags, and quality indicators.
+    """
+    text = (tweet.get("text") or "").strip()
+    tweet_id = str(tweet.get("id") or "").strip()
+    created_at = tweet.get("created_at")
+    lang = tweet.get("lang")
+    author = author or {}
+    public_metrics = tweet.get("public_metrics") or {}
+    author_metrics = author.get("public_metrics") or {}
+
+    username_raw = author.get("username") or ""
+    username = normalize_username(username_raw)
+    followers_count = int(author_metrics.get("followers_count", 0) or 0)
+    following_count = int(author_metrics.get("following_count", 0) or 0)
+    tweet_count = int(author_metrics.get("tweet_count", 0) or 0)
+    listed_count = int(author_metrics.get("listed_count", 0) or 0)
+
+    urls = extract_urls(text)
+    hashtags = extract_hashtags(text)
+    mentions = extract_mentions(text)
+    entities = extract_crypto_entities(text)
+
+    tweet_url = ""
+    if username_raw and tweet_id:
+        tweet_url = f"https://twitter.com/{username_raw}/status/{tweet_id}"
+
+    content = {
+        "tweet_id": tweet_id,
+        "title": f"{username} on X" if username else "Twitter/X Post",
+        "summary": text,
+        "text": text,
+        "url": tweet_url,
+        "link": tweet_url,
+        "published": created_at,
+        "source": "twitter",
+        "source_domain": urlparse(tweet_url).netloc if tweet_url else "twitter.com",
+        "lang": lang,
+        "conversation_id": tweet.get("conversation_id"),
+        "possibly_sensitive": bool(tweet.get("possibly_sensitive", False)),
+        "hashtags": hashtags,
+        "mentions": list(dict.fromkeys(mentions + entities))[:15],
+        "urls": urls,
+        "url_count": len(urls),
+        "word_count": len(text.split()),
+        "author": {
+            "id": str(author.get("id") or ""),
+            "name": author.get("name"),
+            "username": username,
+            "verified": bool(author.get("verified", False)),
+            "followers_count": followers_count,
+            "following_count": following_count,
+            "tweet_count": tweet_count,
+            "listed_count": listed_count,
+        },
+        "engagement": {
+            "likes": int(public_metrics.get("like_count", 0) or 0),
+            "retweets": int(public_metrics.get("retweet_count", 0) or 0),
+            "replies": int(public_metrics.get("reply_count", 0) or 0),
+            "quotes": int(public_metrics.get("quote_count", 0) or 0),
+            "bookmarks": int(public_metrics.get("bookmark_count", 0) or 0),
+            "impressions": int(public_metrics.get("impression_count", 0) or 0),
+        },
+        "followers_count": followers_count,
+        "verified": bool(author.get("verified", False)),
+        "engagement_rate": calculate_engagement_rate(public_metrics, followers_count),
+        "site_name": "Twitter/X",
+    }
+    content["quality_score"] = calculate_content_score(content)
+    return content

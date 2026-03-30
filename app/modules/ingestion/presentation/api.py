@@ -51,11 +51,16 @@ def normalize_source(source: str) -> List[str]:
         "decrypt": ["decrypt.co", "decrypt"],
         # Price sources
         "coingecko": ["coingecko"],
+        # Social sources
+        "twitter": ["twitter"],
+        "x": ["twitter"],
         # Exact source names (fallback)
         "www.coindesk.com": ["www.coindesk.com"],
         "coindesk.com": ["coindesk.com"],
         "cointelegraph.com": ["cointelegraph.com"],
         "decrypt.co": ["decrypt.co"],
+        "twitter.com": ["twitter"],
+        "x.com": ["twitter"],
     }
 
     return normalization_map.get(source_lower, [source])
@@ -90,6 +95,11 @@ def normalize_type(event_type: str) -> List[str]:
         "news": ["news"],
         # Price types
         "price": ["price"],
+        # Social types
+        "social": ["social"],
+        "sentiment": ["social", "sentiment"],
+        "tweet": ["social"],
+        "tweets": ["social"],
     }
 
     return normalization_map.get(type_lower, [event_type])
@@ -116,12 +126,12 @@ async def list_events(
     limit: int = Query(100, ge=1, le=500),
     source: Optional[str] = Query(
         None,
-        description="Filter by data source (ethereum_blockchain, coindesk, coingecko, decrypt, cointelegraph, etc)",
+        description="Filter by data source (ethereum_blockchain, coindesk, coingecko, decrypt, cointelegraph, twitter, etc)",
     ),
     event_type: Optional[str] = Query(
         None,
         alias="type",
-        description="Filter by event type (news, price, onchain, etc)",
+        description="Filter by event type (news, price, onchain, social, etc)",
     ),
     start_date: Optional[datetime] = Query(
         None, description="Filter events after this date (ISO format)"
@@ -140,8 +150,8 @@ async def list_events(
     Query Parameters:
     - skip: Pagination offset (default: 0)
     - limit: Number of results to return (default: 100, max: 500)
-    - source: Filter by source - use shorthand (ethereum, coindesk, decrypt, cointelegraph, coingecko) or full name
-    - type: Filter by event type (news, price, onchain)
+    - source: Filter by source - use shorthand (ethereum, coindesk, decrypt, cointelegraph, coingecko, twitter) or full name
+    - type: Filter by event type (news, price, onchain, social)
     - start_date: Get events after this date (ISO format, e.g., 2026-03-16T10:00:00)
     - end_date: Get events before this date (ISO format)
 
@@ -149,6 +159,7 @@ async def list_events(
     - GET /ingestion/events?source=ethereum_blockchain&limit=10 - Get blockchain token transfers
     - GET /ingestion/events?source=decrypt&type=news&limit=5 - Get Decrypt news
     - GET /ingestion/events?type=price&limit=50 - Get all price events
+    - GET /ingestion/events?source=twitter&type=social&limit=10 - Get Twitter/X posts
     - GET /ingestion/events?skip=100&limit=50 - Paginate results
     - GET /ingestion/events?source=coindesk&start_date=2026-03-15T00:00:00 - CoinDesk after date
 
@@ -243,6 +254,7 @@ async def get_available_sources(db: AsyncSession = Depends(get_db)):
             "cointelegraph": "Try: ?source=cointelegraph (matches cointelegraph.com news)",
             "decrypt": "Try: ?source=decrypt (matches decrypt.co news)",
             "coingecko": "Try: ?source=coingecko (price data)",
+            "twitter": "Try: ?source=twitter (Twitter/X social data)",
         },
     }
 
@@ -557,6 +569,7 @@ async def debug_database_contents(db: AsyncSession = Depends(get_db)):
                 "onchain": "in database as 'onchain', represents blockchain token transfers",
                 "news": "news articles from various feeds",
                 "price": "price data from CoinGecko",
+                "social": "Twitter/X social posts",
             },
             "expected_sources": [
                 "ethereum",
@@ -564,7 +577,8 @@ async def debug_database_contents(db: AsyncSession = Depends(get_db)):
                 "cointelegraph.com",
                 "decrypt.co",
                 "coingecko",
+                "twitter",
             ],
-            "expected_types": ["onchain", "news", "price"],
+            "expected_types": ["onchain", "news", "price", "social"],
         },
     }

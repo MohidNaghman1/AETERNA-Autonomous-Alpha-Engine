@@ -259,7 +259,7 @@ GET /ingestion/stats
 GET /ingestion/auto-update-status
 ```
 
-Shows whether automatic collectors (RSS, Price, On-Chain) are running.
+Shows whether automatic collectors (RSS, Twitter/X, Price, On-Chain) are running.
 
 ---
 
@@ -317,6 +317,27 @@ Shows whether automatic collectors (RSS, Price, On-Chain) are running.
 | `content.should_alert` | boolean | Whether this event should trigger alerts |
 | `content.alert_reasons` | string | Human-readable alert reasoning |
 | `entities` | string[] | Extracted crypto entities |
+
+### Twitter/X Social Event (`type: "social"`)
+
+| Field | Type | Description |
+|---|---|---|
+| `content.tweet_id` | string | Original Twitter/X tweet ID |
+| `content.text` | string | Raw tweet text |
+| `content.summary` | string | Text used for summaries/alerts |
+| `content.url` / `content.link` | string | Canonical tweet URL |
+| `content.published` | string | Tweet creation timestamp |
+| `content.author.username` | string | Author handle (e.g. `@crypto_whale`) |
+| `content.author.verified` | boolean | Whether the author is verified |
+| `content.author.followers_count` | integer | Author follower count |
+| `content.engagement.likes` | integer | Like count |
+| `content.engagement.retweets` | integer | Retweet count |
+| `content.engagement.replies` | integer | Reply count |
+| `content.engagement.quotes` | integer | Quote count |
+| `content.engagement_rate` | float | Engagement ratio used by intelligence scoring |
+| `content.hashtags` | string[] | Hashtags extracted from the tweet |
+| `content.mentions` | string[] | Mentions/entities extracted from the tweet |
+| `entities` | string[] | Extracted crypto entities (e.g. `["Bitcoin", "BTC"]`) |
 
 ### On-Chain Event (`type: "onchain"`)
 

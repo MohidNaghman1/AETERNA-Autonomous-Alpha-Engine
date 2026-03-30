@@ -129,6 +129,27 @@ class PriceContentSchema(ContentSchema):
         return v
 
 
+class TwitterContentSchema(ContentSchema):
+    """Validation schema for Twitter/X social events."""
+
+    tweet_id: str = Field(..., min_length=1, max_length=100)
+    text: str = Field(..., min_length=3, max_length=5000)
+    summary: Optional[str] = Field(None, max_length=5000)
+    url: Optional[str] = Field(None, max_length=500)
+    link: Optional[str] = Field(None, max_length=500)
+    published: Optional[str] = Field(None, max_length=100)
+    lang: Optional[str] = Field(None, max_length=10)
+    hashtags: List[str] = Field(default_factory=list, max_items=50)
+    mentions: List[str] = Field(default_factory=list, max_items=50)
+    urls: List[str] = Field(default_factory=list, max_items=20)
+    verified: bool = Field(default=False)
+    followers_count: int = Field(default=0, ge=0)
+    engagement_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    quality_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    author: Dict[str, Any] = Field(default_factory=dict)
+    engagement: Dict[str, Any] = Field(default_factory=dict)
+
+
 class EventSchema(BaseModel):
     """Main event validation schema"""
 
@@ -235,6 +256,9 @@ class EventSchema(BaseModel):
             elif self.type == "price" and isinstance(self.content, dict):
                 # Validate as price content
                 PriceContentSchema.model_validate(self.content)
+            elif self.type in ("social", "sentiment") and isinstance(self.content, dict):
+                # Validate as Twitter/X social content
+                TwitterContentSchema.model_validate(self.content)
             elif self.type == "onchain" and isinstance(self.content, dict):
                 # Validate as on-chain content
                 OnChainContentSchema.model_validate(self.content)

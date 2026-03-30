@@ -17,7 +17,7 @@
 
 ## 📖 Overview
 
-AETERNA is a **modular, production-ready** data ingestion, intelligence, and event processing engine purpose-built for cryptocurrency markets. It collects data from RSS feeds, price APIs, and on-chain sources, scores and filters events with AI, and delivers real-time alerts via email, Telegram, and WebSocket.
+AETERNA is a **modular, production-ready** data ingestion, intelligence, and event processing engine purpose-built for cryptocurrency markets. It collects data from RSS feeds, Twitter/X, price APIs, and on-chain sources, scores and filters events with AI, and delivers real-time alerts via email, Telegram, and WebSocket.
 
 ---
 
@@ -25,7 +25,7 @@ AETERNA is a **modular, production-ready** data ingestion, intelligence, and eve
 
 | Category | Capabilities |
 |---|---|
-| **Data Ingestion** | RSS feeds, price APIs, on-chain blockchain monitoring (Ethereum via WebSocket) |
+| **Data Ingestion** | RSS feeds, Twitter/X social ingestion, price APIs, on-chain blockchain monitoring (Ethereum via WebSocket) |
 | **Intelligence** | Agent A — AI-powered event scoring, filtering, noise reduction, bot/spam detection |
 | **Alerting** | Real-time alert generation, consumer pipelines, user preference–aware delivery |
 | **Delivery** | Email (HTML templates, Resend API), Telegram bot, WebSocket (Socket.IO) push |
@@ -54,7 +54,7 @@ app/modules/<module>/
 
 | Module | Purpose | Key Files |
 |---|---|---|
-| **Ingestion** | Collects events from external sources and publishes to RabbitMQ | `rss_collector.py`, `price_collector.py`, `onchain_collector.py`, `consumer.py` |
+| **Ingestion** | Collects events from external sources and publishes to RabbitMQ | `rss_collector.py`, `twitter_collector.py`, `price_collector.py`, `onchain_collector.py`, `consumer.py` |
 | **Intelligence** | AI scoring, filtering, and prioritization of events | `agent_a.py`, `consumer.py` |
 | **Alerting** | Generates alerts from scored events and manages alert lifecycle | `alert_generator.py`, `alert_consumer.py`, `alerts.py` |
 | **Delivery** | Multi-channel alert delivery (Email, Telegram, Digest) | `delivery.py`, `telegram_bot.py`, `email_utils.py`, `digest_tasks.py` |
@@ -82,12 +82,14 @@ app/modules/<module>/
 ```mermaid
 flowchart TD
     A["🌐 Data Sources"] --> A1["RSS Feeds"]
-    A --> A2["Price APIs"]
-    A --> A3["On-Chain (Ethereum)"]
+    A --> A2["Twitter/X"]
+    A --> A3["Price APIs"]
+    A --> A4["On-Chain (Ethereum)"]
 
     A1 --> B["Normalization & Deduplication"]
     A2 --> B
     A3 --> B
+    A4 --> B
 
     B --> C["📨 RabbitMQ Event Queue"]
     C --> D["Ingestion Consumer"]
@@ -105,18 +107,19 @@ flowchart TD
     subgraph Scheduling
         S["APScheduler"] --> A1
         S --> A2
+        S --> A3
         S --> D
         S --> F
     end
 
     subgraph Worker
-        W["onchain_worker.py"] --> A3
+        W["onchain_worker.py"] --> A4
     end
 ```
 
 ### Pipeline Flow
 
-1. **Collection** — RSS (60s), Price (120s), and On-Chain (180s) collectors run on scheduled intervals
+1. **Collection** — RSS (60s), Twitter/X (90s), Price (120s), and On-Chain (180s) collectors run on scheduled intervals
 2. **Normalization** — Raw data is cleaned, standardized, and deduplicated via Redis
 3. **Queueing** — Deduplicated events are published to RabbitMQ
 4. **Ingestion** — Consumer polls RabbitMQ (5000 msgs/0.5s, up to 20 parallel instances) and persists to PostgreSQL
@@ -247,6 +250,8 @@ Copy `.env.example` to `.env` and configure the following:
 | `SECRET_KEY` | JWT signing secret |
 | `SMTP_*` | Email SMTP configuration |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token for alert delivery |
+| `TWITTER_BEARER_TOKEN` | Twitter/X API bearer token for social ingestion |
+| `TWITTER_SEARCH_QUERY` | Query used for recent-search Twitter/X ingestion |
 | `QUICKNODE_URL` | Ethereum WebSocket endpoint (QuickNode/Alchemy/Infura) |
 | `CELERY_BROKER_URL` | Celery broker URL |
 | `CORS_ORIGINS` | Allowed CORS origins |
