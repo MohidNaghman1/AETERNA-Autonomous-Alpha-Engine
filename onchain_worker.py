@@ -24,15 +24,16 @@ import logging
 from typing import Optional
 import traceback
 
+# Import the async collector
+from app.modules.ingestion.application.onchain_collector import main as onchain_main
+
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("[WORKER]")
-
-# Import the async collector
-from app.modules.ingestion.application.onchain_collector import main as onchain_main
 
 
 class OnChainWorker:
