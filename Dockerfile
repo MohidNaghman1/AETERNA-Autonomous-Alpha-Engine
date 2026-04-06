@@ -55,7 +55,11 @@ RUN chmod +x /app/start.sh
 USER appuser
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+# Increased start-period to 120s to allow time for:
+# - Database migrations (alembic upgrade head)
+# - Service initialization (Redis, RabbitMQ, PostgreSQL connections)
+# - Scheduler startup (RSS, Price, Consumer, Intelligence, AgentB)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Expose port

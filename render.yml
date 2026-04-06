@@ -14,6 +14,8 @@ services:
     branch: main
 
     envVars:
+      - key: PORT
+        value: 8000
       - key: SERVICE_TYPE
         value: api
       - key: ENVIRONMENT
