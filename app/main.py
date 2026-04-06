@@ -117,7 +117,8 @@ async def lifespan(app: FastAPI):
             "interval",
             seconds=0.5,
             id="consumer_poller",
-            max_instances=20,  # Allow 20 concurrent instances to drain queue as fast as possible
+            coalesce=True,  # Skip missed executions if previous job still running
+            max_instances=1,  # Prevent overlapping executions
         )
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
@@ -127,7 +128,7 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(5000msgs/0.5s, max20 parallel), Intelligence(50events/5s), AgentB(50wallets/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(0.5s, coalesced), Intelligence(50events/5s), AgentB(50wallets/5s)"
         )
         print(
             "[STARTUP] Note: On-chain collector runs as separate worker process (onchain_worker.py)"
