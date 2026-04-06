@@ -40,6 +40,9 @@ def needs_agent_b_profiling(event_data: dict) -> bool:
 def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
     """
     Add Agent B profiling to a ProcessedEvent.
+    
+    For on-chain events: profiles wallet and sets boost_priority flag
+    For news/price events: marks as processed without profiling
 
     Args:
         processed_event: ProcessedEvent ORM instance
@@ -50,40 +53,48 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
     """
     try:
         event_data = processed_event.event_data or {}
+        event_source = event_data.get("source", "").lower()  # ethereum, or other
         wallet_addr = event_data.get("wallet_address") or event_data.get("address")
 
-        if not wallet_addr:
-            logger.debug(f"Event {processed_event.id}: No wallet address - skipping")
-            return True  # Skip (no wallet) but don't count as failure
+        # Only profile if we have a wallet address (on-chain event)
+        if wallet_addr:
+            # Profile the wallet
+            config = ProfilerConfig()
+            profiling_output = profile_wallet_from_event(
+                wallet_address=wallet_addr,
+                event_id=str(processed_event.id),
+                event_data=event_data,
+                db=db,
+                config=config,
+            )
 
-        # Profile the wallet
-        config = ProfilerConfig()
-        profiling_output = profile_wallet_from_event(
-            wallet_address=wallet_addr,
-            event_id=str(processed_event.id),
-            event_data=event_data,
-            db=db,
-            config=config,
-        )
+            # Add profiling data to event_data
+            event_data["agent_b"] = profiling_output.model_dump(mode="json")
 
-        # Add profiling data to event_data
-        event_data["agent_b"] = profiling_output.model_dump(mode="json")
+            logger.info(
+                f"[AGENT B] ✓ Profiled event {processed_event.id}: "
+                f"{profiling_output.profiling_signal} "
+                f"(boost={profiling_output.should_boost_priority})"
+            )
+        else:
+            # Non-wallet event (RSS, Price, etc.) - mark as processed without profiling
+            event_data["agent_b"] = {
+                "profiling_signal": "N/A - non-wallet event",
+                "should_boost_priority": False,
+                "wallet_tier": "N/A",
+                "confidence_score": 0.0,
+            }
+            logger.debug(f"[AGENT B] Marked event {processed_event.id} (non-wallet source={event_source})")
 
         # Update database
         processed_event.event_data = event_data
         processed_event.updated_at = datetime.utcnow()
         db.add(processed_event)
         db.commit()
-
-        logger.info(
-            f"[AGENT B] ✓ Profiled event {processed_event.id}: "
-            f"{profiling_output.profiling_signal} "
-            f"(boost={profiling_output.should_boost_priority})"
-        )
         return True
 
     except Exception as e:
-        logger.error(f"[AGENT B] ✗ Error profiling event {processed_event.id}: {e}")
+        logger.error(f"[AGENT B] ✗ Error processing event {processed_event.id}: {e}")
         try:
             db.rollback()
         except:
