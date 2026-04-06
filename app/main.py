@@ -30,6 +30,7 @@ from app.modules.admin.presentation.admin_protected import (
 )
 from app.modules.ingestion.application.consumer import run_consumer_poll
 from app.modules.intelligence.application.consumer import run_intelligence_poll
+from app.modules.intelligence.application.agent_b_polling import process_batch as process_agent_b_batch
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
@@ -95,6 +96,14 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[INTELLIGENCE] Error: {e}")
 
+        def run_agent_b_profiling():
+            try:
+                count = process_agent_b_batch()
+                if count > 0:
+                    print(f"[AGENT B] Profiled {count} wallets")
+            except Exception as e:
+                print(f"[AGENT B] Error: {e}")
+
         background_scheduler.add_job(
             run_rss_collector, "interval", seconds=60, id="rss_collector"
         )
@@ -111,9 +120,12 @@ async def lifespan(app: FastAPI):
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
         )
+        background_scheduler.add_job(
+            run_agent_b_profiling, "interval", seconds=5, id="agent_b_profiler"
+        )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(5000msgs/0.5s, max20 parallel), Intelligence(50events/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(5000msgs/0.5s, max20 parallel), Intelligence(50events/5s), AgentB(50wallets/5s)"
         )
         print(
             "[STARTUP] Note: On-chain collector runs as separate worker process (onchain_worker.py)"
