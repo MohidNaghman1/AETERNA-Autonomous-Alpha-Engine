@@ -31,11 +31,12 @@ if not SYNC_DATABASE_URL:
         SYNC_DATABASE_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 # 3. Ensure SSL is configured for Supabase/remote databases
-if "supabase.co" in SYNC_DATABASE_URL or "sslmode" not in SYNC_DATABASE_URL:
-    if "?" in SYNC_DATABASE_URL:
-        SYNC_DATABASE_URL += "&sslmode=require"
-    else:
-        SYNC_DATABASE_URL += "?sslmode=require"
+if "supabase.co" in SYNC_DATABASE_URL or "pooler.supabase.com" in SYNC_DATABASE_URL:
+    if "sslmode" not in SYNC_DATABASE_URL:
+        if "?" in SYNC_DATABASE_URL:
+            SYNC_DATABASE_URL += "&sslmode=require"
+        else:
+            SYNC_DATABASE_URL += "?sslmode=require"
 
 # 4. Build ASYNC_DATABASE_URL if not set, using conversion logic
 if not ASYNC_DATABASE_URL:
