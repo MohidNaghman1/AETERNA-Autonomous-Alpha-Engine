@@ -1,8 +1,10 @@
 import os
 import urllib.parse
+import ssl
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.pool import NullPool
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -28,7 +30,14 @@ if not SYNC_DATABASE_URL:
         POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
         SYNC_DATABASE_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
-# 3. Build ASYNC_DATABASE_URL if not set, using conversion logic
+# 3. Ensure SSL is configured for Supabase/remote databases
+if "supabase.co" in SYNC_DATABASE_URL or "sslmode" not in SYNC_DATABASE_URL:
+    if "?" in SYNC_DATABASE_URL:
+        SYNC_DATABASE_URL += "&sslmode=require"
+    else:
+        SYNC_DATABASE_URL += "?sslmode=require"
+
+# 4. Build ASYNC_DATABASE_URL if not set, using conversion logic
 if not ASYNC_DATABASE_URL:
     if SYNC_DATABASE_URL.startswith("postgres://"):
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL.replace(
@@ -45,10 +54,19 @@ if not ASYNC_DATABASE_URL:
     else:
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL  # fallback
 
-# 4. Create sync engine and session (for consumer, celery, etc.)
-sync_engine = create_engine(
-    SYNC_DATABASE_URL, echo=True, future=True, pool_pre_ping=True
-)
+# 5. Create sync engine and session (for consumer, celery, etc.)
+# Use NullPool for Supabase to avoid connection pooling issues
+engine_kwargs = {
+    "echo": True,
+    "future": True,
+    "pool_pre_ping": True,
+}
+
+# Use NullPool if connecting to Supabase (avoids stale connections)
+if "supabase.co" in SYNC_DATABASE_URL:
+    engine_kwargs["poolclass"] = NullPool
+
+sync_engine = create_engine(SYNC_DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(
     bind=sync_engine,
     class_=Session,
@@ -57,7 +75,7 @@ SessionLocal = sessionmaker(
     autocommit=False,
 )
 
-# 5. Create async engine and session (for FastAPI)
+# 6. Create async engine and session (for FastAPI)
 async_engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
 AsyncSessionLocal = sessionmaker(
     bind=async_engine,
