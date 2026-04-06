@@ -30,7 +30,9 @@ from app.modules.admin.presentation.admin_protected import (
 )
 from app.modules.ingestion.application.consumer import run_consumer_poll
 from app.modules.intelligence.application.consumer import run_intelligence_poll
-from app.modules.intelligence.application.agent_b_polling import process_batch as process_agent_b_batch
+from app.modules.intelligence.application.agent_b_polling import (
+    process_batch as process_agent_b_batch,
+)
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector

@@ -9,7 +9,7 @@ Enriches on-chain and other events with wallet profiling data:
 - Priority boosting for high-performer wallets
 
 Data Flow:
-  Event (with wallet address) 
+  Event (with wallet address)
     → Agent B lookup & profiling
     → AgentBOutput (enriched event with entity/wallet info)
     → Higher priority for high performers
@@ -80,9 +80,7 @@ class ProfilerConfig:
 # ============================================================================
 
 
-def lookup_wallet_profile(
-    wallet_address: str, db: Session
-) -> Optional[WalletProfile]:
+def lookup_wallet_profile(wallet_address: str, db: Session) -> Optional[WalletProfile]:
     """
     Look up a wallet profile from the database.
 
@@ -95,9 +93,11 @@ def lookup_wallet_profile(
     """
     try:
         # Query wallet from ORM
-        wallet_orm = db.query(WalletProfileORM).filter(
-            cast(WalletProfileORM.address, String) == wallet_address.lower()
-        ).first()
+        wallet_orm = (
+            db.query(WalletProfileORM)
+            .filter(cast(WalletProfileORM.address, String) == wallet_address.lower())
+            .first()
+        )
 
         if not wallet_orm:
             logger.debug(f"Wallet not found: {wallet_address}")
@@ -127,7 +127,9 @@ def lookup_wallet_profile(
             favorite_exchanges=wallet_orm.favorite_exchanges or [],
             favorite_dexes=wallet_orm.favorite_dexes or [],
         )
-        logger.debug(f"Found wallet profile: {wallet_address} (win_rate={profile.win_rate})")
+        logger.debug(
+            f"Found wallet profile: {wallet_address} (win_rate={profile.win_rate})"
+        )
         return profile
 
     except Exception as e:
@@ -147,9 +149,11 @@ def lookup_entity_by_wallet(wallet_address: str, db: Session) -> Optional[Entity
         Entity info if found, None otherwise
     """
     try:
-        entity_orm = db.query(EntityORM).filter(
-            EntityORM.wallets.contains([wallet_address.lower()])
-        ).first()
+        entity_orm = (
+            db.query(EntityORM)
+            .filter(EntityORM.wallets.contains([wallet_address.lower()]))
+            .first()
+        )
 
         if not entity_orm:
             logger.debug(f"No entity found for wallet: {wallet_address}")
@@ -199,13 +203,18 @@ def calculate_win_rate_from_trades(
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        trades = db.query(TradeRecordORM).filter(
-            and_(
-                cast(TradeRecordORM.wallet_address, String) == wallet_address.lower(),
-                TradeRecordORM.timestamp >= cutoff_date,
-                TradeRecordORM.is_profitable.isnot(None),
+        trades = (
+            db.query(TradeRecordORM)
+            .filter(
+                and_(
+                    cast(TradeRecordORM.wallet_address, String)
+                    == wallet_address.lower(),
+                    TradeRecordORM.timestamp >= cutoff_date,
+                    TradeRecordORM.is_profitable.isnot(None),
+                )
             )
-        ).all()
+            .all()
+        )
 
         if not trades:
             logger.debug(f"No trades found for {wallet_address} in last {days} days")
@@ -243,18 +252,25 @@ def get_best_worst_trades(
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        trades = db.query(TradeRecordORM).filter(
-            and_(
-                cast(TradeRecordORM.wallet_address, String) == wallet_address.lower(),
-                TradeRecordORM.timestamp >= cutoff_date,
-                TradeRecordORM.return_percentage.isnot(None),
+        trades = (
+            db.query(TradeRecordORM)
+            .filter(
+                and_(
+                    cast(TradeRecordORM.wallet_address, String)
+                    == wallet_address.lower(),
+                    TradeRecordORM.timestamp >= cutoff_date,
+                    TradeRecordORM.return_percentage.isnot(None),
+                )
             )
-        ).all()
+            .all()
+        )
 
         if not trades:
             return 0.0, 0.0
 
-        returns = [t.return_percentage for t in trades if t.return_percentage is not None]
+        returns = [
+            t.return_percentage for t in trades if t.return_percentage is not None
+        ]
         best = max(returns) if returns else 0.0
         worst = min(returns) if returns else 0.0
 
@@ -284,12 +300,17 @@ def get_preferred_tokens(
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
         # Query trades for this wallet
-        trades = db.query(TradeRecordORM).filter(
-            and_(
-                cast(TradeRecordORM.wallet_address, String) == wallet_address.lower(),
-                TradeRecordORM.timestamp >= cutoff_date,
+        trades = (
+            db.query(TradeRecordORM)
+            .filter(
+                and_(
+                    cast(TradeRecordORM.wallet_address, String)
+                    == wallet_address.lower(),
+                    TradeRecordORM.timestamp >= cutoff_date,
+                )
             )
-        ).all()
+            .all()
+        )
 
         if not trades:
             return []
@@ -593,9 +614,9 @@ def enrich_event_with_profiling(
         "entity_identified": profiling_output.entity_identified,
         "entity_id": profiling_output.entity_id,
         "entity_name": profiling_output.entity_name,
-        "entity_type": str(profiling_output.entity_type)
-        if profiling_output.entity_type
-        else None,
+        "entity_type": (
+            str(profiling_output.entity_type) if profiling_output.entity_type else None
+        ),
         "wallet_win_rate": (
             profiling_output.wallet_profile.win_rate
             if profiling_output.wallet_profile

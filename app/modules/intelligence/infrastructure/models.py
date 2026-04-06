@@ -4,7 +4,18 @@ SQLAlchemy models for intelligence pipeline:
 - WalletProfileORM, EntityORM, TradeRecordORM: Agent B (Profiler) data
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, Index, ARRAY, Boolean, UUID
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    DateTime,
+    JSON,
+    Index,
+    ARRAY,
+    Boolean,
+    UUID,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from app.config.db import Base
 from datetime import datetime
@@ -26,7 +37,9 @@ class ProcessedEvent(Base):
     bot = Column(Integer)
     dedup = Column(Integer)
     event_data = Column(JSON)  # Store original event + enrichments
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  #  Track Agent B updates
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )  #  Track Agent B updates
 
     __table_args__ = (
         Index("ix_priority_timestamp_user", "priority", "timestamp", "user_id"),

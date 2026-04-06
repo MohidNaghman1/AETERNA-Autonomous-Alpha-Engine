@@ -32,7 +32,9 @@ class Alert(Base):
         Integer, ForeignKey("events.id"), nullable=True
     )  # System alerts may not have event_id
     channels = Column(JSON, nullable=True)
-    priority = Column(String, default="MEDIUM", index=True)  # CRITICAL, HIGH, MEDIUM, LOW
+    priority = Column(
+        String, default="MEDIUM", index=True
+    )  # CRITICAL, HIGH, MEDIUM, LOW
     status = Column(String, default="pending")
     sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
