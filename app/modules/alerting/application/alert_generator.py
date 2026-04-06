@@ -94,12 +94,11 @@ def save_alert(alert: dict) -> Alert:
     """
     db = SessionLocal()
     try:
-        # System broadcasts use user_id = 0, not None
+        # System/broadcast alerts use user_id = None
         user_id = alert.get("user_id")
-        if user_id is None:
-            user_id = 0
-        else:
+        if user_id is not None:
             user_id = int(user_id)
+        # else: keep as None for system broadcasts
 
         # Event ID can be None for some alerts
         event_id = alert.get("event_id")
@@ -107,10 +106,10 @@ def save_alert(alert: dict) -> Alert:
             event_id = int(event_id)
 
         db_alert = Alert(
-            user_id=user_id,  # System broadcasts use 0
+            user_id=user_id,  # None for system/broadcast alerts
             event_id=event_id,
             channels=alert.get("channels", []),
-            priority=alert.get("priority", "MEDIUM"),  #  NEW: Store priority
+            priority=alert.get("priority", "MEDIUM"),
             status=alert.get("status", "pending"),
             created_at=datetime.utcnow(),
         )
