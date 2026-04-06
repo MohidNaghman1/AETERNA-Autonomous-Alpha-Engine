@@ -245,13 +245,15 @@ def convert_alert_orm_to_schema(alert: AlertORM) -> Alert:
 
 async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
     """Convert Alert ORM with enriched event data.
+    
+    Fetches both Event (raw data) and ProcessedEvent (with Agent B profiling).
 
     Args:
         db: Database session
         alert: Alert ORM model instance
 
     Returns:
-        Alert: Pydantic schema with event details
+        Alert: Pydantic schema with event details + Agent B profiling
     """
     # Extract data from event content if available
     title = "Alert"
@@ -323,6 +325,32 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                     logger.info(
                         f"[OK] Extracted: title='{title[:50]}...', priority={priority}, entity={entity}, source={source}"
                     )
+                    
+                    # 🆕 Fetch Agent B profiling data from ProcessedEvent
+                    try:
+                        from app.modules.intelligence.infrastructure.models import ProcessedEvent as ProcessedEventORM
+                        proc_result = await db.execute(
+                            select(ProcessedEventORM).where(ProcessedEventORM.id == str(alert.event_id))
+                        )
+                        processed_event = proc_result.scalars().first()
+                        
+                        if processed_event and processed_event.event_data:
+                            proc_event_data = processed_event.event_data
+                            if isinstance(proc_event_data, str):
+                                proc_event_data = json.loads(proc_event_data)
+                            
+                            # Extract Agent B profiling if available
+                            agent_b_data = proc_event_data.get("agent_b")
+                            if agent_b_data:
+                                content["agent_b"] = agent_b_data
+                                logger.info(
+                                    f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
+                                    f"boost={agent_b_data.get('should_boost_priority')}"
+                                )
+                            else:
+                                logger.debug(f"[Agent B] No profiling data for event {alert.event_id}")
+                    except Exception as e:
+                        logger.warning(f"[Agent B] Could not fetch profiling data: {e}")
                 else:
                     logger.warning(
                         f"[WARN] Event {alert.event_id} has no content or invalid format"
