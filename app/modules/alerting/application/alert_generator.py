@@ -110,6 +110,7 @@ def save_alert(alert: dict) -> Alert:
             user_id=user_id,  # System broadcasts use 0
             event_id=event_id,
             channels=alert.get("channels", []),
+            priority=alert.get("priority", "MEDIUM"),  #  NEW: Store priority
             status=alert.get("status", "pending"),
             created_at=datetime.utcnow(),
         )
@@ -166,8 +167,19 @@ def generate_alert(
         print(f"[ALERT-FILTER] Event {event_id}: No channels available - SKIPPED")
         return None
 
+    #  NEW: Check Agent B profiling for priority boost
+    agent_b = event.get("agent_b", {})
+    alert_priority = priority  # Default to original priority
+    
+    if agent_b.get("should_boost_priority"):
+        alert_priority = "CRITICAL"
+        print(
+            f"[ALERT-BOOST] Event {event_id}: Priority boosted {priority}→CRITICAL "
+            f"({agent_b.get('priority_boost_reason')})"
+        )
+    
     print(
-        f"[ALERT-GENERATE] Event {event_id}: Passed all filters. Priority={priority}, Channels={channels}"
+        f"[ALERT-GENERATE] Event {event_id}: Passed all filters. Priority={alert_priority}, Channels={channels}"
     )
     # Extract content dict (where enriched fields are stored)
     content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
@@ -179,7 +191,7 @@ def generate_alert(
         "alert_id": f"alert_{event.get('id')}",
         "user_id": user_id,
         "event_id": event.get("id"),
-        "priority": event.get("priority"),
+        "priority": alert_priority,  # ✅ Use boosted priority
         "score": event.get("score"),
         "timestamp": datetime.utcnow().isoformat(),
         "channels": channels,
@@ -209,6 +221,20 @@ def generate_alert(
         # References
         "urls": content.get("urls", [])[:3],  # Top 3 relevant URLs
         "link": content.get("link"),  # Original source link
+        #  NEW: Agent B profiling data
+        "agent_b_profiling": {
+            "entity_identified": agent_b.get("entity_identified"),
+            "entity_id": agent_b.get("entity_id"),
+            "entity_name": agent_b.get("entity_name"),
+            "entity_type": agent_b.get("entity_type"),
+            "wallet_address": agent_b.get("wallet_address"),
+            "wallet_win_rate": agent_b.get("wallet_win_rate"),
+            "wallet_tier": agent_b.get("wallet_tier"),
+            "confidence_score": agent_b.get("confidence_score"),
+            "profiling_signal": agent_b.get("profiling_signal"),
+            "should_boost_priority": agent_b.get("should_boost_priority"),
+            "priority_boost_reason": agent_b.get("priority_boost_reason"),
+        } if agent_b else None,
     }
 
     # Save alert to database
