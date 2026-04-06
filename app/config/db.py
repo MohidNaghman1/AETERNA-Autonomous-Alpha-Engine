@@ -54,6 +54,11 @@ if not ASYNC_DATABASE_URL:
         )
     else:
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL  # fallback
+    
+    # Convert sslmode (psycopg2) to ssl (asyncpg)
+    # asyncpg uses 'ssl' parameter instead of 'sslmode'
+    if "sslmode=require" in ASYNC_DATABASE_URL:
+        ASYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("sslmode=require", "ssl=require")
 
 # 5. Create sync engine and session (for consumer, celery, etc.)
 # Use NullPool for Supabase to avoid connection pooling issues
