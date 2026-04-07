@@ -112,14 +112,18 @@ async def lifespan(app: FastAPI):
         background_scheduler.add_job(
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
-        background_scheduler.add_job(
-            run_consumer_polling,
-            "interval",
-            seconds=0.5,
-            id="consumer_poller",
-            coalesce=True,  # Skip missed executions if previous job still running
-            max_instances=1,  # Prevent overlapping executions
-        )
+        # Add MULTIPLE consumer workers to drain queue faster (parallel processing)
+        # Each worker runs independently and processes 5000 messages per cycle
+        # With 4 workers running every 0.5s, we can process ~20,000 messages in ~2.5s
+        for worker_id in range(1, 5):  # 4 parallel workers
+            background_scheduler.add_job(
+                run_consumer_polling,
+                "interval",
+                seconds=0.5,
+                id=f"consumer_poller_{worker_id}",
+                coalesce=True,
+                max_instances=1,
+            )
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
         )
@@ -128,10 +132,10 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(0.5s, coalesced), Intelligence(50events/5s), AgentB(50wallets/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(4x workers @ 0.5s), Intelligence(50events/5s), AgentB(50wallets/5s)"
         )
         print(
-            "[STARTUP] Note: On-chain collector runs as separate worker process (onchain_worker.py)"
+            "[STARTUP] 🚀 4 parallel consumer workers draining queue (max ~20k msgs in 2.5s)"
         )
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")
