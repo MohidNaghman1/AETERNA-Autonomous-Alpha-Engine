@@ -87,8 +87,12 @@ async_engine = create_async_engine(
     ASYNC_DATABASE_URL, 
     echo=True, 
     future=True,
-    connect_args={"server_settings": {"application_name": "aeterna"}, "command_timeout": 60},
-    execution_options={"compiled_cache": None}  # Disable prepared statement caching
+    connect_args={
+        "statement_cache_size": 0,  # Disable prepared statement caching for pgbouncer compatibility
+        "server_settings": {"application_name": "aeterna"},
+        "command_timeout": 60
+    },
+    pool_pre_ping=True,
 )
 AsyncSessionLocal = sessionmaker(
     bind=async_engine,
