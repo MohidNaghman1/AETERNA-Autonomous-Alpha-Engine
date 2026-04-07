@@ -13,6 +13,7 @@ from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
 from app.modules.alerting.presentation.schema import Alert, AlertDismissResponse
 from app.modules.ingestion.infrastructure.models import EventORM
+from app.modules.intelligence.infrastructure.models import ProcessedEvent as ProcessedEventORM
 from datetime import datetime
 from typing import List, Optional
 import csv
@@ -328,29 +329,41 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                     
                     # 🆕 Fetch Agent B profiling data from ProcessedEvent
                     try:
-                        from app.modules.intelligence.infrastructure.models import ProcessedEvent as ProcessedEventORM
+                        # Event ID is stored as string in ProcessedEvent.id
+                        event_id_str = str(alert.event_id)
+                        logger.debug(f"[Agent B] Looking up ProcessedEvent for event_id={event_id_str}")
+                        
                         proc_result = await db.execute(
-                            select(ProcessedEventORM).where(ProcessedEventORM.id == str(alert.event_id))
+                            select(ProcessedEventORM).where(ProcessedEventORM.id == event_id_str)
                         )
                         processed_event = proc_result.scalars().first()
+                        logger.debug(f"[Agent B] Query result: {processed_event is not None}")
                         
-                        if processed_event and processed_event.event_data:
+                        if processed_event:
                             proc_event_data = processed_event.event_data
                             if isinstance(proc_event_data, str):
-                                proc_event_data = json.loads(proc_event_data)
+                                try:
+                                    proc_event_data = json.loads(proc_event_data)
+                                except json.JSONDecodeError:
+                                    proc_event_data = {}
                             
-                            # Extract Agent B profiling if available
-                            agent_b_data = proc_event_data.get("agent_b")
-                            if agent_b_data:
-                                content["agent_b"] = agent_b_data
-                                logger.info(
-                                    f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
-                                    f"boost={agent_b_data.get('should_boost_priority')}"
-                                )
+                            if proc_event_data and isinstance(proc_event_data, dict):
+                                # Extract Agent B profiling if available
+                                agent_b_data = proc_event_data.get("agent_b")
+                                if agent_b_data:
+                                    content["agent_b"] = agent_b_data
+                                    logger.info(
+                                        f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
+                                        f"boost={agent_b_data.get('should_boost_priority')}"
+                                    )
+                                else:
+                                    logger.debug(f"[Agent B] No agent_b field in event_data for event {alert.event_id}")
                             else:
-                                logger.debug(f"[Agent B] No profiling data for event {alert.event_id}")
+                                logger.debug(f"[Agent B] ProcessedEvent has no valid event_data")
+                        else:
+                            logger.debug(f"[Agent B] ProcessedEvent not found for event_id={event_id_str}")
                     except Exception as e:
-                        logger.warning(f"[Agent B] Could not fetch profiling data: {e}")
+                        logger.warning(f"[Agent B] Could not fetch profiling data: {type(e).__name__}: {e}", exc_info=True)
                 else:
                     logger.warning(
                         f"[WARN] Event {alert.event_id} has no content or invalid format"
