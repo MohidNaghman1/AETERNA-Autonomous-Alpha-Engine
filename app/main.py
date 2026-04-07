@@ -121,8 +121,8 @@ async def lifespan(app: FastAPI):
                 "interval",
                 seconds=0.25,  # Run 4x per second (was 0.5s)
                 id=f"consumer_poller_{worker_id}",
-                coalesce=True,
-                max_instances=1,
+                coalesce=False,  # Allow ALL 8 to run in parallel (was coalesce=True)
+                # DO NOT SET max_instances - allow unlimited concurrent execution
             )
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
