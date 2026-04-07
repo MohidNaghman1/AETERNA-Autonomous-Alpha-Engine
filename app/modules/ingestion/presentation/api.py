@@ -223,6 +223,7 @@ async def get_available_sources(db: AsyncSession = Depends(get_db)):
         select(EventORM.source, func.count(EventORM.id))
         .group_by(EventORM.source)
         .order_by(func.count(EventORM.id).desc())
+        .execution_options(compiled_cache=None)  # Disable prepared statement caching for GROUP BY
     )
     sources = {row[0]: row[1] for row in source_result.all()}
 
@@ -285,6 +286,7 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
         select(EventORM.source, func.count(EventORM.id))
         .group_by(EventORM.source)
         .order_by(func.count(EventORM.id).desc())
+        .execution_options(compiled_cache=None)  # Disable prepared statement caching for GROUP BY
     )
     sources = {row[0]: row[1] for row in source_result.all()}
 
@@ -293,6 +295,7 @@ async def get_ingestion_stats(db: AsyncSession = Depends(get_db)):
         select(EventORM.type, func.count(EventORM.id))
         .group_by(EventORM.type)
         .order_by(func.count(EventORM.id).desc())
+        .execution_options(compiled_cache=None)  # Disable prepared statement caching for GROUP BY
     )
     types = {row[0]: row[1] for row in type_result.all()}
 
@@ -517,6 +520,7 @@ async def debug_database_contents(db: AsyncSession = Depends(get_db)):
         select(EventORM.source, func.count(EventORM.id))
         .group_by(EventORM.source)
         .order_by(func.count(EventORM.id).desc())
+        .execution_options(compiled_cache=None)  # Disable prepared statement caching for GROUP BY
     )
     by_source = {row[0]: row[1] for row in source_result.all()}
 
@@ -525,6 +529,7 @@ async def debug_database_contents(db: AsyncSession = Depends(get_db)):
         select(EventORM.type, func.count(EventORM.id))
         .group_by(EventORM.type)
         .order_by(func.count(EventORM.id).desc())
+        .execution_options(compiled_cache=None)  # Disable prepared statement caching for GROUP BY
     )
     by_type = {row[0]: row[1] for row in type_result.all()}
 

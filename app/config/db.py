@@ -82,7 +82,14 @@ SessionLocal = sessionmaker(
 )
 
 # 6. Create async engine and session (for FastAPI)
-async_engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
+# Disable statement caching to prevent asyncpg prepared statement conflicts with pgbouncer
+async_engine = create_async_engine(
+    ASYNC_DATABASE_URL, 
+    echo=True, 
+    future=True,
+    connect_args={"server_settings": {"application_name": "aeterna"}, "command_timeout": 60},
+    execution_options={"compiled_cache": None}  # Disable prepared statement caching
+)
 AsyncSessionLocal = sessionmaker(
     bind=async_engine,
     class_=AsyncSession,
