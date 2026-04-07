@@ -7,6 +7,7 @@ import os
 import asyncio
 import traceback
 import time
+import threading
 from dotenv import load_dotenv
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 import socketio
@@ -28,7 +29,7 @@ from app.modules.admin.presentation.bootstrap import router as bootstrap_router
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
-from app.modules.ingestion.application.consumer import run_consumer_poll
+from app.modules.ingestion.application.consumer import run_consumer, run_consumer_poll
 from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.intelligence.application.agent_b_polling import (
     process_batch as process_agent_b_batch,
@@ -43,19 +44,27 @@ load_dotenv()
 # Global scheduler and alert consumer
 background_scheduler = None
 alert_consumer = None
+consumer_thread = None
 
 
 # Startup and Shutdown Events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager: starts scheduler and alert consumer on startup."""
-    global alert_consumer, background_scheduler
+    global alert_consumer, background_scheduler, consumer_thread
 
     # Start Alert Consumer
     if not alert_consumer:
         alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
         alert_consumer.start()
         print("[STARTUP] Alert consumer started")
+
+    # Start RabbitMQ Event Consumer in background thread (blocking consumer is FAST!)
+    if not consumer_thread:
+        consumer_thread = threading.Thread(target=run_consumer, daemon=True)
+        consumer_thread.start()
+        print("[STARTUP] ✅ RabbitMQ blocking consumer started in background thread (FAST method)")
+        print("[STARTUP] Consumer uses basic_consume() + channel.start_consuming() = instant message delivery")
 
     # Start Scheduled Collectors
     print("[STARTUP] Starting automatic collectors...")
@@ -116,18 +125,9 @@ async def lifespan(app: FastAPI):
         background_scheduler.add_job(
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
-        # Add MULTIPLE consumer workers to drain queue faster (parallel processing)
-        # Each worker runs independently and processes 20,000 messages per cycle
-        # With 8 workers running every 0.25s, we can process ~20k messages in <1s
-        for worker_id in range(1, 9):  # 8 parallel workers (doubled)
-            background_scheduler.add_job(
-                run_consumer_polling,
-                "interval",
-                seconds=0.25,  # Run 4x per second (was 0.5s)
-                id=f"consumer_poller_{worker_id}",
-                coalesce=False,
-                max_instances=10,  # Allow up to 10 concurrent instances of this job function
-            )
+        # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
+        # This is MUCH faster than polling: basic_consume() + start_consuming() = instant delivery
+        # No need for polling jobs here
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
         )
@@ -136,10 +136,10 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(8x workers @ 0.25s), Intelligence(50events/5s), AgentB(50wallets/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Intelligence(50events/5s), AgentB(50wallets/5s)"
         )
         print(
-            "[STARTUP] ✅ 8 consumer workers with max_instances=10 = TRUE PARALLEL EXECUTION"
+            "[STARTUP] ✅ FAST MODE: Using blocking RabbitMQ consumer (run_consumer) in background thread"
         )
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")
