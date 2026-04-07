@@ -126,7 +126,7 @@ async def lifespan(app: FastAPI):
                 seconds=0.25,  # Run 4x per second (was 0.5s)
                 id=f"consumer_poller_{worker_id}",
                 coalesce=False,
-                # ThreadPoolExecutor(max_workers=20) handles concurrency limits
+                max_instances=10,  # Allow up to 10 concurrent instances of this job function
             )
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
             "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(8x workers @ 0.25s), Intelligence(50events/5s), AgentB(50wallets/5s)"
         )
         print(
-            "[STARTUP] ✅ ThreadPoolExecutor(max_workers=20) + max_instances=None = TRUE PARALLEL EXECUTION"
+            "[STARTUP] ✅ 8 consumer workers with max_instances=10 = TRUE PARALLEL EXECUTION"
         )
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")
