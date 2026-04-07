@@ -49,7 +49,8 @@ except Exception:
     pass
 
 
-def fetch_prices():
+def fetch_prices(max_retries=5):
+    """Fetch prices from CoinGecko with retry logic (max 5 retries)."""
     params = {
         "vs_currency": "usd",
         "order": "market_cap_desc",
@@ -63,7 +64,9 @@ def fetch_prices():
     }
     headers = {"User-Agent": "Mozilla/5.0"}
     backoff = 10
-    while True:
+    retry_count = 0
+    
+    while retry_count < max_retries:
         try:
             logger.info(f"Fetching prices from CoinGecko: {COINGECKO_API}")
             resp = requests.get(
@@ -76,16 +79,22 @@ def fetch_prices():
             return data
         except requests.exceptions.HTTPError as e:
             if resp.status_code == 429:
-                logger.warning(f"Rate limited. Sleeping {backoff}s...")
+                logger.warning(f"Rate limited (attempt {retry_count + 1}/{max_retries}). Sleeping {backoff}s...")
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 300)  # Exponential backoff up to 5 min
+                retry_count += 1
             else:
                 logger.error(f"HTTP error fetching prices: {e}")
                 raise e
         except Exception as e:
-            logger.error(f"Error fetching prices: {e}. Retrying in {backoff}s...")
+            logger.error(f"Error fetching prices: {e} (attempt {retry_count + 1}/{max_retries}). Retrying in {backoff}s...")
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
+            retry_count += 1
+    
+    # Max retries exceeded - return empty list instead of crashing
+    logger.error(f"[ERROR] Max retries ({max_retries}) exceeded for CoinGecko. Returning empty price list.")
+    return []
 
 
 def normalize_price_entry(entry):
@@ -149,50 +158,51 @@ def run_collector():
     This is suitable for being called by Celery Beat which handles scheduling.
     Do NOT use this as an infinite loop - let Celery Beat manage the schedule.
     """
-    for attempt in range(RETRY_ATTEMPTS):
-        try:
-            prices = fetch_prices()
-            published = 0
-            skipped_no_significance = 0
-            skipped_duplicate = 0
+    try:
+        prices = fetch_prices(max_retries=5)
+        
+        # Handle empty result (API failure or no data)
+        if not prices:
+            logger.warning("[PRICE] No price data available. Skipping this cycle.")
+            logger.info("Price collection cycle completed (no data).")
+            return
+        
+        published = 0
+        skipped_no_significance = 0
+        skipped_duplicate = 0
 
-            for entry in prices:
-                event = normalize_price_entry(entry)
+        for entry in prices:
+            event = normalize_price_entry(entry)
 
-                # Check for significance (5% or more change in 1h)
-                significance_info = event.content.get("significant_moves", [])
-                if not significance_info:
-                    skipped_no_significance += 1
-                    continue
+            # Check for significance (5% or more change in 1h)
+            significance_info = event.content.get("significant_moves", [])
+            if not significance_info:
+                skipped_no_significance += 1
+                continue
 
-                if is_duplicate(event.id):
-                    logger.info(f"Duplicate price event skipped: {event.id}")
-                    skipped_duplicate += 1
-                    continue
+            if is_duplicate(event.id):
+                logger.info(f"Duplicate price event skipped: {event.id}")
+                skipped_duplicate += 1
+                continue
 
-                alert_reasons = event.content.get(
-                    "alert_reasons", "Price movement detected"
-                )
-                logger.info(
-                    f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | {alert_reasons}"
-                )
-                publish_event(event, None)
-                mark_as_seen(event.id)
-                published += 1
-
-            logger.info(
-                f"Published {published} price events this cycle. "
-                f"Skipped: {skipped_no_significance} (no significance), "
-                f"{skipped_duplicate} (duplicate)."
+            alert_reasons = event.content.get(
+                "alert_reasons", "Price movement detected"
             )
-            break
+            logger.info(
+                f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | {alert_reasons}"
+            )
+            publish_event(event, None)
+            mark_as_seen(event.id)
+            published += 1
 
-        except Exception as e:
-            if attempt == RETRY_ATTEMPTS - 1:
-                logger.error(f"[ERROR] Failed to fetch/publish prices: {e}")
-            else:
-                logger.info(f"Retrying CoinGecko fetch in {2 ** attempt} seconds...")
-                time.sleep(2**attempt)
+        logger.info(
+            f"Published {published} price events this cycle. "
+            f"Skipped: {skipped_no_significance} (no significance), "
+            f"{skipped_duplicate} (duplicate)."
+        )
+
+    except Exception as e:
+        logger.error(f"[ERROR] Price collection cycle failed: {str(e)}", exc_info=True)
 
     logger.info("Price collection cycle completed.")
 
