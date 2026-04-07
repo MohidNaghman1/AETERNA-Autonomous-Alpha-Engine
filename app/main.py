@@ -60,7 +60,11 @@ async def lifespan(app: FastAPI):
     # Start Scheduled Collectors
     print("[STARTUP] Starting automatic collectors...")
     try:
-        background_scheduler = BackgroundScheduler()
+        from apscheduler.executors.pool import ThreadPoolExecutor
+        executors = {
+            'default': ThreadPoolExecutor(max_workers=20)  # Allow 20 concurrent jobs
+        }
+        background_scheduler = BackgroundScheduler(executors=executors)
 
         def run_rss_collector():
             try:
@@ -121,8 +125,8 @@ async def lifespan(app: FastAPI):
                 "interval",
                 seconds=0.25,  # Run 4x per second (was 0.5s)
                 id=f"consumer_poller_{worker_id}",
-                coalesce=False,  # Allow ALL 8 to run in parallel (was coalesce=True)
-                # DO NOT SET max_instances - allow unlimited concurrent execution
+                coalesce=False,
+                max_instances=None,  # Explicitly allow all instances to run
             )
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
@@ -132,10 +136,10 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(8x workers @ 0.25s = 4 Hz), Intelligence(50events/5s), AgentB(50wallets/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(8x workers @ 0.25s), Intelligence(50events/5s), AgentB(50wallets/5s)"
         )
         print(
-            "[STARTUP] 🚀 AGGRESSIVE: 8 workers × 20k msgs/cycle = ~640k msgs/s capacity"
+            "[STARTUP] ✅ ThreadPoolExecutor(max_workers=20) + max_instances=None = TRUE PARALLEL EXECUTION"
         )
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")
