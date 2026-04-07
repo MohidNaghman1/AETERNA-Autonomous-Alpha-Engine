@@ -149,19 +149,19 @@ async def lifespan(app: FastAPI):
                 print(f"[AGENT B] Error: {e}")
 
         background_scheduler.add_job(
-            run_rss_collector, "interval", seconds=60, id="rss_collector"
+            run_rss_collector, "interval", seconds=60, id="rss_collector", coalesce=False
         )
         background_scheduler.add_job(
-            run_price_collector, "interval", seconds=120, id="price_collector"
+            run_price_collector, "interval", seconds=120, id="price_collector", coalesce=False
         )
         # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
         # This is MUCH faster than polling and avoids dual-consumer contention
         # The blocking consumer uses prefetch_count=500 for efficient queue draining
         background_scheduler.add_job(
-            run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
+            run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer", coalesce=False
         )
         background_scheduler.add_job(
-            run_agent_b_profiling, "interval", seconds=5, id="agent_b_profiler"
+            run_agent_b_profiling, "interval", seconds=5, id="agent_b_profiler", coalesce=False
         )
         background_scheduler.start()
         print(
