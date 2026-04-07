@@ -17,7 +17,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.shared.utils.auth_utils import decode_token
 from app.modules.alerting.infrastructure.alert_consumer import AlertConsumer
 from app.modules.identity.infrastructure.models import User, UserPreference
-from app.config.db import AsyncSessionLocal as SessionLocal
+from app.config.db import AsyncSessionLocal, SessionLocal, sync_engine
 from app.shared.presentation.health import router as health_router
 from app.modules.identity.presentation.auth import router as auth_router
 from app.modules.ingestion.presentation.api import router as ingestion_router
@@ -29,7 +29,7 @@ from app.modules.admin.presentation.bootstrap import router as bootstrap_router
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
-from app.modules.ingestion.application.consumer import run_consumer, run_consumer_poll
+from app.modules.ingestion.application.consumer import run_consumer
 from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.intelligence.application.agent_b_polling import (
     process_batch as process_agent_b_batch,
@@ -46,12 +46,44 @@ background_scheduler = None
 alert_consumer = None
 consumer_thread = None
 
+# Create Socket.IO instance BEFORE lifespan (so lifespan can use it)
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+
 
 # Startup and Shutdown Events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager: starts scheduler and alert consumer on startup."""
     global alert_consumer, background_scheduler, consumer_thread
+
+    # Helper function to get user preferences (used by alert consumer)
+    def get_user_prefs(user_id):
+        """Get user preferences from database (SYNC context)."""
+        db = None
+        try:
+            db = SessionLocal()
+            # Try UserPreference table first
+            pref = (
+                db.query(UserPreference)
+                .filter(UserPreference.user_id == int(user_id))
+                .first()
+            )
+            if pref and pref.preferences:
+                return pref.preferences
+            # Fallback: check User.preferences
+            user = db.query(User).filter(User.id == int(user_id)).first()
+            if user and user.preferences:
+                return user.preferences
+            return None
+        except Exception as e:
+            print(f"[get_user_prefs] DB error: {e}")
+            return None
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     # Start Alert Consumer
     if not alert_consumer:
@@ -61,10 +93,21 @@ async def lifespan(app: FastAPI):
 
     # Start RabbitMQ Event Consumer in background thread (blocking consumer is FAST!)
     if not consumer_thread:
-        consumer_thread = threading.Thread(target=run_consumer, daemon=True)
+        def blocking_consumer_loop():
+            """Run blocking consumer with restart logic on crash."""
+            while True:
+                try:
+                    print("[CONSUMER-THREAD] Starting blocking RabbitMQ consumer...")
+                    run_consumer()  # This blocks forever until error
+                except Exception as e:
+                    print(f"[CONSUMER-THREAD] ❌ Consumer crashed: {type(e).__name__}: {str(e)[:100]}")
+                    print(f"[CONSUMER-THREAD] Restarting in 5 seconds...")
+                    time.sleep(5)
+                    # Restart consumer on crash
+        
+        consumer_thread = threading.Thread(target=blocking_consumer_loop, daemon=True)
         consumer_thread.start()
-        print("[STARTUP] ✅ RabbitMQ blocking consumer started in background thread (FAST method)")
-        print("[STARTUP] Consumer uses basic_consume() + channel.start_consuming() = instant message delivery")
+        print("[STARTUP] ✅ RabbitMQ blocking consumer started in background thread with auto-restart")
 
     # Start Scheduled Collectors
     print("[STARTUP] Starting automatic collectors...")
@@ -88,19 +131,6 @@ async def lifespan(app: FastAPI):
                 price_run()
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
-
-        def run_consumer_polling():
-            try:
-                # AGGRESSIVE: 20,000 messages per cycle to drain backlog FAST
-                count = run_consumer_poll(batch_size=20000)
-                if count > 0:
-                    print(
-                        f"[CONSUMER] ✅ Processed {count} messages (queue draining...)"
-                    )
-                else:
-                    print(f"[CONSUMER] Queue empty or no more messages this cycle")
-            except Exception as e:
-                print(f"[CONSUMER] Error: {e}")
 
         def run_intelligence_scoring():
 
@@ -127,7 +157,7 @@ async def lifespan(app: FastAPI):
         )
         # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
         # This is MUCH faster than polling: basic_consume() + start_consuming() = instant delivery
-        # No need for polling jobs here
+        # Do NOT add polling jobs here - they conflict with blocking consumer
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
         )
@@ -151,17 +181,10 @@ async def lifespan(app: FastAPI):
         background_scheduler.shutdown()
 
 
-app = FastAPI(
-    title="AETERNA Autonomous Alpha Engine",
-    description="AI-powered cryptocurrency alert and analysis engine with multi-channel delivery",
-    version="0.1.0",
-    openapi_url="/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
-)
+# Create FastAPI app with lifespan
+app = FastAPI(title="AETERNA Autonomous Alpha Engine", lifespan=lifespan)
 
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+# Wrap app with Socket.IO
 sio_app = ASGIApp(sio, other_asgi_app=app)
 
 REQUEST_COUNT = Counter(
@@ -216,7 +239,11 @@ def system_health():
     # Check RabbitMQ
     rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
     try:
-        connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
+        connection = pika.BlockingConnection(
+            pika.URLParameters(rabbitmq_url),
+            connection_attempts=2,
+            retry_delay=1
+        )
         connection.close()
         diagnostics["rabbitmq"] = "[OK] Connected"
     except Exception as e:
@@ -233,9 +260,8 @@ def system_health():
 
     # Check PostgreSQL
     try:
-        db = SessionLocal()
-        db.execute("SELECT 1")
-        db.close()
+        with sync_engine.connect() as connection:
+            connection.execute("SELECT 1")
         diagnostics["postgresql"] = "[OK] Connected"
     except Exception as e:
         diagnostics["postgresql"] = f"[ERROR] {str(e)}"
@@ -276,32 +302,3 @@ async def disconnect(sid):
 async def ping(sid):
     """Heartbeat: respond to ping with pong."""
     await sio.emit("pong", room=sid)
-
-
-def get_user_prefs(user_id):
-    try:
-        db = SessionLocal()
-        # Try UserPreference table first
-        pref = (
-            db.query(UserPreference)
-            .filter(UserPreference.user_id == int(user_id))
-            .first()
-        )
-        if pref and pref.preferences:
-            return pref.preferences
-        # Fallback: check User.preferences
-        user = db.query(User).filter(User.id == int(user_id)).first()
-        if user and user.preferences:
-            return user.preferences
-        return None
-    except Exception as e:
-        print(f"[get_user_prefs] DB error: {e}")
-        return None
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
-
-app.lifespan = lifespan
