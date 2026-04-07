@@ -159,6 +159,8 @@ def engagement_analysis(
 ) -> int:
     """
     Score based on engagement rate and verification status.
+    
+    For news/RSS events, uses mention and hashtag presence as proxy for engagement.
 
     Args:
         event: Event dictionary
@@ -179,11 +181,32 @@ def engagement_analysis(
         # Clamp to valid range
         engagement_rate = max(0, min(engagement_rate, 1.0))
 
-        score = (
-            100
-            if engagement_rate > config.min_engagement_rate
-            else int(engagement_rate * config.engagement_multiplier)
-        )
+        # For news/RSS events, use mentions and hashtags as engagement proxy
+        content = event.get("content", {})
+        mentions = content.get("mentions", [])
+        hashtags = content.get("hashtags", [])
+        
+        # News engagement score based on entity mentions and hashtags
+        news_entities_count = len(mentions) if isinstance(mentions, list) else 0
+        news_hashtags_count = len(hashtags) if isinstance(hashtags, list) else 0
+        
+        # Boost score for RSS/news events with multiple mentions/hashtags
+        if news_entities_count >= 2 or news_hashtags_count >= 3:
+            # High engagement equivalent for news
+            score = 100
+        elif news_entities_count >= 1 or news_hashtags_count >= 1:
+            # Moderate engagement equivalent for news
+            score = 75
+        elif engagement_rate > 0:
+            # Social engagement fallback
+            score = (
+                100
+                if engagement_rate > config.min_engagement_rate
+                else int(engagement_rate * config.engagement_multiplier)
+            )
+        else:
+            # Default: low engagement
+            score = 40
 
         verified = event.get("verified", False)
         if verified:
@@ -380,6 +403,10 @@ def score_event(
 ) -> Dict[str, Any]:
     """
     Score a single event using weighted metrics.
+    
+    Special handling for news/RSS events:
+    - If mentioning 2+ crypto entities or 3+ hashtags, boost to guaranteed MEDIUM
+    - Helps news events with crypto relevance reach alert threshold
 
     Args:
         event: Event to score
@@ -434,6 +461,42 @@ def score_event(
                 f"[PRIORITY] Fast-tracked on-chain event: {priority} "
                 f"(${event_dict.get('content', {}).get('usd_value', 'N/A')}). "
                 f"Reason: {priority_reason}"
+            )
+            return result
+
+        # ========================================================================
+        # NEWS RELEVANCE BOOST (for RSS/news events with strong crypto content)
+        # If event type is 'news' and has 2+ crypto mentions or 3+ hashtags,
+        # guarantee MEDIUM priority to ensure news appears in alerts
+        # ========================================================================
+        event_type = event_dict.get("type", "")
+        content = event_dict.get("content", {})
+        mentions = content.get("mentions", []) if isinstance(content.get("mentions"), list) else []
+        hashtags = content.get("hashtags", []) if isinstance(content.get("hashtags"), list) else []
+        
+        # Major crypto entities - if mentioned, boost relevance
+        major_crypto = {"bitcoin", "ethereum", "eth", "btc", "solana", "sol", "cardano", "ada", 
+                        "polkadot", "dot", "ripple", "xrp", "litecoin", "ltc", "dogecoin", "doge",
+                        "polygon", "matic", "avalanche", "avax"}
+        mentions_lower = [m.lower() for m in mentions] if mentions else []
+        major_mentions = [m for m in mentions_lower if m in major_crypto]
+        
+        if event_type == "news" and (len(mentions) >= 2 or len(hashtags) >= 3 or len(major_mentions) >= 1):
+            score = 65.0  # MEDIUM priority threshold + buffer
+            priority = "MEDIUM"
+            result = {
+                "multi_source": 75,
+                "engagement": 75,
+                "bot": 75,
+                "dedup": 75,
+                "score": score,
+                "priority": priority,
+                "technique": "news_relevance_boost",  # ← Mark as news boost
+                "reason": f"News event with {len(mentions)} mentions ({len(major_mentions)} major crypto) and {len(hashtags)} hashtags",
+            }
+            logger.info(
+                f"[NEWS-BOOST] Boosted to MEDIUM: {content.get('title', 'Unknown')[:60]} "
+                f"Mentions={mentions}, Major={major_mentions}, Hashtags={hashtags}"
             )
             return result
 
