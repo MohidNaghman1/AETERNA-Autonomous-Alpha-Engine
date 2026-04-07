@@ -78,8 +78,8 @@ async def lifespan(app: FastAPI):
 
         def run_consumer_polling():
             try:
-                # Increased to 5000 to drain massive backlog faster
-                count = run_consumer_poll(batch_size=5000)
+                # AGGRESSIVE: 20,000 messages per cycle to drain backlog FAST
+                count = run_consumer_poll(batch_size=20000)
                 if count > 0:
                     print(
                         f"[CONSUMER] ✅ Processed {count} messages (queue draining...)"
@@ -113,13 +113,13 @@ async def lifespan(app: FastAPI):
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
         # Add MULTIPLE consumer workers to drain queue faster (parallel processing)
-        # Each worker runs independently and processes 5000 messages per cycle
-        # With 4 workers running every 0.5s, we can process ~20,000 messages in ~2.5s
-        for worker_id in range(1, 5):  # 4 parallel workers
+        # Each worker runs independently and processes 20,000 messages per cycle
+        # With 8 workers running every 0.25s, we can process ~20k messages in <1s
+        for worker_id in range(1, 9):  # 8 parallel workers (doubled)
             background_scheduler.add_job(
                 run_consumer_polling,
                 "interval",
-                seconds=0.5,
+                seconds=0.25,  # Run 4x per second (was 0.5s)
                 id=f"consumer_poller_{worker_id}",
                 coalesce=True,
                 max_instances=1,
@@ -132,10 +132,10 @@ async def lifespan(app: FastAPI):
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(4x workers @ 0.5s), Intelligence(50events/5s), AgentB(50wallets/5s)"
+            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Consumer(8x workers @ 0.25s = 4 Hz), Intelligence(50events/5s), AgentB(50wallets/5s)"
         )
         print(
-            "[STARTUP] 🚀 4 parallel consumer workers draining queue (max ~20k msgs in 2.5s)"
+            "[STARTUP] 🚀 AGGRESSIVE: 8 workers × 20k msgs/cycle = ~640k msgs/s capacity"
         )
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")
