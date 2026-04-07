@@ -339,7 +339,7 @@ def run_consumer():
 
     channel = connection.channel()
     channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
-    channel.basic_qos(prefetch_count=10)  # Buffer 10 messages for parallel/fast processing
+    channel.basic_qos(prefetch_count=500)  # Buffer 500 messages for efficient draining
     channel.basic_consume(queue=RABBITMQ_QUEUE, on_message_callback=process_event)
     logger.info(f"[CONSUMER] Listening on queue '{RABBITMQ_QUEUE}'...")
     channel.start_consuming()

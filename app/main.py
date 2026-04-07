@@ -29,7 +29,7 @@ from app.modules.admin.presentation.bootstrap import router as bootstrap_router
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
-from app.modules.ingestion.application.consumer import run_consumer, run_consumer_poll
+from app.modules.ingestion.application.consumer import run_consumer
 from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.intelligence.application.agent_b_polling import (
     process_batch as process_agent_b_batch,
@@ -132,14 +132,6 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
 
-        def run_consumer_polling():
-            try:
-                count = run_consumer_poll(batch_size=5000)  # Drain up to 5000 messages per cycle
-                if count > 0:
-                    print(f"[CONSUMER-POLL] ✅ Drained {count} messages")
-            except Exception as e:
-                print(f"[CONSUMER-POLL] Error: {e}")
-
         def run_intelligence_scoring():
             try:
                 count = run_intelligence_poll(batch_size=50)
@@ -162,9 +154,9 @@ async def lifespan(app: FastAPI):
         background_scheduler.add_job(
             run_price_collector, "interval", seconds=120, id="price_collector"
         )
-        background_scheduler.add_job(
-            run_consumer_polling, "interval", seconds=1, id="consumer_poller", max_instances=10  # Allow up to 10 concurrent instances to drain queue rapidly
-        )
+        # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
+        # This is MUCH faster than polling and avoids dual-consumer contention
+        # The blocking consumer uses prefetch_count=500 for efficient queue draining
         background_scheduler.add_job(
             run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer"
         )
