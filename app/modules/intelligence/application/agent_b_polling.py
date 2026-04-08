@@ -51,14 +51,20 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
     Returns:
         True if successful, False if failed
     """
+
     try:
         event_data = processed_event.event_data or {}
         event_source = event_data.get("source", "").lower()  # ethereum, or other
-        wallet_addr = event_data.get("wallet_address") or event_data.get("address")
+        # Try all possible wallet address fields
+        wallet_addr = (
+            event_data.get("wallet_address")
+            or event_data.get("address")
+            or (event_data.get("content", {}).get("from_address") if isinstance(event_data.get("content"), dict) else None)
+            or (event_data.get("content", {}).get("to_address") if isinstance(event_data.get("content"), dict) else None)
+        )
 
         # Only profile if we have a wallet address (on-chain event)
         if wallet_addr:
-            # Profile the wallet
             config = ProfilerConfig()
             profiling_output = profile_wallet_from_event(
                 wallet_address=wallet_addr,
