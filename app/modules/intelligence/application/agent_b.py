@@ -17,6 +17,7 @@ Data Flow:
 
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
+import json
 import logging
 from sqlalchemy import and_, cast, String
 from sqlalchemy.orm import Session
@@ -32,6 +33,7 @@ from app.modules.intelligence.domain.agent_b_models import (
     TradeRecord,
 )
 from app.modules.intelligence.infrastructure.models import (
+    ProcessedEvent,
     WalletProfileORM,
     EntityORM,
     TradeRecordORM,
@@ -411,6 +413,116 @@ def build_wallet_profile_from_trades(
         return None
 
 
+def extract_counterparty_address(
+    wallet_address: str, event_data: Dict[str, Any]
+) -> Optional[str]:
+    """Return the other side of an on-chain transfer when available."""
+    content = event_data.get("content", {}) if isinstance(event_data, dict) else {}
+    if not isinstance(content, dict):
+        return None
+
+    from_address = content.get("from_address")
+    to_address = content.get("to_address")
+    wallet_lower = (wallet_address or "").lower()
+
+    if isinstance(from_address, str) and from_address.lower() == wallet_lower:
+        return to_address.lower() if isinstance(to_address, str) else to_address
+    if isinstance(to_address, str) and to_address.lower() == wallet_lower:
+        return from_address.lower() if isinstance(from_address, str) else from_address
+    return None
+
+
+def summarize_wallet_observations(
+    wallet_address: str, db: Session, limit: int = 200
+) -> Optional[Dict[str, Any]]:
+    """Build a lightweight observed-activity summary from processed events."""
+    try:
+        candidate_rows = (
+            db.query(ProcessedEvent)
+            .filter(cast(ProcessedEvent.event_data, String).ilike(f"%{wallet_address.lower()}%"))
+            .order_by(ProcessedEvent.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
+        if not candidate_rows:
+            return None
+
+        observed_event_count = 0
+        inbound_transfers = 0
+        outbound_transfers = 0
+        total_observed_usd = 0.0
+        tokens = set()
+        counterparties = set()
+        first_seen = None
+        last_seen = None
+        wallet_lower = wallet_address.lower()
+
+        for row in candidate_rows:
+            event_data = row.event_data
+            if isinstance(event_data, str):
+                try:
+                    event_data = json.loads(event_data)
+                except json.JSONDecodeError:
+                    continue
+            if not isinstance(event_data, dict):
+                continue
+
+            content = event_data.get("content", {})
+            if not isinstance(content, dict):
+                continue
+
+            from_address = content.get("from_address")
+            to_address = content.get("to_address")
+            from_matches = isinstance(from_address, str) and from_address.lower() == wallet_lower
+            to_matches = isinstance(to_address, str) and to_address.lower() == wallet_lower
+
+            if not (from_matches or to_matches):
+                continue
+
+            observed_event_count += 1
+            if from_matches:
+                outbound_transfers += 1
+                if isinstance(to_address, str):
+                    counterparties.add(to_address.lower())
+            if to_matches:
+                inbound_transfers += 1
+                if isinstance(from_address, str):
+                    counterparties.add(from_address.lower())
+
+            usd_value = content.get("usd_value")
+            if isinstance(usd_value, (int, float)):
+                total_observed_usd += float(usd_value)
+
+            token = content.get("token")
+            if isinstance(token, str) and token:
+                tokens.add(token)
+
+            row_ts = row.timestamp
+            if row_ts and (last_seen is None or row_ts > last_seen):
+                last_seen = row_ts
+            if row_ts and (first_seen is None or row_ts < first_seen):
+                first_seen = row_ts
+
+        if observed_event_count == 0:
+            return None
+
+        return {
+            "observed_event_count": observed_event_count,
+            "inbound_transfers": inbound_transfers,
+            "outbound_transfers": outbound_transfers,
+            "total_observed_usd": round(total_observed_usd, 2),
+            "tokens_seen": sorted(tokens)[:5],
+            "counterparties": sorted(counterparties)[:5],
+            "first_seen": first_seen.isoformat() if first_seen else None,
+            "last_seen": last_seen.isoformat() if last_seen else None,
+        }
+
+    except Exception as e:
+        logger.error(f"Error summarizing observations for {wallet_address}: {e}")
+        return None
+
+
 # ============================================================================
 # TIER & BEHAVIOR CLASSIFICATION
 # ============================================================================
@@ -573,12 +685,17 @@ def profile_wallet_from_event(
         event_id=event_id,
         wallet_address=wallet_address,
         entity_identified=False,
+        counterparty_address=extract_counterparty_address(wallet_address, event_data),
         confidence_score=0.0,
         profiling_signal="unknown",
         should_boost_priority=False,
     )
 
     try:
+        observed_activity = summarize_wallet_observations(wallet_address, db)
+        if observed_activity:
+            output.observed_activity = observed_activity
+
         # Lookup entity
         entity = lookup_entity_by_wallet(wallet_address, db)
 
@@ -595,6 +712,11 @@ def profile_wallet_from_event(
 
         if wallet_profile is None:
             logger.debug(f"Wallet {wallet_address} has no profile or trade history")
+            if observed_activity and observed_activity.get("observed_event_count", 0) >= 2:
+                output.profiling_signal = "observed_wallet"
+                output.confidence_score = min(
+                    0.15 + (observed_activity["observed_event_count"] * 0.02), 0.4
+                )
             if entity:
                 output.profiling_signal = "unverified"
                 output.confidence_score = calculate_confidence_score(
@@ -714,6 +836,8 @@ def enrich_event_with_profiling(
     enriched_event = event.copy()
 
     enriched_event["agent_b"] = {
+        "wallet_address": profiling_output.wallet_address,
+        "counterparty_address": profiling_output.counterparty_address,
         "entity_identified": profiling_output.entity_identified,
         "entity_id": profiling_output.entity_id,
         "entity_name": profiling_output.entity_name,
@@ -730,6 +854,12 @@ def enrich_event_with_profiling(
             if profiling_output.wallet_profile
             else None
         ),
+        "wallet_profile": (
+            profiling_output.wallet_profile.model_dump(mode="json")
+            if profiling_output.wallet_profile
+            else None
+        ),
+        "observed_activity": profiling_output.observed_activity,
         "confidence_score": profiling_output.confidence_score,
         "profiling_signal": profiling_output.profiling_signal,
         "should_boost_priority": profiling_output.should_boost_priority,

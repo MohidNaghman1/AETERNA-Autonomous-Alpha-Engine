@@ -40,6 +40,7 @@ def _format_agent_b_for_response(
     wallet_profile = agent_b_data.get("wallet_profile")
     formatted = {
         "wallet_address": agent_b_data.get("wallet_address"),
+        "counterparty_address": agent_b_data.get("counterparty_address"),
         "profiling_signal": profiling_signal,
         "confidence_score": agent_b_data.get("confidence_score"),
         "entity_identified": agent_b_data.get("entity_identified"),
@@ -49,6 +50,7 @@ def _format_agent_b_for_response(
         "should_boost_priority": agent_b_data.get("should_boost_priority"),
         "priority_boost_reason": agent_b_data.get("priority_boost_reason"),
         "timestamp": agent_b_data.get("timestamp"),
+        "observed_activity": agent_b_data.get("observed_activity"),
     }
 
     if isinstance(wallet_profile, dict):
@@ -76,10 +78,30 @@ def _format_agent_b_for_response(
     if profiling_signal == "unknown" and not meaningful_keys:
         return {
             "wallet_address": cleaned.get("wallet_address"),
+            "counterparty_address": cleaned.get("counterparty_address"),
             "profiling_signal": profiling_signal,
         }
 
     return cleaned or None
+
+
+def _build_pending_agent_b_from_content(
+    content_data: Optional[dict], event_type: Optional[str]
+) -> Optional[dict]:
+    """Build a minimal on-chain Agent B block when polling has not enriched it yet."""
+    if event_type != "onchain" or not isinstance(content_data, dict):
+        return None
+
+    wallet_address = content_data.get("from_address") or content_data.get("wallet_address")
+    counterparty_address = content_data.get("to_address")
+    if not wallet_address:
+        return None
+
+    return {
+        "wallet_address": wallet_address,
+        "counterparty_address": counterparty_address,
+        "profiling_signal": "pending",
+    }
 
 
 def normalize_source(source: str) -> List[str]:
@@ -395,6 +417,7 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                         )
                         processed_event = proc_result.scalars().first()
                         logger.debug(f"[Agent B] Query result: {processed_event is not None}")
+                        formatted_agent_b = None
                         
                         if processed_event:
                             proc_event_data = processed_event.event_data
@@ -427,6 +450,16 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                 logger.debug(f"[Agent B] ProcessedEvent has no valid event_data")
                         else:
                             logger.debug(f"[Agent B] ProcessedEvent not found for event_id={event_id_str}")
+
+                        if not formatted_agent_b:
+                            formatted_agent_b = _build_pending_agent_b_from_content(
+                                content_data, event_type
+                            )
+                            if formatted_agent_b:
+                                content["agent_b"] = formatted_agent_b
+                                logger.debug(
+                                    f"[Agent B] Added pending profiling placeholder for event {alert.event_id}"
+                                )
                     except Exception as e:
                         logger.warning(f"[Agent B] Could not fetch profiling data: {type(e).__name__}: {e}", exc_info=True)
                 else:

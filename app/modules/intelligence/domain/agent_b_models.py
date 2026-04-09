@@ -273,6 +273,8 @@ class AgentBOutput(BaseModel):
 
     # Wallet profile
     wallet_profile: Optional[WalletProfile] = None
+    counterparty_address: Optional[str] = None
+    observed_activity: Optional[Dict[str, Any]] = None
 
     # Confidence and signals
     confidence_score: float = 0.0
