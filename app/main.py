@@ -40,6 +40,17 @@ from app.modules.ingestion.application.rss_collector import run_collector
 
 load_dotenv()
 
+RSS_COLLECTOR_INTERVAL_SECONDS = int(os.getenv("RSS_COLLECTOR_INTERVAL_SECONDS", "60"))
+PRICE_COLLECTOR_INTERVAL_SECONDS = int(
+    os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "120")
+)
+INTELLIGENCE_SCORER_INTERVAL_SECONDS = int(
+    os.getenv("INTELLIGENCE_SCORER_INTERVAL_SECONDS", "10")
+)
+AGENT_B_PROFILER_INTERVAL_SECONDS = int(
+    os.getenv("AGENT_B_PROFILER_INTERVAL_SECONDS", "10")
+)
+
 
 # Global scheduler and alert consumer
 background_scheduler = None
@@ -128,9 +139,16 @@ async def lifespan(app: FastAPI):
     print("[STARTUP] Starting automatic collectors...")
     try:
         executors = {
-            'default': ThreadPoolExecutor(max_workers=20)  # Allow 20 concurrent jobs
+            "default": ThreadPoolExecutor(max_workers=20)  # Allow 20 concurrent jobs
         }
-        background_scheduler = BackgroundScheduler(executors=executors)
+        job_defaults = {
+            "coalesce": True,
+            "max_instances": 1,
+            "misfire_grace_time": 30,
+        }
+        background_scheduler = BackgroundScheduler(
+            executors=executors, job_defaults=job_defaults
+        )
 
         def run_rss_collector():
             try:
@@ -163,23 +181,39 @@ async def lifespan(app: FastAPI):
                 print(f"[AGENT B] Error: {e}")
 
         background_scheduler.add_job(
-            run_rss_collector, "interval", seconds=60, id="rss_collector", coalesce=False
+            run_rss_collector,
+            "interval",
+            seconds=RSS_COLLECTOR_INTERVAL_SECONDS,
+            id="rss_collector",
         )
         background_scheduler.add_job(
-            run_price_collector, "interval", seconds=120, id="price_collector", coalesce=False
+            run_price_collector,
+            "interval",
+            seconds=PRICE_COLLECTOR_INTERVAL_SECONDS,
+            id="price_collector",
         )
         # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
         # This is MUCH faster than polling and avoids dual-consumer contention
         # The blocking consumer uses prefetch_count=500 for efficient queue draining
         background_scheduler.add_job(
-            run_intelligence_scoring, "interval", seconds=5, id="intelligence_scorer", coalesce=False
+            run_intelligence_scoring,
+            "interval",
+            seconds=INTELLIGENCE_SCORER_INTERVAL_SECONDS,
+            id="intelligence_scorer",
         )
         background_scheduler.add_job(
-            run_agent_b_profiling, "interval", seconds=5, id="agent_b_profiler", coalesce=False
+            run_agent_b_profiling,
+            "interval",
+            seconds=AGENT_B_PROFILER_INTERVAL_SECONDS,
+            id="agent_b_profiler",
         )
         background_scheduler.start()
         print(
-            "[STARTUP] Scheduler started: RSS(60s), Price(120s), Intelligence(50events/5s), AgentB(50wallets/5s)"
+            "[STARTUP] Scheduler started: "
+            f"RSS({RSS_COLLECTOR_INTERVAL_SECONDS}s), "
+            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s), "
+            f"Intelligence(50events/{INTELLIGENCE_SCORER_INTERVAL_SECONDS}s), "
+            f"AgentB(50wallets/{AGENT_B_PROFILER_INTERVAL_SECONDS}s)"
         )
         print(
             "[STARTUP] ✅ FAST MODE: Using blocking RabbitMQ consumer (run_consumer) in background thread"
