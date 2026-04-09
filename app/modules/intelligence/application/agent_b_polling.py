@@ -11,8 +11,10 @@ No RabbitMQ queue dependency - uses PostgreSQL polling
 import os
 import time
 import logging
+from copy import deepcopy
 from datetime import datetime
 from sqlalchemy import and_
+from sqlalchemy.orm.attributes import flag_modified
 from app.config.db import SessionLocal
 from app.modules.intelligence.application.agent_b import (
     profile_wallet_from_event,
@@ -53,7 +55,8 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
     """
 
     try:
-        event_data = processed_event.event_data or {}
+        # Copy JSON payload before mutation so SQLAlchemy can persist the change.
+        event_data = deepcopy(processed_event.event_data or {})
         event_source = event_data.get("source", "").lower()  # ethereum, or other
         # Try all possible wallet address fields
         wallet_addr = (
@@ -94,6 +97,7 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
 
         # Update database
         processed_event.event_data = event_data
+        flag_modified(processed_event, "event_data")
         processed_event.updated_at = datetime.utcnow()
         db.add(processed_event)
         db.commit()
