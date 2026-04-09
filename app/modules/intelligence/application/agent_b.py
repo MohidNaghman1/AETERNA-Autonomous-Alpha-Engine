@@ -725,7 +725,7 @@ def profile_wallet_from_event(
                     entity_verified=entity.verified,
                     config=config,
                 )
-            else:
+            elif output.profiling_signal != "observed_wallet":
                 output.profiling_signal = "unknown"
             return output
 
