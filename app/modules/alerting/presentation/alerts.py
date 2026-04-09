@@ -25,6 +25,62 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
+def _format_agent_b_for_response(
+    agent_b_data: dict | None, event_type: Optional[str]
+) -> Optional[dict]:
+    """Return only user-meaningful Agent B data for alert responses."""
+    if not agent_b_data or not isinstance(agent_b_data, dict):
+        return None
+
+    # Hide placeholder profiling for non-wallet events such as news/price alerts.
+    if event_type != "onchain":
+        return None
+
+    profiling_signal = agent_b_data.get("profiling_signal")
+    formatted = {
+        "wallet_address": agent_b_data.get("wallet_address"),
+        "profiling_signal": profiling_signal,
+        "confidence_score": agent_b_data.get("confidence_score"),
+        "entity_identified": agent_b_data.get("entity_identified"),
+        "entity_name": agent_b_data.get("entity_name"),
+        "entity_type": agent_b_data.get("entity_type"),
+        "wallet_tier": agent_b_data.get("wallet_tier"),
+        "should_boost_priority": agent_b_data.get("should_boost_priority"),
+        "priority_boost_reason": agent_b_data.get("priority_boost_reason"),
+        "timestamp": agent_b_data.get("timestamp"),
+    }
+
+    wallet_profile = agent_b_data.get("wallet_profile")
+    if isinstance(wallet_profile, dict):
+        formatted["wallet_profile"] = {
+            "win_rate": wallet_profile.get("win_rate"),
+            "total_trades": wallet_profile.get("total_trades"),
+            "behavior_cluster": wallet_profile.get("behavior_cluster"),
+            "activity_frequency": wallet_profile.get("activity_frequency"),
+        }
+
+    cleaned = {
+        key: value
+        for key, value in formatted.items()
+        if value not in (None, "", [], {})
+    }
+
+    # Do not show a nearly-empty Agent B block for unknown wallets.
+    meaningful_keys = set(cleaned.keys()) - {
+        "wallet_address",
+        "profiling_signal",
+        "confidence_score",
+        "timestamp",
+    }
+    if profiling_signal == "unknown" and not meaningful_keys:
+        return {
+            "wallet_address": cleaned.get("wallet_address"),
+            "profiling_signal": profiling_signal,
+        }
+
+    return cleaned or None
+
+
 def normalize_source(source: str) -> List[str]:
     """
     Normalize source names for flexible querying.
@@ -351,11 +407,20 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                 # Extract Agent B profiling if available
                                 agent_b_data = proc_event_data.get("agent_b")
                                 if agent_b_data:
-                                    content["agent_b"] = agent_b_data
-                                    logger.info(
-                                        f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
-                                        f"boost={agent_b_data.get('should_boost_priority')}"
+                                    formatted_agent_b = _format_agent_b_for_response(
+                                        agent_b_data, event_type
                                     )
+                                    if formatted_agent_b:
+                                        content["agent_b"] = formatted_agent_b
+                                    if formatted_agent_b:
+                                        logger.info(
+                                        f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
+                                        f"boost={formatted_agent_b.get('should_boost_priority')}"
+                                    )
+                                    else:
+                                        logger.debug(
+                                            f"[Agent B] Hidden non-meaningful profiling for event {alert.event_id}"
+                                        )
                                 else:
                                     logger.debug(f"[Agent B] No agent_b field in event_data for event {alert.event_id}")
                             else:
