@@ -8,12 +8,13 @@ Updates ProcessedEvent.event_data with agent_b profiling data
 No RabbitMQ queue dependency - uses PostgreSQL polling
 """
 
+import argparse
 import os
 import time
 import logging
 from copy import deepcopy
 from datetime import datetime
-from sqlalchemy import and_
+from sqlalchemy import and_, desc
 from sqlalchemy.orm.attributes import flag_modified
 from app.config.db import SessionLocal
 from app.modules.intelligence.application.agent_b import (
@@ -29,6 +30,9 @@ POLL_INTERVAL = int(os.environ.get("AGENT_B_POLL_INTERVAL", 5))  # Poll every 5 
 BATCH_SIZE = int(
     os.environ.get("AGENT_B_BATCH_SIZE", 50)
 )  # Process 50 events at a time
+SCAN_SIZE = int(
+    os.environ.get("AGENT_B_SCAN_SIZE", max(BATCH_SIZE * 5, 250))
+)  # Scan a wider recent window to avoid starvation
 PRIORITY_FILTER = os.environ.get("AGENT_B_PRIORITY_FILTER", "HIGH,MEDIUM").split(",")
 
 
@@ -112,7 +116,11 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         return False
 
 
-def process_batch():
+def process_batch(
+    batch_size: int = BATCH_SIZE,
+    scan_size: int = SCAN_SIZE,
+    priority_filter=None,
+):
     """
     Process a batch of unprocessed events.
 
@@ -121,25 +129,31 @@ def process_batch():
     """
     db = SessionLocal()
     try:
+        if priority_filter is None:
+            priority_filter = PRIORITY_FILTER
+
         # Find events that need profiling
         # ✅ Only HIGH and MEDIUM priority events
-        unprocessed = (
+        candidate_events = (
             db.query(ProcessedEvent)
-            .filter(ProcessedEvent.priority.in_(PRIORITY_FILTER))
-            .limit(BATCH_SIZE)
+            .filter(ProcessedEvent.priority.in_(priority_filter))
+            .order_by(desc(ProcessedEvent.timestamp))
+            .limit(scan_size)
             .all()
         )
 
-        if not unprocessed:
+        if not candidate_events:
             return 0
 
-        # Filter to only those needing profiling
+        # Filter to only those needing profiling, then process the newest batch.
         needs_profiling = [
-            e for e in unprocessed if needs_agent_b_profiling(e.event_data)
-        ]
+            e for e in candidate_events if needs_agent_b_profiling(e.event_data)
+        ][:batch_size]
 
         if not needs_profiling:
-            logger.debug(f"[AGENT B] No events need profiling in this batch")
+            logger.debug(
+                f"[AGENT B] No events need profiling in the latest {len(candidate_events)} candidates"
+            )
             return 0
 
         logger.info(f"[AGENT B] Processing {len(needs_profiling)} events...")
@@ -159,6 +173,48 @@ def process_batch():
         return 0
     finally:
         db.close()
+
+
+def backfill_missing_agent_b(
+    batch_size: int = BATCH_SIZE,
+    scan_size: int = SCAN_SIZE,
+    max_batches: int | None = None,
+    priority_filter=None,
+) -> int:
+    """Backfill Agent B data for processed events that are still missing it."""
+    total_processed = 0
+    batches_run = 0
+
+    if priority_filter is None:
+        priority_filter = PRIORITY_FILTER
+
+    logger.info("[AGENT B BACKFILL] Starting one-off backfill run...")
+    logger.info(f"  Batch size: {batch_size}")
+    logger.info(f"  Scan size: {scan_size}")
+    logger.info(f"  Priority filter: {','.join(priority_filter)}")
+    if max_batches is not None:
+        logger.info(f"  Max batches: {max_batches}")
+
+    while True:
+        if max_batches is not None and batches_run >= max_batches:
+            logger.info("[AGENT B BACKFILL] Reached max batch limit, stopping")
+            break
+
+        processed = process_batch(
+            batch_size=batch_size,
+            scan_size=scan_size,
+            priority_filter=priority_filter,
+        )
+        if processed <= 0:
+            break
+
+        total_processed += processed
+        batches_run += 1
+
+    logger.info(
+        f"[AGENT B BACKFILL] Complete: {total_processed} events enriched across {batches_run} batches"
+    )
+    return total_processed
 
 
 def start_polling():
@@ -202,9 +258,42 @@ def start_polling():
 
 
 if __name__ == "__main__":
-
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
-    logger.info("Starting Agent B Polling Consumer...")
-    start_polling()
+    parser = argparse.ArgumentParser(description="Agent B polling and backfill runner")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Run a one-off backfill for processed events missing agent_b",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=BATCH_SIZE,
+        help="Maximum events to process per batch",
+    )
+    parser.add_argument(
+        "--scan-size",
+        type=int,
+        default=SCAN_SIZE,
+        help="How many recent candidate events to inspect per batch",
+    )
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=None,
+        help="Optional cap on backfill batches",
+    )
+    args = parser.parse_args()
+
+    if args.backfill:
+        logger.info("Starting Agent B one-off backfill...")
+        backfill_missing_agent_b(
+            batch_size=args.batch_size,
+            scan_size=args.scan_size,
+            max_batches=args.max_batches,
+        )
+    else:
+        logger.info("Starting Agent B Polling Consumer...")
+        start_polling()
