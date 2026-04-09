@@ -37,6 +37,7 @@ def _format_agent_b_for_response(
         return None
 
     profiling_signal = agent_b_data.get("profiling_signal")
+    wallet_profile = agent_b_data.get("wallet_profile")
     formatted = {
         "wallet_address": agent_b_data.get("wallet_address"),
         "profiling_signal": profiling_signal,
@@ -50,8 +51,8 @@ def _format_agent_b_for_response(
         "timestamp": agent_b_data.get("timestamp"),
     }
 
-    wallet_profile = agent_b_data.get("wallet_profile")
     if isinstance(wallet_profile, dict):
+        formatted["wallet_tier"] = formatted["wallet_tier"] or wallet_profile.get("tier")
         formatted["wallet_profile"] = {
             "win_rate": wallet_profile.get("win_rate"),
             "total_trades": wallet_profile.get("total_trades"),
@@ -412,7 +413,6 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                     )
                                     if formatted_agent_b:
                                         content["agent_b"] = formatted_agent_b
-                                    if formatted_agent_b:
                                         logger.info(
                                         f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
                                         f"boost={formatted_agent_b.get('should_boost_priority')}"

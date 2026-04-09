@@ -60,6 +60,7 @@ class ProfilerConfig:
     # Confidence scoring
     BASE_CONFIDENCE = 0.5
     CONFIDENCE_PER_TRADE = 0.01  # +1% confidence per trade (max 10 trades = 60%)
+    VERIFIED_WALLET_BOOST = 0.1  # +10% if wallet has enough verified history
     VERIFIED_ENTITY_BOOST = 0.2  # +20% if entity is verified
 
     # Behavior clustering thresholds
@@ -332,6 +333,84 @@ def get_preferred_tokens(
         return []
 
 
+def infer_activity_frequency(
+    first_seen: Optional[datetime], last_seen: Optional[datetime], total_trades: int
+) -> str:
+    """Infer a coarse activity cadence from observed trade history."""
+    if not first_seen or not last_seen or total_trades <= 0:
+        return "inactive"
+
+    span_days = max((last_seen - first_seen).total_seconds() / 86400, 1.0)
+    trades_per_day = total_trades / span_days
+
+    if trades_per_day >= 1:
+        return "daily"
+    if trades_per_day * 7 >= 1:
+        return "weekly"
+    return "monthly"
+
+
+def build_wallet_profile_from_trades(
+    wallet_address: str, db: Session, config: Optional[ProfilerConfig] = None
+) -> Optional[WalletProfile]:
+    """Synthesize a lightweight wallet profile directly from trade history."""
+    if config is None:
+        config = ProfilerConfig()
+
+    try:
+        trades = (
+            db.query(TradeRecordORM)
+            .filter(cast(TradeRecordORM.wallet_address, String) == wallet_address.lower())
+            .order_by(TradeRecordORM.timestamp.asc())
+            .all()
+        )
+
+        if not trades:
+            return None
+
+        win_rate, profitable_trades, evaluated_trades = calculate_win_rate_from_trades(
+            wallet_address, db
+        )
+        best_trade_return, worst_trade_return = get_best_worst_trades(wallet_address, db)
+        preferred_tokens = get_preferred_tokens(wallet_address, db)
+
+        first_seen = trades[0].timestamp
+        last_seen = trades[-1].timestamp
+        total_trades = evaluated_trades or len(trades)
+        tier = classify_wallet_tier(win_rate, total_trades, config)
+
+        profile = WalletProfile(
+            address=wallet_address.lower(),
+            blockchain="ethereum",
+            total_trades=total_trades,
+            profitable_trades=profitable_trades,
+            win_rate=win_rate,
+            best_trade_return=best_trade_return,
+            worst_trade_return=worst_trade_return,
+            behavior_cluster=BehaviorCluster.UNKNOWN,
+            tier=tier,
+            activity_frequency=infer_activity_frequency(
+                first_seen=first_seen,
+                last_seen=last_seen,
+                total_trades=len(trades),
+            ),
+            last_activity=last_seen,
+            first_seen=first_seen,
+            preferred_tokens=preferred_tokens,
+            favorite_exchanges=[],
+            favorite_dexes=[],
+        )
+        logger.debug(
+            f"Built fallback wallet profile from trades for {wallet_address}: "
+            f"{total_trades} trades, signal={tier}"
+        )
+        return profile
+
+    except Exception as e:
+        logger.error(f"Error building fallback profile for {wallet_address}: {e}")
+        return None
+
+
 # ============================================================================
 # TIER & BEHAVIOR CLASSIFICATION
 # ============================================================================
@@ -450,6 +529,10 @@ def calculate_confidence_score(
     # Add confidence per trade (up to 20 trades)
     confidence += min(total_trades * config.CONFIDENCE_PER_TRADE, 0.1)
 
+    # Verified wallet history boost
+    if wallet_verified:
+        confidence += config.VERIFIED_WALLET_BOOST
+
     # Entity verification boost
     if entity_verified:
         confidence += config.VERIFIED_ENTITY_BOOST
@@ -496,14 +579,6 @@ def profile_wallet_from_event(
     )
 
     try:
-        # Lookup wallet profile
-        wallet_profile = lookup_wallet_profile(wallet_address, db)
-
-        if wallet_profile is None:
-            logger.debug(f"Wallet {wallet_address} not in database")
-            output.profiling_signal = "unknown"
-            return output
-
         # Lookup entity
         entity = lookup_entity_by_wallet(wallet_address, db)
 
@@ -512,6 +587,25 @@ def profile_wallet_from_event(
             output.entity_id = entity.entity_id
             output.entity_name = entity.name
             output.entity_type = entity.entity_type
+
+        # Lookup wallet profile
+        wallet_profile = lookup_wallet_profile(wallet_address, db)
+        if wallet_profile is None:
+            wallet_profile = build_wallet_profile_from_trades(wallet_address, db, config)
+
+        if wallet_profile is None:
+            logger.debug(f"Wallet {wallet_address} has no profile or trade history")
+            if entity:
+                output.profiling_signal = "unverified"
+                output.confidence_score = calculate_confidence_score(
+                    total_trades=0,
+                    wallet_verified=False,
+                    entity_verified=entity.verified,
+                    config=config,
+                )
+            else:
+                output.profiling_signal = "unknown"
+            return output
 
         # Set wallet profile
         output.wallet_profile = wallet_profile
@@ -529,6 +623,15 @@ def profile_wallet_from_event(
             config=config,
         )
         output.confidence_score = confidence
+        output.wallet_profile.tier = tier
+        output.wallet_profile.confidence_score = confidence
+        if output.wallet_profile.behavior_cluster == BehaviorCluster.UNKNOWN:
+            output.wallet_profile.behavior_cluster = classify_behavior_cluster(
+                output.wallet_profile,
+                output.wallet_profile.favorite_exchanges,
+                db,
+                config,
+            )
 
         # Determine profiling signal
         if tier == WalletTier.HIGH_PERFORMER:

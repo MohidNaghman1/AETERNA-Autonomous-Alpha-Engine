@@ -17,7 +17,7 @@ from app.modules.intelligence.application.agent_a import score_event
 from app.modules.intelligence.infrastructure.models import ProcessedEvent
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.config.db import SessionLocal  # Use synchronous session for pika consumer
-from app.modules.alerting.application.alert_generator import generate_alert, save_alert
+from app.modules.alerting.application.alert_generator import generate_alert
 
 # Optionally load .env for local dev
 try:
@@ -76,18 +76,10 @@ def _generate_alert_for_scored_event(event_orm, event_dict, priority, score):
         alert = generate_alert(alert_event, user_prefs=None)
         event_id_str = str(event_orm.id)
         if alert:
-            # ✅ SAVE ALERT TO DATABASE (this was missing!)
-            saved_alert = save_alert(alert)
-            if saved_alert:
-                logger.info(
-                    f"[ALERT] Generated and saved {priority} priority alert for event {event_id_str}"
-                )
-                return saved_alert
-            else:
-                logger.error(
-                    f"[ALERT] Failed to save alert for event {event_id_str}"
-                )
-                return None
+            logger.info(
+                f"[ALERT] Generated {priority} priority alert for event {event_id_str}"
+            )
+            return alert
         else:
             logger.debug(
                 f"[ALERT] Alert filtered (rate limit/quiet hours) for event {event_id_str}..."
