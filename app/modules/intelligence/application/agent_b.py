@@ -40,6 +40,7 @@ from app.modules.intelligence.infrastructure.models import (
 )
 
 logger = logging.getLogger(__name__)
+ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 
 # ============================================================================
@@ -523,6 +524,134 @@ def summarize_wallet_observations(
         return None
 
 
+def infer_entity_from_context(
+    wallet_address: str,
+    observed_activity: Optional[Dict[str, Any]],
+    wallet_profile: Optional[WalletProfile] = None,
+) -> Optional[Dict[str, Any]]:
+    """Infer a wallet category from repeated behavior without claiming verified ownership."""
+    wallet_lower = wallet_address.lower()
+    if wallet_lower == ZERO_ADDRESS:
+        return {
+            "profiling_signal": "mint_burn_wallet",
+            "entity_type": "system_contract",
+            "entity_name": "Null / Mint-Burn Address",
+            "reason": (
+                "This is the Ethereum zero address, commonly used for minting, burning, "
+                "and protocol accounting flows rather than a user-owned wallet."
+            ),
+            "confidence_score": 0.95,
+        }
+
+    if not observed_activity:
+        return None
+
+    observed_event_count = int(observed_activity.get("observed_event_count", 0) or 0)
+    inbound_transfers = int(observed_activity.get("inbound_transfers", 0) or 0)
+    outbound_transfers = int(observed_activity.get("outbound_transfers", 0) or 0)
+    total_observed_usd = float(observed_activity.get("total_observed_usd", 0) or 0)
+    counterparties = observed_activity.get("counterparties", []) or []
+    tokens_seen = observed_activity.get("tokens_seen", []) or []
+
+    first_seen_raw = observed_activity.get("first_seen")
+    last_seen_raw = observed_activity.get("last_seen")
+    first_seen = (
+        datetime.fromisoformat(first_seen_raw)
+        if isinstance(first_seen_raw, str) and first_seen_raw
+        else None
+    )
+    last_seen = (
+        datetime.fromisoformat(last_seen_raw)
+        if isinstance(last_seen_raw, str) and last_seen_raw
+        else None
+    )
+    activity_days = (
+        max((last_seen - first_seen).total_seconds() / 86400, 1.0)
+        if first_seen and last_seen
+        else None
+    )
+    balance_ratio = min(inbound_transfers, outbound_transfers) / max(
+        max(inbound_transfers, outbound_transfers), 1
+    )
+
+    if (
+        observed_event_count >= 100
+        and total_observed_usd >= 50_000_000
+        and balance_ratio >= 0.75
+        and len(counterparties) >= 5
+    ):
+        return {
+            "profiling_signal": "exchange_like",
+            "entity_type": EntityType.EXCHANGE.value,
+            "entity_name": "Exchange-Like Flow Hub",
+            "reason": (
+                "High-volume, balanced inbound/outbound transfer flow across many counterparties "
+                "resembles exchange-style treasury or hot-wallet behavior."
+            ),
+            "confidence_score": 0.82,
+        }
+
+    if (
+        observed_event_count >= 50
+        and total_observed_usd >= 10_000_000
+        and len(tokens_seen) >= 2
+        and balance_ratio >= 0.55
+    ):
+        return {
+            "profiling_signal": "market_maker_like",
+            "entity_type": EntityType.MARKET_MAKER.value,
+            "entity_name": "Market-Maker-Like Wallet",
+            "reason": (
+                "The wallet repeatedly moves large value across multiple tokens with a relatively "
+                "balanced send/receive pattern, which resembles market-making or routing behavior."
+            ),
+            "confidence_score": 0.72,
+        }
+
+    if total_observed_usd >= 5_000_000 and observed_event_count >= 10:
+        return {
+            "profiling_signal": "whale_like",
+            "entity_type": EntityType.WHALE.value,
+            "entity_name": "Whale-Like Wallet",
+            "reason": (
+                "The wallet has already moved substantial cumulative value in tracked events, "
+                "suggesting outsized capital concentration."
+            ),
+            "confidence_score": 0.68,
+        }
+
+    if (
+        observed_event_count >= 25
+        and activity_days is not None
+        and activity_days <= 2
+        and len(counterparties) >= 4
+    ):
+        return {
+            "profiling_signal": "bot_like",
+            "entity_type": EntityType.TRADING_BOT.value,
+            "entity_name": "Bot-Like Wallet",
+            "reason": (
+                "The wallet appeared frequently in a short time window across several counterparties, "
+                "which resembles automated execution behavior."
+            ),
+            "confidence_score": 0.61,
+        }
+
+    if wallet_profile and wallet_profile.total_trades >= 20 and wallet_profile.win_rate >= 0.7:
+        return {
+            "profiling_signal": "smart_money_like",
+            "entity_type": "smart_money_like",
+            "entity_name": "Smart-Money-Like Wallet",
+            "reason": (
+                "Historical trade performance and consistency suggest this wallet behaves like a "
+                "strong repeat participant."
+            ),
+            "confidence_score": 0.66,
+        }
+
+    return None
+
+
 # ============================================================================
 # TIER & BEHAVIOR CLASSIFICATION
 # ============================================================================
@@ -710,9 +839,22 @@ def profile_wallet_from_event(
         if wallet_profile is None:
             wallet_profile = build_wallet_profile_from_trades(wallet_address, db, config)
 
+        inferred_entity = infer_entity_from_context(
+            wallet_address=wallet_address,
+            observed_activity=observed_activity,
+            wallet_profile=wallet_profile,
+        )
+        if inferred_entity:
+            output.inferred_entity_type = inferred_entity["entity_type"]
+            output.inferred_entity_name = inferred_entity["entity_name"]
+            output.inferred_entity_reason = inferred_entity["reason"]
+
         if wallet_profile is None:
             logger.debug(f"Wallet {wallet_address} has no profile or trade history")
-            if observed_activity and observed_activity.get("observed_event_count", 0) >= 2:
+            if inferred_entity:
+                output.profiling_signal = inferred_entity["profiling_signal"]
+                output.confidence_score = inferred_entity["confidence_score"]
+            elif observed_activity and observed_activity.get("observed_event_count", 0) >= 2:
                 output.profiling_signal = "observed_wallet"
                 output.confidence_score = min(
                     0.15 + (observed_activity["observed_event_count"] * 0.02), 0.4
@@ -725,7 +867,15 @@ def profile_wallet_from_event(
                     entity_verified=entity.verified,
                     config=config,
                 )
-            elif output.profiling_signal != "observed_wallet":
+            elif output.profiling_signal not in {
+                "observed_wallet",
+                "mint_burn_wallet",
+                "exchange_like",
+                "market_maker_like",
+                "whale_like",
+                "bot_like",
+                "smart_money_like",
+            }:
                 output.profiling_signal = "unknown"
             return output
 
@@ -768,6 +918,15 @@ def profile_wallet_from_event(
             output.profiling_signal = "low_performer"
         else:
             output.profiling_signal = "unverified"
+
+        if not entity and inferred_entity and output.profiling_signal in {
+            "unverified",
+            "low_performer",
+            "medium_performer",
+        }:
+            output.inferred_entity_type = inferred_entity["entity_type"]
+            output.inferred_entity_name = inferred_entity["entity_name"]
+            output.inferred_entity_reason = inferred_entity["reason"]
 
         logger.info(
             f"[AGENT B] Profiled {wallet_address}: {output.profiling_signal} "
@@ -844,6 +1003,9 @@ def enrich_event_with_profiling(
         "entity_type": (
             str(profiling_output.entity_type) if profiling_output.entity_type else None
         ),
+        "inferred_entity_name": profiling_output.inferred_entity_name,
+        "inferred_entity_type": profiling_output.inferred_entity_type,
+        "inferred_entity_reason": profiling_output.inferred_entity_reason,
         "wallet_win_rate": (
             profiling_output.wallet_profile.win_rate
             if profiling_output.wallet_profile

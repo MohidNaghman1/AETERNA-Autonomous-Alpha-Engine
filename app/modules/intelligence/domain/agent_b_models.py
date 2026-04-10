@@ -270,6 +270,9 @@ class AgentBOutput(BaseModel):
     entity_id: Optional[str] = None
     entity_name: Optional[str] = None
     entity_type: Optional[EntityType] = None
+    inferred_entity_name: Optional[str] = None
+    inferred_entity_type: Optional[str] = None
+    inferred_entity_reason: Optional[str] = None
 
     # Wallet profile
     wallet_profile: Optional[WalletProfile] = None
