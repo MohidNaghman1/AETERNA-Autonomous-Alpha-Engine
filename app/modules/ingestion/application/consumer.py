@@ -158,7 +158,7 @@ _batch_dlq_tags = []    # delivery tags for DLQ messages (ACK after DLQ send)
 
 def flush_batch(channel):
     """Bulk-insert the current batch then ACK/DLQ all messages in it."""
-    global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags
+    # global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags  # Removed unused global statement
 
     # 1. Bulk insert valid events
     if _batch_orms:
@@ -220,7 +220,7 @@ def process_event(ch, method, properties, body):
     Parses and validates the message, then adds it to the current batch.
     Flushes the batch to DB every BATCH_SIZE messages.
     """
-    global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags
+    # global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags  # Removed unused global statement
 
     retry_count = get_retry_count(properties)
 
@@ -258,7 +258,7 @@ def run_consumer():
     Auto-flushes every BATCH_SIZE messages.
     Heartbeat keeps connection alive during slow DB commits.
     """
-    global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags
+    # global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags  # Removed unused global statement
 
     # Reset batch state on each (re)start
     _batch_orms.clear()
