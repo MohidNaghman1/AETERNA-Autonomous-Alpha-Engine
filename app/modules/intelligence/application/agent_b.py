@@ -363,7 +363,9 @@ def build_wallet_profile_from_trades(
     try:
         trades = (
             db.query(TradeRecordORM)
-            .filter(cast(TradeRecordORM.wallet_address, String) == wallet_address.lower())
+            .filter(
+                cast(TradeRecordORM.wallet_address, String) == wallet_address.lower()
+            )
             .order_by(TradeRecordORM.timestamp.asc())
             .all()
         )
@@ -374,7 +376,9 @@ def build_wallet_profile_from_trades(
         win_rate, profitable_trades, evaluated_trades = calculate_win_rate_from_trades(
             wallet_address, db
         )
-        best_trade_return, worst_trade_return = get_best_worst_trades(wallet_address, db)
+        best_trade_return, worst_trade_return = get_best_worst_trades(
+            wallet_address, db
+        )
         preferred_tokens = get_preferred_tokens(wallet_address, db)
 
         first_seen = trades[0].timestamp
@@ -440,7 +444,11 @@ def summarize_wallet_observations(
     try:
         candidate_rows = (
             db.query(ProcessedEvent)
-            .filter(cast(ProcessedEvent.event_data, String).ilike(f"%{wallet_address.lower()}%"))
+            .filter(
+                cast(ProcessedEvent.event_data, String).ilike(
+                    f"%{wallet_address.lower()}%"
+                )
+            )
             .order_by(ProcessedEvent.timestamp.desc())
             .limit(limit)
             .all()
@@ -475,8 +483,12 @@ def summarize_wallet_observations(
 
             from_address = content.get("from_address")
             to_address = content.get("to_address")
-            from_matches = isinstance(from_address, str) and from_address.lower() == wallet_lower
-            to_matches = isinstance(to_address, str) and to_address.lower() == wallet_lower
+            from_matches = (
+                isinstance(from_address, str) and from_address.lower() == wallet_lower
+            )
+            to_matches = (
+                isinstance(to_address, str) and to_address.lower() == wallet_lower
+            )
 
             if not (from_matches or to_matches):
                 continue
@@ -637,7 +649,11 @@ def infer_entity_from_context(
             "confidence_score": 0.61,
         }
 
-    if wallet_profile and wallet_profile.total_trades >= 20 and wallet_profile.win_rate >= 0.7:
+    if (
+        wallet_profile
+        and wallet_profile.total_trades >= 20
+        and wallet_profile.win_rate >= 0.7
+    ):
         return {
             "profiling_signal": "smart_money_like",
             "entity_type": "smart_money_like",
@@ -837,7 +853,9 @@ def profile_wallet_from_event(
         # Lookup wallet profile
         wallet_profile = lookup_wallet_profile(wallet_address, db)
         if wallet_profile is None:
-            wallet_profile = build_wallet_profile_from_trades(wallet_address, db, config)
+            wallet_profile = build_wallet_profile_from_trades(
+                wallet_address, db, config
+            )
 
         inferred_entity = infer_entity_from_context(
             wallet_address=wallet_address,
@@ -854,7 +872,10 @@ def profile_wallet_from_event(
             if inferred_entity:
                 output.profiling_signal = inferred_entity["profiling_signal"]
                 output.confidence_score = inferred_entity["confidence_score"]
-            elif observed_activity and observed_activity.get("observed_event_count", 0) >= 2:
+            elif (
+                observed_activity
+                and observed_activity.get("observed_event_count", 0) >= 2
+            ):
                 output.profiling_signal = "observed_wallet"
                 output.confidence_score = min(
                     0.15 + (observed_activity["observed_event_count"] * 0.02), 0.4
@@ -919,11 +940,16 @@ def profile_wallet_from_event(
         else:
             output.profiling_signal = "unverified"
 
-        if not entity and inferred_entity and output.profiling_signal in {
-            "unverified",
-            "low_performer",
-            "medium_performer",
-        }:
+        if (
+            not entity
+            and inferred_entity
+            and output.profiling_signal
+            in {
+                "unverified",
+                "low_performer",
+                "medium_performer",
+            }
+        ):
             output.inferred_entity_type = inferred_entity["entity_type"]
             output.inferred_entity_name = inferred_entity["entity_name"]
             output.inferred_entity_reason = inferred_entity["reason"]
