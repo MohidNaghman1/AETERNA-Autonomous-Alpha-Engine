@@ -5,6 +5,7 @@ Revises: add_alert_critical_priority
 Create Date: 2026-04-06 16:30:00.000000
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 from datetime import datetime

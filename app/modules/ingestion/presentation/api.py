@@ -404,7 +404,6 @@ async def debug_rabbitmq_queue_depth():
     Example usage:
         GET /ingestion/debug/rabbitmq-queue-depth
     """
-    
 
     RABBITMQ_URL = os.getenv("RABBITMQ_URL")
     RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")

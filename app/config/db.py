@@ -54,11 +54,13 @@ if not ASYNC_DATABASE_URL:
         )
     else:
         ASYNC_DATABASE_URL = SYNC_DATABASE_URL  # fallback
-    
+
     # Convert sslmode (psycopg2) to ssl (asyncpg)
     # asyncpg uses 'ssl' parameter instead of 'sslmode'
     if "sslmode=require" in ASYNC_DATABASE_URL:
-        ASYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace("sslmode=require", "ssl=require")
+        ASYNC_DATABASE_URL = ASYNC_DATABASE_URL.replace(
+            "sslmode=require", "ssl=require"
+        )
 
 # 5. Create sync engine and session (for consumer, celery, etc.)
 # Use NullPool for Supabase to avoid connection pooling issues
@@ -84,13 +86,13 @@ SessionLocal = sessionmaker(
 # 6. Create async engine and session (for FastAPI)
 # Disable statement caching to prevent asyncpg prepared statement conflicts with pgbouncer
 async_engine = create_async_engine(
-    ASYNC_DATABASE_URL, 
-    echo=True, 
+    ASYNC_DATABASE_URL,
+    echo=True,
     future=True,
     connect_args={
         "statement_cache_size": 0,  # Disable prepared statement caching for pgbouncer compatibility
         "server_settings": {"application_name": "aeterna"},
-        "command_timeout": 60
+        "command_timeout": 60,
     },
     pool_pre_ping=True,
 )

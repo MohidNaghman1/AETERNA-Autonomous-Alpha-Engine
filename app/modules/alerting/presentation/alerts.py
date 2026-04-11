@@ -13,7 +13,9 @@ from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
 from app.modules.alerting.presentation.schema import Alert, AlertDismissResponse
 from app.modules.ingestion.infrastructure.models import EventORM
-from app.modules.intelligence.infrastructure.models import ProcessedEvent as ProcessedEventORM
+from app.modules.intelligence.infrastructure.models import (
+    ProcessedEvent as ProcessedEventORM,
+)
 from datetime import datetime
 from typing import List, Optional
 import csv
@@ -57,7 +59,9 @@ def _format_agent_b_for_response(
     }
 
     if isinstance(wallet_profile, dict):
-        formatted["wallet_tier"] = formatted["wallet_tier"] or wallet_profile.get("tier")
+        formatted["wallet_tier"] = formatted["wallet_tier"] or wallet_profile.get(
+            "tier"
+        )
         formatted["wallet_profile"] = {
             "win_rate": wallet_profile.get("win_rate"),
             "total_trades": wallet_profile.get("total_trades"),
@@ -95,7 +99,9 @@ def _build_pending_agent_b_from_content(
     if event_type != "onchain" or not isinstance(content_data, dict):
         return None
 
-    wallet_address = content_data.get("from_address") or content_data.get("wallet_address")
+    wallet_address = content_data.get("from_address") or content_data.get(
+        "wallet_address"
+    )
     counterparty_address = content_data.get("to_address")
     if not wallet_address:
         return None
@@ -218,8 +224,7 @@ async def get_alerts_query(
     """
     # Get both user's personal alerts AND system broadcast alerts (user_id=None)
     query = select(AlertORM).where(
-        (AlertORM.user_id == user_id)
-        | (AlertORM.user_id.is_(None))
+        (AlertORM.user_id == user_id) | (AlertORM.user_id.is_(None))
     )
 
     # Apply filters
@@ -328,7 +333,7 @@ def convert_alert_orm_to_schema(alert: AlertORM) -> Alert:
 
 async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
     """Convert Alert ORM with enriched event data.
-    
+
     Fetches both Event (raw data) and ProcessedEvent (with Agent B profiling).
 
     Args:
@@ -408,20 +413,26 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                     logger.info(
                         f"[OK] Extracted: title='{title[:50]}...', priority={priority}, entity={entity}, source={source}"
                     )
-                    
+
                     # 🆕 Fetch Agent B profiling data from ProcessedEvent
                     try:
                         # Event ID is stored as string in ProcessedEvent.id
                         event_id_str = str(alert.event_id)
-                        logger.debug(f"[Agent B] Looking up ProcessedEvent for event_id={event_id_str}")
-                        
+                        logger.debug(
+                            f"[Agent B] Looking up ProcessedEvent for event_id={event_id_str}"
+                        )
+
                         proc_result = await db.execute(
-                            select(ProcessedEventORM).where(ProcessedEventORM.id == event_id_str)
+                            select(ProcessedEventORM).where(
+                                ProcessedEventORM.id == event_id_str
+                            )
                         )
                         processed_event = proc_result.scalars().first()
-                        logger.debug(f"[Agent B] Query result: {processed_event is not None}")
+                        logger.debug(
+                            f"[Agent B] Query result: {processed_event is not None}"
+                        )
                         formatted_agent_b = None
-                        
+
                         if processed_event:
                             proc_event_data = processed_event.event_data
                             if isinstance(proc_event_data, str):
@@ -429,7 +440,7 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                     proc_event_data = json.loads(proc_event_data)
                                 except json.JSONDecodeError:
                                     proc_event_data = {}
-                            
+
                             if proc_event_data and isinstance(proc_event_data, dict):
                                 # Extract Agent B profiling if available
                                 agent_b_data = proc_event_data.get("agent_b")
@@ -440,19 +451,25 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                     if formatted_agent_b:
                                         content["agent_b"] = formatted_agent_b
                                         logger.info(
-                                        f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
-                                        f"boost={formatted_agent_b.get('should_boost_priority')}"
-                                    )
+                                            f"[Agent B] ✓ Added profiling: signal={agent_b_data.get('profiling_signal')}, "
+                                            f"boost={formatted_agent_b.get('should_boost_priority')}"
+                                        )
                                     else:
                                         logger.debug(
                                             f"[Agent B] Hidden non-meaningful profiling for event {alert.event_id}"
                                         )
                                 else:
-                                    logger.debug(f"[Agent B] No agent_b field in event_data for event {alert.event_id}")
+                                    logger.debug(
+                                        f"[Agent B] No agent_b field in event_data for event {alert.event_id}"
+                                    )
                             else:
-                                logger.debug(f"[Agent B] ProcessedEvent has no valid event_data")
+                                logger.debug(
+                                    f"[Agent B] ProcessedEvent has no valid event_data"
+                                )
                         else:
-                            logger.debug(f"[Agent B] ProcessedEvent not found for event_id={event_id_str}")
+                            logger.debug(
+                                f"[Agent B] ProcessedEvent not found for event_id={event_id_str}"
+                            )
 
                         if not formatted_agent_b:
                             formatted_agent_b = _build_pending_agent_b_from_content(
@@ -464,7 +481,10 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                     f"[Agent B] Added pending profiling placeholder for event {alert.event_id}"
                                 )
                     except Exception as e:
-                        logger.warning(f"[Agent B] Could not fetch profiling data: {type(e).__name__}: {e}", exc_info=True)
+                        logger.warning(
+                            f"[Agent B] Could not fetch profiling data: {type(e).__name__}: {e}",
+                            exc_info=True,
+                        )
                 else:
                     logger.warning(
                         f"[WARN] Event {alert.event_id} has no content or invalid format"
@@ -888,8 +908,7 @@ async def get_user_alerts_diagnostic(
         # Get total count for this user (including broadcast)
         count_result = await db.execute(
             select(AlertORM).where(
-                (AlertORM.user_id == user_id)
-                | (AlertORM.user_id.is_(None))
+                (AlertORM.user_id == user_id) | (AlertORM.user_id.is_(None))
             )
         )
         total_count = len(count_result.scalars().all())
@@ -897,10 +916,7 @@ async def get_user_alerts_diagnostic(
         # Get paginated results
         result = await db.execute(
             select(AlertORM)
-            .where(
-                (AlertORM.user_id == user_id)
-                | (AlertORM.user_id.is_(None))
-            )
+            .where((AlertORM.user_id == user_id) | (AlertORM.user_id.is_(None)))
             .order_by(desc(AlertORM.created_at))
             .offset(skip)
             .limit(min(limit, 1000))

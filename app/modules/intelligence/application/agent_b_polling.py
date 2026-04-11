@@ -46,7 +46,7 @@ def needs_agent_b_profiling(event_data: dict) -> bool:
 def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
     """
     Add Agent B profiling to a ProcessedEvent.
-    
+
     For on-chain events: profiles wallet and sets boost_priority flag
     For news/price events: marks as processed without profiling
 
@@ -66,8 +66,16 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         wallet_addr = (
             event_data.get("wallet_address")
             or event_data.get("address")
-            or (event_data.get("content", {}).get("from_address") if isinstance(event_data.get("content"), dict) else None)
-            or (event_data.get("content", {}).get("to_address") if isinstance(event_data.get("content"), dict) else None)
+            or (
+                event_data.get("content", {}).get("from_address")
+                if isinstance(event_data.get("content"), dict)
+                else None
+            )
+            or (
+                event_data.get("content", {}).get("to_address")
+                if isinstance(event_data.get("content"), dict)
+                else None
+            )
         )
 
         # Only profile if we have a wallet address (on-chain event)
@@ -97,7 +105,9 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
                 "wallet_tier": "N/A",
                 "confidence_score": 0.0,
             }
-            logger.debug(f"[AGENT B] Marked event {processed_event.id} (non-wallet source={event_source})")
+            logger.debug(
+                f"[AGENT B] Marked event {processed_event.id} (non-wallet source={event_source})"
+            )
 
         # Update database
         processed_event.event_data = event_data

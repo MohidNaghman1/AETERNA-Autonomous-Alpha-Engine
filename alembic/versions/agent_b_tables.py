@@ -5,6 +5,7 @@ Revises: d9e5f2b3c1a6
 Create Date: 2026-04-06 15:00:00.000000
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -52,13 +53,15 @@ def upgrade() -> None:
         sa.UniqueConstraint("address"),
     )
     op.create_index("ix_wallet_profiles_address", "wallet_profiles", ["address"])
-    op.create_index("ix_wallet_profiles_entity_type", "wallet_profiles", ["entity_type"])
-    op.create_index("ix_wallet_profiles_entity_name", "wallet_profiles", ["entity_name"])
+    op.create_index(
+        "ix_wallet_profiles_entity_type", "wallet_profiles", ["entity_type"]
+    )
+    op.create_index(
+        "ix_wallet_profiles_entity_name", "wallet_profiles", ["entity_name"]
+    )
     op.create_index("ix_wallet_profiles_tier", "wallet_profiles", ["tier"])
     op.create_index("ix_wallet_profiles_created_at", "wallet_profiles", ["created_at"])
-    op.create_index(
-        "ix_tier_win_rate", "wallet_profiles", ["tier", "win_rate"]
-    )
+    op.create_index("ix_tier_win_rate", "wallet_profiles", ["tier", "win_rate"])
 
     # Create entities table
     op.create_table(
@@ -112,7 +115,9 @@ def upgrade() -> None:
         "ix_trade_records_exchange_or_dex", "trade_records", ["exchange_or_dex"]
     )
     op.create_index("ix_trade_records_timestamp", "trade_records", ["timestamp"])
-    op.create_index("ix_trade_records_is_profitable", "trade_records", ["is_profitable"])
+    op.create_index(
+        "ix_trade_records_is_profitable", "trade_records", ["is_profitable"]
+    )
     op.create_index(
         "ix_wallet_timestamp",
         "trade_records",

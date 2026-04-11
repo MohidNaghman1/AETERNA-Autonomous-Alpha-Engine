@@ -5,6 +5,7 @@ Revises: agent_b_tables
 Create Date: 2026-04-06 16:00:00.000000
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -22,15 +23,13 @@ def upgrade() -> None:
         sa.Column("priority", sa.String(), default="MEDIUM", nullable=True),
     )
     op.create_index("ix_alerts_priority", "alerts", ["priority"])
-    
+
     # Set existing alerts based on priority field if it exists, else default to MEDIUM
-    op.execute(
-        """
+    op.execute("""
         UPDATE alerts 
         SET priority = 'MEDIUM'
         WHERE priority IS NULL
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

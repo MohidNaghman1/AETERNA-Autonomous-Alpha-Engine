@@ -150,10 +150,10 @@ def parse_event(body: bytes):
 
 
 # ─── Batch state ──────────────────────────────────────────────────────────────
-_batch_orms = []        # EventORM objects ready to bulk-insert
-_batch_tags = []        # delivery tags to ACK on success
-_batch_dlq = []         # (body, error, retry_count) to DLQ on flush
-_batch_dlq_tags = []    # delivery tags for DLQ messages (ACK after DLQ send)
+_batch_orms = []  # EventORM objects ready to bulk-insert
+_batch_tags = []  # delivery tags to ACK on success
+_batch_dlq = []  # (body, error, retry_count) to DLQ on flush
+_batch_dlq_tags = []  # delivery tags for DLQ messages (ACK after DLQ send)
 
 
 def flush_batch(channel):
@@ -297,7 +297,9 @@ def run_consumer():
     except Exception:
         # Flush any remaining buffered messages before dying
         if _batch_orms or _batch_dlq:
-            logger.info(f"[CONSUMER] Flushing {len(_batch_orms)} buffered events before exit...")
+            logger.info(
+                f"[CONSUMER] Flushing {len(_batch_orms)} buffered events before exit..."
+            )
             try:
                 flush_batch(channel)
             except Exception as fe:

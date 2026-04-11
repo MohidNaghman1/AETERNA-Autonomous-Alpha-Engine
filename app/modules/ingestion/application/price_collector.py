@@ -65,7 +65,7 @@ def fetch_prices(max_retries=5):
     headers = {"User-Agent": "Mozilla/5.0"}
     backoff = 10
     retry_count = 0
-    
+
     while retry_count < max_retries:
         try:
             logger.info(f"Fetching prices from CoinGecko: {COINGECKO_API}")
@@ -79,7 +79,9 @@ def fetch_prices(max_retries=5):
             return data
         except requests.exceptions.HTTPError as e:
             if resp.status_code == 429:
-                logger.warning(f"Rate limited (attempt {retry_count + 1}/{max_retries}). Sleeping {backoff}s...")
+                logger.warning(
+                    f"Rate limited (attempt {retry_count + 1}/{max_retries}). Sleeping {backoff}s..."
+                )
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 300)  # Exponential backoff up to 5 min
                 retry_count += 1
@@ -87,13 +89,17 @@ def fetch_prices(max_retries=5):
                 logger.error(f"HTTP error fetching prices: {e}")
                 raise e
         except Exception as e:
-            logger.error(f"Error fetching prices: {e} (attempt {retry_count + 1}/{max_retries}). Retrying in {backoff}s...")
+            logger.error(
+                f"Error fetching prices: {e} (attempt {retry_count + 1}/{max_retries}). Retrying in {backoff}s..."
+            )
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
             retry_count += 1
-    
+
     # Max retries exceeded - return empty list instead of crashing
-    logger.error(f"[ERROR] Max retries ({max_retries}) exceeded for CoinGecko. Returning empty price list.")
+    logger.error(
+        f"[ERROR] Max retries ({max_retries}) exceeded for CoinGecko. Returning empty price list."
+    )
     return []
 
 
@@ -160,13 +166,13 @@ def run_collector():
     """
     try:
         prices = fetch_prices(max_retries=5)
-        
+
         # Handle empty result (API failure or no data)
         if not prices:
             logger.warning("[PRICE] No price data available. Skipping this cycle.")
             logger.info("Price collection cycle completed (no data).")
             return
-        
+
         published = 0
         skipped_no_significance = 0
         skipped_duplicate = 0

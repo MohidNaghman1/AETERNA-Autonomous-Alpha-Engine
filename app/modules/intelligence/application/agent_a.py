@@ -159,7 +159,7 @@ def engagement_analysis(
 ) -> int:
     """
     Score based on engagement rate and verification status.
-    
+
     For news/RSS events, uses mention and hashtag presence as proxy for engagement.
 
     Args:
@@ -185,11 +185,11 @@ def engagement_analysis(
         content = event.get("content", {})
         mentions = content.get("mentions", [])
         hashtags = content.get("hashtags", [])
-        
+
         # News engagement score based on entity mentions and hashtags
         news_entities_count = len(mentions) if isinstance(mentions, list) else 0
         news_hashtags_count = len(hashtags) if isinstance(hashtags, list) else 0
-        
+
         # Boost score for RSS/news events with multiple mentions/hashtags
         if news_entities_count >= 2 or news_hashtags_count >= 3:
             # High engagement equivalent for news
@@ -403,7 +403,7 @@ def score_event(
 ) -> Dict[str, Any]:
     """
     Score a single event using weighted metrics.
-    
+
     Special handling for news/RSS events:
     - If mentioning 2+ crypto entities or 3+ hashtags, boost to guaranteed MEDIUM
     - Helps news events with crypto relevance reach alert threshold
@@ -471,17 +471,46 @@ def score_event(
         # ========================================================================
         event_type = event_dict.get("type", "")
         content = event_dict.get("content", {})
-        mentions = content.get("mentions", []) if isinstance(content.get("mentions"), list) else []
-        hashtags = content.get("hashtags", []) if isinstance(content.get("hashtags"), list) else []
-        
+        mentions = (
+            content.get("mentions", [])
+            if isinstance(content.get("mentions"), list)
+            else []
+        )
+        hashtags = (
+            content.get("hashtags", [])
+            if isinstance(content.get("hashtags"), list)
+            else []
+        )
+
         # Major crypto entities - if mentioned, boost relevance
-        major_crypto = {"bitcoin", "ethereum", "eth", "btc", "solana", "sol", "cardano", "ada", 
-                        "polkadot", "dot", "ripple", "xrp", "litecoin", "ltc", "dogecoin", "doge",
-                        "polygon", "matic", "avalanche", "avax"}
+        major_crypto = {
+            "bitcoin",
+            "ethereum",
+            "eth",
+            "btc",
+            "solana",
+            "sol",
+            "cardano",
+            "ada",
+            "polkadot",
+            "dot",
+            "ripple",
+            "xrp",
+            "litecoin",
+            "ltc",
+            "dogecoin",
+            "doge",
+            "polygon",
+            "matic",
+            "avalanche",
+            "avax",
+        }
         mentions_lower = [m.lower() for m in mentions] if mentions else []
         major_mentions = [m for m in mentions_lower if m in major_crypto]
-        
-        if event_type == "news" and (len(mentions) >= 2 or len(hashtags) >= 3 or len(major_mentions) >= 1):
+
+        if event_type == "news" and (
+            len(mentions) >= 2 or len(hashtags) >= 3 or len(major_mentions) >= 1
+        ):
             score = 65.0  # MEDIUM priority threshold + buffer
             priority = "MEDIUM"
             result = {

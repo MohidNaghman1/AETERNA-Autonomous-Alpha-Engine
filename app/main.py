@@ -97,13 +97,16 @@ async def lifespan(app: FastAPI):
                     pass
 
     import logging
+
     logger = logging.getLogger("startup")
 
     # Start Alert Consumer with detailed error logging
     try:
         if not alert_consumer:
             logger.info("[STARTUP] Starting AlertConsumer...")
-            logger.info(f"RabbitMQ env: RABBITMQ_URL={os.getenv('RABBITMQ_URL')}, RABBITMQ_HOST={os.getenv('RABBITMQ_HOST')}, RABBITMQ_USER={os.getenv('RABBITMQ_USER')}, RABBITMQ_VHOST={os.getenv('RABBITMQ_VHOST')}")
+            logger.info(
+                f"RabbitMQ env: RABBITMQ_URL={os.getenv('RABBITMQ_URL')}, RABBITMQ_HOST={os.getenv('RABBITMQ_HOST')}, RABBITMQ_USER={os.getenv('RABBITMQ_USER')}, RABBITMQ_VHOST={os.getenv('RABBITMQ_VHOST')}"
+            )
             alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
             alert_consumer.start()
             print("[STARTUP] Alert consumer started")
@@ -114,23 +117,35 @@ async def lifespan(app: FastAPI):
     # Start RabbitMQ Event Consumer in background thread (blocking consumer is FAST!)
     try:
         if not consumer_thread:
+
             def blocking_consumer_loop():
                 """Run blocking consumer with restart logic on crash."""
                 while True:
                     try:
-                        print("[CONSUMER-THREAD] Starting blocking RabbitMQ consumer...")
-                        logger.info(f"RabbitMQ env: RABBITMQ_URL={os.getenv('RABBITMQ_URL')}, RABBITMQ_HOST={os.getenv('RABBITMQ_HOST')}, RABBITMQ_USER={os.getenv('RABBITMQ_USER')}, RABBITMQ_VHOST={os.getenv('RABBITMQ_VHOST')}")
+                        print(
+                            "[CONSUMER-THREAD] Starting blocking RabbitMQ consumer..."
+                        )
+                        logger.info(
+                            f"RabbitMQ env: RABBITMQ_URL={os.getenv('RABBITMQ_URL')}, RABBITMQ_HOST={os.getenv('RABBITMQ_HOST')}, RABBITMQ_USER={os.getenv('RABBITMQ_USER')}, RABBITMQ_VHOST={os.getenv('RABBITMQ_VHOST')}"
+                        )
                         run_consumer()  # This blocks forever until error
                     except Exception as e:
-                        print(f"[CONSUMER-THREAD] ❌ Consumer crashed: {type(e).__name__}: {str(e)[:100]}")
+                        print(
+                            f"[CONSUMER-THREAD] ❌ Consumer crashed: {type(e).__name__}: {str(e)[:100]}"
+                        )
                         logger.error(f"[CONSUMER-THREAD] RabbitMQ consumer error: {e}")
                         traceback.print_exc()
                         print(f"[CONSUMER-THREAD] Restarting in 5 seconds...")
                         time.sleep(5)
                         # Restart consumer on crash
-            consumer_thread = threading.Thread(target=blocking_consumer_loop, daemon=True)
+
+            consumer_thread = threading.Thread(
+                target=blocking_consumer_loop, daemon=True
+            )
             consumer_thread.start()
-            print("[STARTUP] ✅ RabbitMQ blocking consumer started in background thread with auto-restart")
+            print(
+                "[STARTUP] ✅ RabbitMQ blocking consumer started in background thread with auto-restart"
+            )
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start RabbitMQ consumer thread: {e}")
         traceback.print_exc()
@@ -287,9 +302,7 @@ def system_health():
     rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
     try:
         connection = pika.BlockingConnection(
-            pika.URLParameters(rabbitmq_url),
-            connection_attempts=2,
-            retry_delay=1
+            pika.URLParameters(rabbitmq_url), connection_attempts=2, retry_delay=1
         )
         connection.close()
         diagnostics["rabbitmq"] = "[OK] Connected"
