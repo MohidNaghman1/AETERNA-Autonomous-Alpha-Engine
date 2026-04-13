@@ -29,6 +29,9 @@ from app.modules.admin.presentation.bootstrap import router as bootstrap_router
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
+from app.modules.intelligence.presentation.agent_b_debug import (
+    router as agent_b_debug_router,
+)
 from app.modules.ingestion.application.consumer import run_consumer
 from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.intelligence.application.agent_b_polling import (
@@ -285,6 +288,7 @@ app.include_router(admin_dashboard_router)
 app.include_router(admin_user_router)
 app.include_router(admin_role_router)
 app.include_router(admin_protected_router)
+app.include_router(agent_b_debug_router)
 
 
 @app.get("/")
