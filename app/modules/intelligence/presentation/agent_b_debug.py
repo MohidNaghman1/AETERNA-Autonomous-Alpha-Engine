@@ -12,7 +12,7 @@ Provides endpoints to inspect all Agent B related data:
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
-from app.shared.application.dependencies import get_db, get_current_user
+from app.shared.application.dependencies import get_db
 from app.modules.intelligence.infrastructure.models import (
     WalletProfileORM,
     EntityORM,
@@ -39,7 +39,6 @@ async def get_wallet_profiles(
     blockchain: str = Query("ethereum", description="Filter by blockchain"),
     tier: Optional[str] = Query(None, description="Filter by tier (high_performer, etc)"),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """
     Get all wallet profiles from database.
@@ -92,7 +91,7 @@ async def get_wallet_profiles(
                 "updated_at": profile.updated_at,
             })
         
-        logger.info(f"Retrieved {len(data)} wallet profiles for {current_user}")
+        logger.info(f"Retrieved {len(data)} wallet profiles")
         return data
         
     except Exception as e:
@@ -104,7 +103,6 @@ async def get_wallet_profiles(
 async def get_wallet_profile_by_address(
     address: str,
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """Get specific wallet profile by address."""
     try:
@@ -158,7 +156,6 @@ async def get_entities(
     limit: int = Query(100, ge=1, le=1000),
     verified_only: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """
     Get all entities (organizations, exchanges, funds, etc.).
@@ -199,7 +196,7 @@ async def get_entities(
                 "updated_at": entity.updated_at,
             })
         
-        logger.info(f"Retrieved {len(data)} entities for {current_user}")
+        logger.info(f"Retrieved {len(data)} entities")
         return data
         
     except Exception as e:
@@ -218,7 +215,6 @@ async def get_trade_records(
     limit: int = Query(100, ge=1, le=1000),
     profitable_only: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """
     Get historical trade records.
@@ -262,7 +258,7 @@ async def get_trade_records(
                 "created_at": trade.created_at,
             })
         
-        logger.info(f"Retrieved {len(data)} trade records for {current_user}")
+        logger.info(f"Retrieved {len(data)} trade records")
         return data
         
     except Exception as e:
@@ -279,7 +275,6 @@ async def get_trade_records(
 async def get_entity_profiles(
     limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """
     Get aggregated entity profiles across all wallets.
@@ -319,7 +314,7 @@ async def get_entity_profiles(
                 "updated_at": profile.updated_at,
             })
         
-        logger.info(f"Retrieved {len(data)} entity profiles for {current_user}")
+        logger.info(f"Retrieved {len(data)} entity profiles")
         return data
         
     except Exception as e:
@@ -338,7 +333,6 @@ async def get_processed_events_with_agent_b(
     priority: Optional[str] = Query(None, description="Filter by priority: HIGH, MEDIUM, LOW"),
     user_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """
     Get ProcessedEvents with embedded Agent B profiling data.
@@ -357,10 +351,6 @@ async def get_processed_events_with_agent_b(
         
         if user_id:
             query = query.where(ProcessedEvent.user_id == user_id)
-        else:
-            # Default to current user if available
-            if hasattr(current_user, 'id'):
-                query = query.where(ProcessedEvent.user_id == str(current_user.id))
         
         query = query.order_by(desc(ProcessedEvent.timestamp)).limit(limit)
         
@@ -384,7 +374,7 @@ async def get_processed_events_with_agent_b(
             }
             data.append(event_dict)
         
-        logger.info(f"Retrieved {len(data)} processed events with Agent B data for {current_user}")
+        logger.info(f"Retrieved {len(data)} processed events with Agent B data")
         return data
         
     except Exception as e:
@@ -396,7 +386,6 @@ async def get_processed_events_with_agent_b(
 async def get_processed_event_by_id(
     event_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """Get specific ProcessedEvent with full Agent B profiling."""
     try:
@@ -434,7 +423,6 @@ async def get_processed_event_by_id(
 @router.get("/statistics/summary", response_model=Dict[str, Any])
 async def get_agent_b_statistics(
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_user),
 ):
     """
     Get high-level statistics on Agent B data in database.
