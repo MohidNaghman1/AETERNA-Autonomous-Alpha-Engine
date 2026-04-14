@@ -1,11 +1,19 @@
 """
-Agent B Polling Consumer - The Profiler (Wallet Profiling via DB Polling)
-===========================================================================
+Agent B Polling Consumer - The Profiler (BACKFILL MODE)
+=========================================================
 
-Polls ProcessedEvent table for unprocessed events (without agent_b field)
-Profiles wallets using Agent B logic
-Updates ProcessedEvent.event_data with agent_b profiling data
-No RabbitMQ queue dependency - uses PostgreSQL polling
+NOTE: This module is now a BACKFILL utility only.
+      The PRIMARY path for profile persistence is in consumer.py's enrich_event_with_agent_b()
+
+Purpose:
+- Catches events that somehow bypassed the consumer enrichment
+- Re-profiles events missing agent_b data (for recovery)
+- Useful for backfilling old events before this logic was implemented
+
+Flow for NEW events: consumer.py → enrich_event_with_agent_b() → Profile + DB Persist ✓ (PRIMARY)
+Flow for OLD events: agent_b_polling.py → process_batch() → Update Event JSON only (BACKFILL)
+
+The polling approach is kept as a safety net but is no longer the primary ingestion path.
 """
 
 import argparse
@@ -45,10 +53,14 @@ def needs_agent_b_profiling(event_data: dict) -> bool:
 
 def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
     """
-    Add Agent B profiling to a ProcessedEvent.
+    Add Agent B profiling to a ProcessedEvent (BACKFILL MODE).
 
-    For on-chain events: profiles wallet and sets boost_priority flag
+    For on-chain transfers: profiles BOTH from_address and to_address  
+    For other events: profiles available wallet address
     For news/price events: marks as processed without profiling
+
+    NOTE: This function only updates the event JSON, not the database.
+          Wallet profile persistence happens in consumer.py's enrich_event_with_agent_b()
 
     Args:
         processed_event: ProcessedEvent ORM instance
@@ -62,40 +74,72 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         # Copy JSON payload before mutation so SQLAlchemy can persist the change.
         event_data = deepcopy(processed_event.event_data or {})
         event_source = event_data.get("source", "").lower()  # ethereum, or other
-        # Try all possible wallet address fields
-        wallet_addr = (
-            event_data.get("wallet_address")
-            or event_data.get("address")
-            or (
-                event_data.get("content", {}).get("from_address")
-                if isinstance(event_data.get("content"), dict)
-                else None
-            )
-            or (
-                event_data.get("content", {}).get("to_address")
-                if isinstance(event_data.get("content"), dict)
-                else None
-            )
-        )
+        content = event_data.get("content", {}) if isinstance(event_data.get("content"), dict) else {}
 
-        # Only profile if we have a wallet address (on-chain event)
+        # Extract all unique wallet addresses
+        addresses_to_profile = []
+        
+        # Top-level addresses (for non-transfer events)
+        wallet_addr = event_data.get("wallet_address") or event_data.get("address")
         if wallet_addr:
+            addresses_to_profile.append(wallet_addr.lower())
+
+        # On-chain transfer addresses (from_address and to_address for full profiling)
+        from_address = content.get("from_address")
+        to_address = content.get("to_address")
+        
+        if from_address and from_address.lower() not in addresses_to_profile:
+            addresses_to_profile.append(from_address.lower())
+        if to_address and to_address.lower() not in addresses_to_profile:
+            addresses_to_profile.append(to_address.lower())
+
+        profiling_results = {}
+        
+        # Profile all addresses
+        if addresses_to_profile:
             config = ProfilerConfig()
-            profiling_output = profile_wallet_from_event(
-                wallet_address=wallet_addr,
-                event_id=str(processed_event.id),
-                event_data=event_data,
-                db=db,
-                config=config,
-            )
+            
+            for idx, addr in enumerate(addresses_to_profile):
+                try:
+                    profiling_output = profile_wallet_from_event(
+                        wallet_address=addr,
+                        event_id=str(processed_event.id),
+                        event_data=event_data,
+                        db=db,
+                        config=config,
+                    )
+                    
+                    profiling_dict = profiling_output.model_dump(mode="json")
 
-            # Add profiling data to event_data
-            event_data["agent_b"] = profiling_output.model_dump(mode="json")
+                    # Store under specific keys for transfers
+                    if len(addresses_to_profile) == 1:
+                        # Single address - store as agent_b
+                        profiling_results["agent_b"] = profiling_dict
+                    elif from_address and from_address.lower() == addr:
+                        # Sender address - prioritize this for agent_b
+                        profiling_results["agent_b_sender"] = profiling_dict
+                        profiling_results["agent_b"] = profiling_dict
+                    elif to_address and to_address.lower() == addr:
+                        # Receiver address
+                        profiling_results["agent_b_receiver"] = profiling_dict
+                        # Use as fallback if no sender profiling exists
+                        if "agent_b" not in profiling_results:
+                            profiling_results["agent_b"] = profiling_dict
+                    else:
+                        profiling_results[f"agent_b_addr_{idx}"] = profiling_dict
 
+                    logger.info(
+                        f"[AGENT B BACKFILL] ✓ Profiled wallet #{idx + 1}/{len(addresses_to_profile)}: {addr[:8]}... "
+                        f"({profiling_output.profiling_signal}, boost={profiling_output.should_boost_priority})"
+                    )
+                except Exception as e:
+                    logger.error(f"[AGENT B BACKFILL] Failed to profile wallet {addr}: {e}")
+                    continue
+
+            # Merge profiling results
+            event_data.update(profiling_results)
             logger.info(
-                f"[AGENT B] ✓ Profiled event {processed_event.id}: "
-                f"{profiling_output.profiling_signal} "
-                f"(boost={profiling_output.should_boost_priority})"
+                f"[AGENT B BACKFILL] ✓ Event {processed_event.id}: Profiled {len(profiling_results)} wallet(s)"
             )
         else:
             # Non-wallet event (RSS, Price, etc.) - mark as processed without profiling
@@ -106,7 +150,7 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
                 "confidence_score": 0.0,
             }
             logger.debug(
-                f"[AGENT B] Marked event {processed_event.id} (non-wallet source={event_source})"
+                f"[AGENT B BACKFILL] Marked event {processed_event.id} (non-wallet source={event_source})"
             )
 
         # Update database
@@ -114,11 +158,11 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         flag_modified(processed_event, "event_data")
         processed_event.updated_at = datetime.utcnow()
         db.add(processed_event)
-        db.commit()
+        db.flush()
         return True
 
     except Exception as e:
-        logger.error(f"[AGENT B] ✗ Error processing event {processed_event.id}: {e}")
+        logger.error(f"[AGENT B BACKFILL] ✗ Error processing event {processed_event.id}: {e}", exc_info=True)
         try:
             db.rollback()
         except:
@@ -132,7 +176,10 @@ def process_batch(
     priority_filter=None,
 ):
     """
-    Process a batch of unprocessed events.
+    Process a batch of unprocessed events (BACKFILL MODE).
+    
+    This is now a safety net that handles events that somehow didn't get
+    enriched by the consumer.py enrich_event_with_agent_b() function.
 
     Returns:
         int: Number of successfully profiled events
@@ -162,24 +209,32 @@ def process_batch(
 
         if not needs_profiling:
             logger.debug(
-                f"[AGENT B] No events need profiling in the latest {len(candidate_events)} candidates"
+                f"[AGENT B BACKFILL] No events need profiling in the latest {len(candidate_events)} candidates"
             )
             return 0
 
-        logger.info(f"[AGENT B] Processing {len(needs_profiling)} events...")
+        logger.info(f"[AGENT B BACKFILL] Processing {len(needs_profiling)} events...")
 
         processed_count = 0
         for event in needs_profiling:
             if add_agent_b_to_event(event, db):
                 processed_count += 1
 
-        logger.info(
-            f"[AGENT B] ✓ Batch complete: {processed_count}/{len(needs_profiling)} processed"
-        )
+        # Commit ONCE after all events processed (not inside the loop)
+        try:
+            db.commit()
+            logger.info(
+                f"[AGENT B BACKFILL] ✓ Batch complete: {processed_count}/{len(needs_profiling)} processed"
+            )
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[AGENT B BACKFILL] ✗ Batch commit failed: {e}", exc_info=True)
+            return 0
+        
         return processed_count
 
     except Exception as e:
-        logger.error(f"[AGENT B] ✗ Batch error: {e}", exc_info=True)
+        logger.error(f"[AGENT B BACKFILL] ✗ Batch error: {e}", exc_info=True)
         return 0
     finally:
         db.close()

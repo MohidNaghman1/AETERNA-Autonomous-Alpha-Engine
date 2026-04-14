@@ -21,6 +21,7 @@ import json
 import logging
 from sqlalchemy import and_, cast, String
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import ARRAY
 
 from app.modules.intelligence.domain.agent_b_models import (
     WalletProfile,
@@ -155,7 +156,7 @@ def lookup_entity_by_wallet(wallet_address: str, db: Session) -> Optional[Entity
     try:
         entity_orm = (
             db.query(EntityORM)
-            .filter(EntityORM.wallets.contains([wallet_address.lower()]))
+            .filter(EntityORM.wallets.contains([wallet_address.lower()], autoescape=False))
             .first()
         )
 

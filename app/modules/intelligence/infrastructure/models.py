@@ -12,11 +12,10 @@ from sqlalchemy import (
     DateTime,
     JSON,
     Index,
-    ARRAY,
     Boolean,
     UUID,
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY
 from app.config.db import Base
 from datetime import datetime
 import uuid
