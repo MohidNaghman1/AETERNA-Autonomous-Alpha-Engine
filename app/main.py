@@ -213,28 +213,35 @@ async def lifespan(app: FastAPI):
         # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
         # This is MUCH faster than polling and avoids dual-consumer contention
         # The blocking consumer uses prefetch_count=500 for efficient queue draining
-        background_scheduler.add_job(
-            run_intelligence_scoring,
-            "interval",
-            seconds=INTELLIGENCE_SCORER_INTERVAL_SECONDS,
-            id="intelligence_scorer",
-        )
-        background_scheduler.add_job(
-            run_agent_b_profiling,
-            "interval",
-            seconds=AGENT_B_PROFILER_INTERVAL_SECONDS,
-            id="agent_b_profiler",
-        )
+        # 
+        # DISABLED: Scheduling polling for intelligence_scoring and agent_b_profiling
+        # These caused race conditions with the RabbitMQ consumer writing to processed_events
+        # The RabbitMQ consumer now handles BOTH scoring and wallet profile DB persistence
+        # via enrich_event_with_agent_b() inside process_event()
+        #
+        # background_scheduler.add_job(
+        #     run_intelligence_scoring,
+        #     "interval",
+        #     seconds=INTELLIGENCE_SCORER_INTERVAL_SECONDS,
+        #     id="intelligence_scorer",
+        # )
+        # background_scheduler.add_job(
+        #     run_agent_b_profiling,
+        #     "interval",
+        #     seconds=AGENT_B_PROFILER_INTERVAL_SECONDS,
+        #     id="agent_b_profiler",
+        # )
         background_scheduler.start()
         print(
             "[STARTUP] Scheduler started: "
             f"RSS({RSS_COLLECTOR_INTERVAL_SECONDS}s), "
-            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s), "
-            f"Intelligence(50events/{INTELLIGENCE_SCORER_INTERVAL_SECONDS}s), "
-            f"AgentB(50wallets/{AGENT_B_PROFILER_INTERVAL_SECONDS}s)"
+            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s)"
         )
         print(
-            "[STARTUP] ✅ FAST MODE: Using blocking RabbitMQ consumer (run_consumer) in background thread"
+            "[STARTUP] ✅ PRIMARY: Using blocking RabbitMQ consumer (run_consumer) in background thread"
+        )
+        print(
+            "[STARTUP] ✅ WALLET PROFILE PERSISTENCE: Enabled via enrich_event_with_agent_b() in consumer"
         )
     except Exception as e:
         print(f"[STARTUP] Scheduler failed: {e}")

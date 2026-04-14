@@ -309,7 +309,7 @@ def process_event(ch, method, properties, body):
         event.update(result)
 
         # =====================================================================
-        # FIX #1: RUN AGENT B BEFORE SAVING/ALERTING (prevents race condition)
+        # RUN AGENT B BEFORE SAVING/ALERTING (prevents race condition)
         # =====================================================================
         event = enrich_event_with_agent_b(event)
         # =====================================================================
@@ -404,6 +404,10 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 scores = score_event(event_dict)
                 priority = scores.get("priority", "LOW")
                 score = scores.get("score", 0)
+
+                # NOTE: Wallet profile DB persistence is handled by process_event (RabbitMQ consumer)
+                # via enrich_event_with_agent_b(). This polling function is only used as fallback
+                # for events that missed the queue and is no longer scheduled (disabled in main.py)
 
                 # Save ProcessedEvent and update EventORM content in a single commit
                 processed_event = ProcessedEvent(
