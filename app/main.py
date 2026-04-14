@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import pika
 import redis
 import os
-import asyncio
+import logging
 import traceback
 import time
 import threading
@@ -98,8 +98,6 @@ async def lifespan(app: FastAPI):
                     db.close()
                 except Exception:
                     pass
-
-    import logging
 
     logger = logging.getLogger("startup")
 
