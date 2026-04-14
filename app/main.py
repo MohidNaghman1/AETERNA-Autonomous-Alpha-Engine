@@ -211,7 +211,7 @@ async def lifespan(app: FastAPI):
         # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
         # This is MUCH faster than polling and avoids dual-consumer contention
         # The blocking consumer uses prefetch_count=500 for efficient queue draining
-        # 
+        #
         # DISABLED: Scheduling polling for intelligence_scoring and agent_b_profiling
         # These caused race conditions with the RabbitMQ consumer writing to processed_events
         # The RabbitMQ consumer now handles BOTH scoring and wallet profile DB persistence

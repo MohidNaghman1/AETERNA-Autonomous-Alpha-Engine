@@ -37,12 +37,14 @@ router = APIRouter(prefix="/api/debug/agent-b", tags=["agent-b-debug"])
 async def get_wallet_profiles(
     limit: int = Query(100, ge=1, le=1000),
     blockchain: str = Query("ethereum", description="Filter by blockchain"),
-    tier: Optional[str] = Query(None, description="Filter by tier (high_performer, etc)"),
+    tier: Optional[str] = Query(
+        None, description="Filter by tier (high_performer, etc)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get all wallet profiles from database.
-    
+
     Returns complete wallet profiling records including:
     - Wallet address & blockchain
     - Entity classification (whale, market_maker, etc.)
@@ -54,46 +56,48 @@ async def get_wallet_profiles(
         query = select(WalletProfileORM).where(
             WalletProfileORM.blockchain == blockchain
         )
-        
+
         if tier:
             query = query.where(WalletProfileORM.tier == tier)
-        
+
         query = query.order_by(desc(WalletProfileORM.updated_at)).limit(limit)
-        
+
         result = await db.execute(query)
         profiles = result.scalars().all()
-        
+
         data = []
         for profile in profiles:
-            data.append({
-                "wallet_id": str(profile.wallet_id),
-                "address": profile.address,
-                "blockchain": profile.blockchain,
-                "entity_type": profile.entity_type,
-                "entity_name": profile.entity_name,
-                "total_trades": profile.total_trades,
-                "profitable_trades": profile.profitable_trades,
-                "win_rate": profile.win_rate,
-                "avg_return_24h": profile.avg_return_24h,
-                "avg_return_7d": profile.avg_return_7d,
-                "best_trade_return": profile.best_trade_return,
-                "worst_trade_return": profile.worst_trade_return,
-                "behavior_cluster": profile.behavior_cluster,
-                "tier": profile.tier,
-                "confidence_score": profile.confidence_score,
-                "activity_frequency": profile.activity_frequency,
-                "last_activity": profile.last_activity,
-                "first_seen": profile.first_seen,
-                "preferred_tokens": profile.preferred_tokens,
-                "favorite_exchanges": profile.favorite_exchanges,
-                "favorite_dexes": profile.favorite_dexes,
-                "created_at": profile.created_at,
-                "updated_at": profile.updated_at,
-            })
-        
+            data.append(
+                {
+                    "wallet_id": str(profile.wallet_id),
+                    "address": profile.address,
+                    "blockchain": profile.blockchain,
+                    "entity_type": profile.entity_type,
+                    "entity_name": profile.entity_name,
+                    "total_trades": profile.total_trades,
+                    "profitable_trades": profile.profitable_trades,
+                    "win_rate": profile.win_rate,
+                    "avg_return_24h": profile.avg_return_24h,
+                    "avg_return_7d": profile.avg_return_7d,
+                    "best_trade_return": profile.best_trade_return,
+                    "worst_trade_return": profile.worst_trade_return,
+                    "behavior_cluster": profile.behavior_cluster,
+                    "tier": profile.tier,
+                    "confidence_score": profile.confidence_score,
+                    "activity_frequency": profile.activity_frequency,
+                    "last_activity": profile.last_activity,
+                    "first_seen": profile.first_seen,
+                    "preferred_tokens": profile.preferred_tokens,
+                    "favorite_exchanges": profile.favorite_exchanges,
+                    "favorite_dexes": profile.favorite_dexes,
+                    "created_at": profile.created_at,
+                    "updated_at": profile.updated_at,
+                }
+            )
+
         logger.info(f"Retrieved {len(data)} wallet profiles")
         return data
-        
+
     except Exception as e:
         logger.error(f"Error fetching wallet profiles: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -106,15 +110,13 @@ async def get_wallet_profile_by_address(
 ):
     """Get specific wallet profile by address."""
     try:
-        query = select(WalletProfileORM).where(
-            WalletProfileORM.address.ilike(address)
-        )
+        query = select(WalletProfileORM).where(WalletProfileORM.address.ilike(address))
         result = await db.execute(query)
         profile = result.scalar_one_or_none()
-        
+
         if not profile:
             raise HTTPException(status_code=404, detail="Wallet profile not found")
-        
+
         return {
             "wallet_id": str(profile.wallet_id),
             "address": profile.address,
@@ -140,7 +142,7 @@ async def get_wallet_profile_by_address(
             "created_at": profile.created_at,
             "updated_at": profile.updated_at,
         }
-        
+
     except Exception as e:
         logger.error(f"Error fetching wallet profile {address}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -159,7 +161,7 @@ async def get_entities(
 ):
     """
     Get all entities (organizations, exchanges, funds, etc.).
-    
+
     Returns:
     - Entity ID, name, type
     - Associated wallets
@@ -168,37 +170,39 @@ async def get_entities(
     """
     try:
         query = select(EntityORM)
-        
+
         if verified_only:
             query = query.where(EntityORM.verified == True)
-        
+
         query = query.order_by(desc(EntityORM.updated_at)).limit(limit)
-        
+
         result = await db.execute(query)
         entities = result.scalars().all()
-        
+
         data = []
         for entity in entities:
-            data.append({
-                "entity_id": entity.entity_id,
-                "name": entity.name,
-                "entity_type": entity.entity_type,
-                "wallets": entity.wallets,
-                "description": entity.description,
-                "website": entity.website,
-                "twitter_handle": entity.twitter_handle,
-                "verified": entity.verified,
-                "verification_sources": entity.verification_sources,
-                "total_capital_tracked_usd": entity.total_capital_tracked_usd,
-                "total_transactions": entity.total_transactions,
-                "reliability_score": entity.reliability_score,
-                "created_at": entity.created_at,
-                "updated_at": entity.updated_at,
-            })
-        
+            data.append(
+                {
+                    "entity_id": entity.entity_id,
+                    "name": entity.name,
+                    "entity_type": entity.entity_type,
+                    "wallets": entity.wallets,
+                    "description": entity.description,
+                    "website": entity.website,
+                    "twitter_handle": entity.twitter_handle,
+                    "verified": entity.verified,
+                    "verification_sources": entity.verification_sources,
+                    "total_capital_tracked_usd": entity.total_capital_tracked_usd,
+                    "total_transactions": entity.total_transactions,
+                    "reliability_score": entity.reliability_score,
+                    "created_at": entity.created_at,
+                    "updated_at": entity.updated_at,
+                }
+            )
+
         logger.info(f"Retrieved {len(data)} entities")
         return data
-        
+
     except Exception as e:
         logger.error(f"Error fetching entities: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -218,7 +222,7 @@ async def get_trade_records(
 ):
     """
     Get historical trade records.
-    
+
     Returns trade-by-trade data:
     - Wallet address involved
     - Token in/out, amount, USD value
@@ -228,39 +232,41 @@ async def get_trade_records(
     """
     try:
         query = select(TradeRecordORM)
-        
+
         if wallet_address:
             query = query.where(TradeRecordORM.wallet_address.ilike(wallet_address))
-        
+
         if profitable_only:
             query = query.where(TradeRecordORM.is_profitable == True)
-        
+
         query = query.order_by(desc(TradeRecordORM.timestamp)).limit(limit)
-        
+
         result = await db.execute(query)
         trades = result.scalars().all()
-        
+
         data = []
         for trade in trades:
-            data.append({
-                "trade_id": trade.trade_id,
-                "wallet_address": trade.wallet_address,
-                "token_in": trade.token_in,
-                "token_out": trade.token_out,
-                "amount_in": trade.amount_in,
-                "amount_out": trade.amount_out,
-                "usd_value": trade.usd_value,
-                "exchange_or_dex": trade.exchange_or_dex,
-                "is_profitable": trade.is_profitable,
-                "return_percentage": trade.return_percentage,
-                "return_usd": trade.return_usd,
-                "timestamp": trade.timestamp,
-                "created_at": trade.created_at,
-            })
-        
+            data.append(
+                {
+                    "trade_id": trade.trade_id,
+                    "wallet_address": trade.wallet_address,
+                    "token_in": trade.token_in,
+                    "token_out": trade.token_out,
+                    "amount_in": trade.amount_in,
+                    "amount_out": trade.amount_out,
+                    "usd_value": trade.usd_value,
+                    "exchange_or_dex": trade.exchange_or_dex,
+                    "is_profitable": trade.is_profitable,
+                    "return_percentage": trade.return_percentage,
+                    "return_usd": trade.return_usd,
+                    "timestamp": trade.timestamp,
+                    "created_at": trade.created_at,
+                }
+            )
+
         logger.info(f"Retrieved {len(data)} trade records")
         return data
-        
+
     except Exception as e:
         logger.error(f"Error fetching trade records: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -278,7 +284,7 @@ async def get_entity_profiles(
 ):
     """
     Get aggregated entity profiles across all wallets.
-    
+
     Returns:
     - Entity aggregate metrics
     - Number of wallets tracked
@@ -286,37 +292,41 @@ async def get_entity_profiles(
     - Risk scores
     """
     try:
-        query = select(EntityProfileORM).order_by(
-            desc(EntityProfileORM.updated_at)
-        ).limit(limit)
-        
+        query = (
+            select(EntityProfileORM)
+            .order_by(desc(EntityProfileORM.updated_at))
+            .limit(limit)
+        )
+
         result = await db.execute(query)
         profiles = result.scalars().all()
-        
+
         data = []
         for profile in profiles:
-            data.append({
-                "entity_id": profile.entity_id,
-                "entity_name": profile.entity_name,
-                "entity_type": profile.entity_type,
-                "total_wallets": profile.total_wallets,
-                "unique_tokens_traded": profile.unique_tokens_traded,
-                "total_trades_across_wallets": profile.total_trades_across_wallets,
-                "aggregate_win_rate": profile.aggregate_win_rate,
-                "aggregate_profitable_trades": profile.aggregate_profitable_trades,
-                "best_wallet": profile.best_wallet,
-                "best_wallet_win_rate": profile.best_wallet_win_rate,
-                "risk_score": profile.risk_score,
-                "prediction_confidence": profile.prediction_confidence,
-                "performance_last_7d": profile.performance_last_7d,
-                "performance_last_30d": profile.performance_last_30d,
-                "created_at": profile.created_at,
-                "updated_at": profile.updated_at,
-            })
-        
+            data.append(
+                {
+                    "entity_id": profile.entity_id,
+                    "entity_name": profile.entity_name,
+                    "entity_type": profile.entity_type,
+                    "total_wallets": profile.total_wallets,
+                    "unique_tokens_traded": profile.unique_tokens_traded,
+                    "total_trades_across_wallets": profile.total_trades_across_wallets,
+                    "aggregate_win_rate": profile.aggregate_win_rate,
+                    "aggregate_profitable_trades": profile.aggregate_profitable_trades,
+                    "best_wallet": profile.best_wallet,
+                    "best_wallet_win_rate": profile.best_wallet_win_rate,
+                    "risk_score": profile.risk_score,
+                    "prediction_confidence": profile.prediction_confidence,
+                    "performance_last_7d": profile.performance_last_7d,
+                    "performance_last_30d": profile.performance_last_30d,
+                    "created_at": profile.created_at,
+                    "updated_at": profile.updated_at,
+                }
+            )
+
         logger.info(f"Retrieved {len(data)} entity profiles")
         return data
-        
+
     except Exception as e:
         logger.error(f"Error fetching entity profiles: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -330,13 +340,15 @@ async def get_entity_profiles(
 @router.get("/processed-events", response_model=List[Dict[str, Any]])
 async def get_processed_events_with_agent_b(
     limit: int = Query(100, ge=1, le=1000),
-    priority: Optional[str] = Query(None, description="Filter by priority: HIGH, MEDIUM, LOW"),
+    priority: Optional[str] = Query(
+        None, description="Filter by priority: HIGH, MEDIUM, LOW"
+    ),
     user_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get ProcessedEvents with embedded Agent B profiling data.
-    
+
     Returns:
     - Event ID, timestamp, priority
     - Complete event_data JSON (includes agent_b profiling)
@@ -345,18 +357,18 @@ async def get_processed_events_with_agent_b(
     """
     try:
         query = select(ProcessedEvent)
-        
+
         if priority:
             query = query.where(ProcessedEvent.priority == priority)
-        
+
         if user_id:
             query = query.where(ProcessedEvent.user_id == user_id)
-        
+
         query = query.order_by(desc(ProcessedEvent.timestamp)).limit(limit)
-        
+
         result = await db.execute(query)
         events = result.scalars().all()
-        
+
         data = []
         for event in events:
             event_dict = {
@@ -373,10 +385,10 @@ async def get_processed_events_with_agent_b(
                 "updated_at": event.updated_at,
             }
             data.append(event_dict)
-        
+
         logger.info(f"Retrieved {len(data)} processed events with Agent B data")
         return data
-        
+
     except Exception as e:
         logger.error(f"Error fetching processed events: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -392,10 +404,10 @@ async def get_processed_event_by_id(
         query = select(ProcessedEvent).where(ProcessedEvent.id == event_id)
         result = await db.execute(query)
         event = result.scalar_one_or_none()
-        
+
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
-        
+
         return {
             "id": event.id,
             "user_id": event.user_id,
@@ -409,7 +421,7 @@ async def get_processed_event_by_id(
             "event_data": event.event_data,  # Full JSON with agent_b
             "updated_at": event.updated_at,
         }
-        
+
     except Exception as e:
         logger.error(f"Error fetching event {event_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -426,7 +438,7 @@ async def get_agent_b_statistics(
 ):
     """
     Get high-level statistics on Agent B data in database.
-    
+
     Returns counts and summaries of:
     - Total wallet profiles
     - Total entities
@@ -438,39 +450,37 @@ async def get_agent_b_statistics(
         wallet_count = (
             await db.execute(select(func.count(WalletProfileORM.wallet_id)))
         ).scalar() or 0
-        
+
         # Count entities
         entity_count = (
             await db.execute(select(func.count(EntityORM.entity_id)))
         ).scalar() or 0
-        
+
         # Count trade records
         trade_count = (
             await db.execute(select(func.count(TradeRecordORM.trade_id)))
         ).scalar() or 0
-        
+
         # Count entity profiles
         profile_count = (
             await db.execute(select(func.count(EntityProfileORM.entity_id)))
         ).scalar() or 0
-        
+
         # Count processed events with agent_b
         events_with_agent_b = (
-            await db.execute(
-                select(func.count(ProcessedEvent.id))
-            )
+            await db.execute(select(func.count(ProcessedEvent.id)))
         ).scalar() or 0
-        
+
         # Average win rate
         avg_win_rate = (
             await db.execute(select(func.avg(WalletProfileORM.win_rate)))
         ).scalar() or 0
-        
+
         # Average confidence score
         avg_confidence = (
             await db.execute(select(func.avg(WalletProfileORM.confidence_score)))
         ).scalar() or 0
-        
+
         return {
             "total_wallet_profiles": wallet_count,
             "total_entities": entity_count,
@@ -481,7 +491,7 @@ async def get_agent_b_statistics(
             "average_confidence_score": round(avg_confidence, 4),
             "timestamp": datetime.utcnow(),
         }
-        
+
     except Exception as e:
         logger.error(f"Error fetching statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

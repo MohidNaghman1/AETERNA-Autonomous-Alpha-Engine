@@ -98,7 +98,7 @@ def lookup_wallet_profile(wallet_address: str, db: Session) -> Optional[WalletPr
     """
     if not wallet_address or not isinstance(wallet_address, str):
         return None
-    
+
     try:
         # Query wallet from ORM
         wallet_orm = (
@@ -158,11 +158,13 @@ def lookup_entity_by_wallet(wallet_address: str, db: Session) -> Optional[Entity
     """
     if not wallet_address or not isinstance(wallet_address, str):
         return None
-    
+
     try:
         entity_orm = (
             db.query(EntityORM)
-            .filter(EntityORM.wallets.contains([wallet_address.lower()], autoescape=False))
+            .filter(
+                EntityORM.wallets.contains([wallet_address.lower()], autoescape=False)
+            )
             .first()
         )
 
@@ -213,7 +215,7 @@ def calculate_win_rate_from_trades(
     """
     if not wallet_address or not isinstance(wallet_address, str):
         return 0.0, 0, 0
-    
+
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
@@ -265,7 +267,7 @@ def get_best_worst_trades(
     """
     if not wallet_address or not isinstance(wallet_address, str):
         return 0.0, 0.0
-    
+
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
@@ -315,7 +317,7 @@ def get_preferred_tokens(
     """
     if not wallet_address or not isinstance(wallet_address, str):
         return []
-    
+
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
@@ -375,7 +377,7 @@ def build_wallet_profile_from_trades(
     """Synthesize a lightweight wallet profile directly from trade history."""
     if not wallet_address or not isinstance(wallet_address, str):
         return None
-    
+
     if config is None:
         config = ProfilerConfig()
 
@@ -462,7 +464,7 @@ def summarize_wallet_observations(
     """Build a lightweight observed-activity summary from processed events."""
     if not wallet_address or not isinstance(wallet_address, str):
         return None
-    
+
     try:
         candidate_rows = (
             db.query(ProcessedEvent)
@@ -566,7 +568,7 @@ def infer_entity_from_context(
     """Infer a wallet category from repeated behavior without claiming verified ownership."""
     if not wallet_address or not isinstance(wallet_address, str):
         return None
-    
+
     wallet_lower = wallet_address.lower()
     if wallet_lower == ZERO_ADDRESS:
         return {

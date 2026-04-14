@@ -55,7 +55,7 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
     """
     Add Agent B profiling to a ProcessedEvent (BACKFILL MODE).
 
-    For on-chain transfers: profiles BOTH from_address and to_address  
+    For on-chain transfers: profiles BOTH from_address and to_address
     For other events: profiles available wallet address
     For news/price events: marks as processed without profiling
 
@@ -74,11 +74,15 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         # Copy JSON payload before mutation so SQLAlchemy can persist the change.
         event_data = deepcopy(processed_event.event_data or {})
         event_source = event_data.get("source", "").lower()  # ethereum, or other
-        content = event_data.get("content", {}) if isinstance(event_data.get("content"), dict) else {}
+        content = (
+            event_data.get("content", {})
+            if isinstance(event_data.get("content"), dict)
+            else {}
+        )
 
         # Extract all unique wallet addresses
         addresses_to_profile = []
-        
+
         # Top-level addresses (for non-transfer events)
         wallet_addr = event_data.get("wallet_address") or event_data.get("address")
         if wallet_addr:
@@ -87,18 +91,18 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         # On-chain transfer addresses (from_address and to_address for full profiling)
         from_address = content.get("from_address")
         to_address = content.get("to_address")
-        
+
         if from_address and from_address.lower() not in addresses_to_profile:
             addresses_to_profile.append(from_address.lower())
         if to_address and to_address.lower() not in addresses_to_profile:
             addresses_to_profile.append(to_address.lower())
 
         profiling_results = {}
-        
+
         # Profile all addresses
         if addresses_to_profile:
             config = ProfilerConfig()
-            
+
             for idx, addr in enumerate(addresses_to_profile):
                 try:
                     profiling_output = profile_wallet_from_event(
@@ -108,7 +112,7 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
                         db=db,
                         config=config,
                     )
-                    
+
                     profiling_dict = profiling_output.model_dump(mode="json")
 
                     # Store under specific keys for transfers
@@ -133,7 +137,9 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
                         f"({profiling_output.profiling_signal}, boost={profiling_output.should_boost_priority})"
                     )
                 except Exception as e:
-                    logger.error(f"[AGENT B BACKFILL] Failed to profile wallet {addr}: {e}")
+                    logger.error(
+                        f"[AGENT B BACKFILL] Failed to profile wallet {addr}: {e}"
+                    )
                     continue
 
             # Merge profiling results
@@ -162,7 +168,10 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         return True
 
     except Exception as e:
-        logger.error(f"[AGENT B BACKFILL] ✗ Error processing event {processed_event.id}: {e}", exc_info=True)
+        logger.error(
+            f"[AGENT B BACKFILL] ✗ Error processing event {processed_event.id}: {e}",
+            exc_info=True,
+        )
         try:
             db.rollback()
         except:
@@ -177,7 +186,7 @@ def process_batch(
 ):
     """
     Process a batch of unprocessed events (BACKFILL MODE).
-    
+
     This is now a safety net that handles events that somehow didn't get
     enriched by the consumer.py enrich_event_with_agent_b() function.
 
@@ -228,9 +237,11 @@ def process_batch(
             )
         except Exception as e:
             db.rollback()
-            logger.error(f"[AGENT B BACKFILL] ✗ Batch commit failed: {e}", exc_info=True)
+            logger.error(
+                f"[AGENT B BACKFILL] ✗ Batch commit failed: {e}", exc_info=True
+            )
             return 0
-        
+
         return processed_count
 
     except Exception as e:

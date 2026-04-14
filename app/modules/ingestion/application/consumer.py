@@ -172,12 +172,19 @@ def flush_batch(channel):
 
             # Trigger intelligence pipeline to score events and persist wallet profiles
             try:
-                from app.modules.intelligence.application.consumer import run_intelligence_poll
+                from app.modules.intelligence.application.consumer import (
+                    run_intelligence_poll,
+                )
+
                 processed_count = run_intelligence_poll(batch_size=len(_batch_orms))
                 if processed_count > 0:
-                    logger.info(f"[BATCH] ✅ Intelligence pipeline processed {processed_count} events with wallet profile persistence")
+                    logger.info(
+                        f"[BATCH] ✅ Intelligence pipeline processed {processed_count} events with wallet profile persistence"
+                    )
             except Exception as e:
-                logger.error(f"[BATCH] ⚠️ Intelligence pipeline error (non-blocking): {e}")
+                logger.error(
+                    f"[BATCH] ⚠️ Intelligence pipeline error (non-blocking): {e}"
+                )
 
             # ACK all successfully committed messages
             for tag in _batch_tags:

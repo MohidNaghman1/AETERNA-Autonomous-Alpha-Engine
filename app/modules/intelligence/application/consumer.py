@@ -19,7 +19,10 @@ from app.modules.intelligence.application.agent_b import (
     profile_wallet_from_event,
     ProfilerConfig,
 )
-from app.modules.intelligence.infrastructure.models import ProcessedEvent, WalletProfileORM
+from app.modules.intelligence.infrastructure.models import (
+    ProcessedEvent,
+    WalletProfileORM,
+)
 from app.modules.ingestion.infrastructure.models import EventORM
 from sqlalchemy import select
 from app.config.db import SessionLocal  # Use synchronous session for pika consumer
@@ -52,26 +55,26 @@ def get_recent_event_embeddings():
 def enrich_event_with_agent_b(event: dict) -> dict:
     """
     FIX #1 + #4: Enrich event with Agent B profiling AND persist wallet profile to DB.
-    
+
     This function:
     1. Profiles wallet(s) from the event
     2. Creates/updates WalletProfileORM record in database (PRIMARY path for persistence)
     3. Attaches profiling data to event JSON for alert generation
-    
+
     Handles both cases:
     - Wallets with trade history → Profile from trades
     - New wallets (no trades) → Profile from inferred entity type (e.g., "Whale")
-    
+
     Args:
         event: Event dict that may contain wallet addresses
-        
+
     Returns:
         Modified event dict with agent_b profiling added (or original if error/no profiling needed)
     """
     db = SessionLocal()
     try:
         event_source = event.get("source", "").lower()
-        
+
         # Only profile on-chain events
         if event_source != "ethereum":
             # Mark non-wallet events as processed without profiling
@@ -82,10 +85,12 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                     "confidence_score": 0.0,
                 }
             return event
-        
+
         # Extract wallet addresses (both sender and receiver for transfers)
-        content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
-        
+        content = (
+            event.get("content", {}) if isinstance(event.get("content"), dict) else {}
+        )
+
         # Try all possible wallet address fields
         wallet_addr = (
             event.get("wallet_address")
@@ -93,7 +98,7 @@ def enrich_event_with_agent_b(event: dict) -> dict:
             or content.get("from_address")
             or content.get("to_address")
         )
-        
+
         if not wallet_addr:
             # No wallet to profile
             if "agent_b" not in event:
@@ -103,9 +108,9 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                     "confidence_score": 0.0,
                 }
             return event
-        
+
         wallet_addr_lower = wallet_addr.lower()
-        
+
         # Run Agent B profiling
         config = ProfilerConfig()
         profiling_output = profile_wallet_from_event(
@@ -115,21 +120,21 @@ def enrich_event_with_agent_b(event: dict) -> dict:
             db=db,
             config=config,
         )
-        
+
         # ====================================================================
         # FIX #4 (CONSOLIDATED): Persist wallet profile to database
         # This is the PRIMARY path for profile creation (not agent_b_polling)
         # ====================================================================
         try:
             wp = profiling_output.wallet_profile  # Could be None if no trades
-            
+
             # Check if profile already exists
             existing_profile = db.execute(
                 select(WalletProfileORM).where(
                     WalletProfileORM.address == wallet_addr_lower
                 )
             ).scalar_one_or_none()
-            
+
             if not existing_profile and (wp or profiling_output.inferred_entity_name):
                 # Create new profile if we have either:
                 # 1. Calculated profile from trades (wp)
@@ -138,14 +143,15 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                     address=wallet_addr_lower,
                     blockchain="ethereum",
                     entity_type=profiling_output.inferred_entity_type or "unknown",
-                    entity_name=profiling_output.inferred_entity_name or "Unknown Wallet",
+                    entity_name=profiling_output.inferred_entity_name
+                    or "Unknown Wallet",
                     total_trades=wp.total_trades if wp else 0,
                     win_rate=wp.win_rate if wp else 0.0,
                     behavior_cluster=str(wp.behavior_cluster) if wp else "UNKNOWN",
                     tier=str(wp.tier) if wp else "UNVERIFIED",
                     confidence_score=profiling_output.confidence_score,
                     preferred_tokens=wp.preferred_tokens if wp else [],
-                    last_activity=datetime.utcnow()
+                    last_activity=datetime.utcnow(),
                 )
                 db.add(new_profile)
                 reason = "Trades" if wp else "Inference"
@@ -153,7 +159,7 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                     f"[DB PERSIST] Created profile: {wallet_addr_lower[:8]}... "
                     f"(entity={profiling_output.inferred_entity_name}, reason={reason})"
                 )
-            
+
             elif existing_profile and wp:
                 # Update existing profile with latest trade stats
                 existing_profile.last_activity = datetime.utcnow()
@@ -162,34 +168,42 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                 existing_profile.behavior_cluster = str(wp.behavior_cluster)
                 existing_profile.tier = str(wp.tier)
                 existing_profile.confidence_score = profiling_output.confidence_score
-                existing_profile.entity_type = profiling_output.inferred_entity_type or existing_profile.entity_type
-                existing_profile.entity_name = profiling_output.inferred_entity_name or existing_profile.entity_name
+                existing_profile.entity_type = (
+                    profiling_output.inferred_entity_type
+                    or existing_profile.entity_type
+                )
+                existing_profile.entity_name = (
+                    profiling_output.inferred_entity_name
+                    or existing_profile.entity_name
+                )
                 db.add(existing_profile)
                 logger.debug(
                     f"[DB PERSIST] Updated profile: {wallet_addr_lower[:8]}... "
                     f"(tier={existing_profile.tier}, trades={existing_profile.total_trades})"
                 )
-            
+
             # Flush to ensure profile is in DB before alert generation
             db.flush()
             db.commit()
-            
+
         except Exception as db_err:
             logger.error(
                 f"[DB PERSIST] Failed to save profile for {wallet_addr_lower}: {db_err}"
             )
             db.rollback()
             # Don't raise - allow event processing to continue
-        
+
         # Attach profiling to event JSON for alert generation
         event["agent_b"] = profiling_output.model_dump(mode="json")
         logger.info(
             f"[AGENT B] ✓ Enriched {event.get('id')}: {profiling_output.profiling_signal} "
             f"(boost={profiling_output.should_boost_priority})"
         )
-        
+
     except Exception as e:
-        logger.error(f"[AGENT B] ✗ Error enriching event {event.get('id')}: {e}", exc_info=True)
+        logger.error(
+            f"[AGENT B] ✗ Error enriching event {event.get('id')}: {e}", exc_info=True
+        )
         # Return event as-is if Agent B fails; don't block the pipeline
         if "agent_b" not in event:
             event["agent_b"] = {
@@ -202,7 +216,7 @@ def enrich_event_with_agent_b(event: dict) -> dict:
             db.close()
         except:
             pass
-    
+
     return event
 
 
