@@ -135,47 +135,47 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                 )
             ).scalar_one_or_none()
 
-            if not existing_profile and (wp or profiling_output.inferred_entity_name):
-                # Create new profile if we have either:
-                # 1. Calculated profile from trades (wp)
-                # 2. Inferred entity name (e.g., "Whale" even with no trades)
+            if not existing_profile:
+                # Create new profile for ANY wallet we see (not just those with history/inference)
+                # This allows tracking of all wallets from first event, avoiding "unknown" blind spots
                 new_profile = WalletProfileORM(
                     address=wallet_addr_lower,
                     blockchain="ethereum",
                     entity_type=profiling_output.inferred_entity_type or "unknown",
-                    entity_name=profiling_output.inferred_entity_name
-                    or "Unknown Wallet",
+                    entity_name=profiling_output.inferred_entity_name or "New Wallet",
                     total_trades=wp.total_trades if wp else 0,
+                    profitable_trades=wp.profitable_trades if wp else 0,
                     win_rate=wp.win_rate if wp else 0.0,
                     behavior_cluster=str(wp.behavior_cluster) if wp else "UNKNOWN",
                     tier=str(wp.tier) if wp else "UNVERIFIED",
-                    confidence_score=profiling_output.confidence_score,
+                    confidence_score=profiling_output.confidence_score or 0.1,
+                    activity_frequency="new",
                     preferred_tokens=wp.preferred_tokens if wp else [],
                     last_activity=datetime.utcnow(),
                 )
                 db.add(new_profile)
-                reason = "Trades" if wp else "Inference"
+                reason = "Trades" if wp else ("Inference" if profiling_output.inferred_entity_name else "Cold-Start")
                 logger.info(
                     f"[DB PERSIST] Created profile: {wallet_addr_lower[:8]}... "
-                    f"(entity={profiling_output.inferred_entity_name}, reason={reason})"
+                    f"(entity={profiling_output.inferred_entity_name or 'unknown'}, signal={profiling_output.profiling_signal}, reason={reason})"
                 )
 
-            elif existing_profile and wp:
-                # Update existing profile with latest trade stats
+            elif existing_profile and (wp or profiling_output.inferred_entity_name):
+                # Update existing profile if we have new/better information (trades or inference)
                 existing_profile.last_activity = datetime.utcnow()
-                existing_profile.total_trades = wp.total_trades
-                existing_profile.win_rate = wp.win_rate
-                existing_profile.behavior_cluster = str(wp.behavior_cluster)
-                existing_profile.tier = str(wp.tier)
-                existing_profile.confidence_score = profiling_output.confidence_score
-                existing_profile.entity_type = (
-                    profiling_output.inferred_entity_type
-                    or existing_profile.entity_type
-                )
-                existing_profile.entity_name = (
-                    profiling_output.inferred_entity_name
-                    or existing_profile.entity_name
-                )
+                if wp:
+                    # Update trade stats if available
+                    existing_profile.total_trades = wp.total_trades
+                    existing_profile.profitable_trades = wp.profitable_trades
+                    existing_profile.win_rate = wp.win_rate
+                    existing_profile.behavior_cluster = str(wp.behavior_cluster)
+                    existing_profile.tier = str(wp.tier)
+                    existing_profile.confidence_score = profiling_output.confidence_score
+                    existing_profile.preferred_tokens = wp.preferred_tokens
+                if profiling_output.inferred_entity_name:
+                    # Update entity info if inferred
+                    existing_profile.entity_type = profiling_output.inferred_entity_type or existing_profile.entity_type
+                    existing_profile.entity_name = profiling_output.inferred_entity_name or existing_profile.entity_name
                 db.add(existing_profile)
                 logger.debug(
                     f"[DB PERSIST] Updated profile: {wallet_addr_lower[:8]}... "
