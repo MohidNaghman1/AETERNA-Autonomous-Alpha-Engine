@@ -19,6 +19,7 @@ from app.shared.utils.monitoring import (
     EVENT_PROCESSING_TIME,
     start_metrics_server,
 )
+from app.modules.intelligence.application.consumer import ( run_intelligence_poll)
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.config.db import SessionLocal
 from app.shared.utils.validators import validate_event as validate_event_schema
@@ -168,18 +169,17 @@ def flush_batch(channel):
             db.bulk_save_objects(_batch_orms)
             db.commit()
             EVENTS_PROCESSED.labels(collector="consumer").inc(len(_batch_orms))
-            logger.info(f"[BATCH] ✅ Committed {len(_batch_orms)} events")
+            logger.info(f"[BATCH] ✅ Committed {len(_batch_orms)} events to EventORM")
 
-            # Trigger intelligence pipeline to score events and persist wallet profiles
+            # Score events and persist wallet profiles via intelligence pipeline
+            # (This processes all the database-committed EventORM records)
             try:
-                from app.modules.intelligence.application.consumer import (
-                    run_intelligence_poll,
-                )
+                   
 
                 processed_count = run_intelligence_poll(batch_size=len(_batch_orms))
                 if processed_count > 0:
                     logger.info(
-                        f"[BATCH] ✅ Intelligence pipeline processed {processed_count} events with wallet profile persistence"
+                        f"[BATCH] ✅ Intelligence pipeline: Scored {processed_count} events | Agent B enriched | Wallet profiles persisted"
                     )
             except Exception as e:
                 logger.error(
