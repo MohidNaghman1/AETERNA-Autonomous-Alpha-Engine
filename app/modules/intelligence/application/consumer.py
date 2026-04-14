@@ -149,7 +149,7 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                     behavior_cluster=str(wp.behavior_cluster) if wp else "UNKNOWN",
                     tier=str(wp.tier) if wp else "UNVERIFIED",
                     confidence_score=profiling_output.confidence_score or 0.1,
-                    activity_frequency="new",
+                    activity_frequency="inactive",
                     preferred_tokens=wp.preferred_tokens if wp else [],
                     last_activity=datetime.utcnow(),
                 )
