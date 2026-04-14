@@ -33,10 +33,7 @@ from app.modules.intelligence.presentation.agent_b_debug import (
     router as agent_b_debug_router,
 )
 from app.modules.ingestion.application.consumer import run_consumer
-from app.modules.intelligence.application.consumer import (
-    start_consumer as start_intelligence_consumer,
-    run_intelligence_poll,
-)
+from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.intelligence.application.agent_b_polling import (
     process_batch as process_agent_b_batch,
 )
@@ -150,32 +147,6 @@ async def lifespan(app: FastAPI):
             print(
                 "[STARTUP] ✅ RabbitMQ blocking consumer started in background thread with auto-restart"
             )
-
-        # Start Intelligence RabbitMQ Consumer (for wallet profile DB persistence)
-        def blocking_intelligence_consumer_loop():
-            while True:
-                try:
-                    print(
-                        "[INTELLIGENCE-CONSUMER-THREAD] Starting blocking RabbitMQ consumer for Intelligence (with DB persistence)..."
-                    )
-                    start_intelligence_consumer()  # This blocks forever until error
-                except Exception as e:
-                    print(
-                        f"[INTELLIGENCE-CONSUMER-THREAD] ❌ Consumer crashed: {type(e).__name__}: {str(e)[:100]}"
-                    )
-                    logger.error(f"[INTELLIGENCE-CONSUMER-THREAD] Intelligence RabbitMQ consumer error: {e}")
-                    traceback.print_exc()
-                    print(f"[INTELLIGENCE-CONSUMER-THREAD] Restarting in 5 seconds...")
-                    time.sleep(5)
-                    # Restart consumer on crash
-
-        intelligence_consumer_thread = threading.Thread(
-            target=blocking_intelligence_consumer_loop, daemon=True
-        )
-        intelligence_consumer_thread.start()
-        print(
-            "[STARTUP] ✅ Intelligence RabbitMQ consumer started (wallet profile DB persistence enabled)"
-        )
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start RabbitMQ consumer thread: {e}")
         traceback.print_exc()
