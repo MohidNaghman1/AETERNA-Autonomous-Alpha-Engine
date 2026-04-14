@@ -419,9 +419,11 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 priority = scores.get("priority", "LOW")
                 score = scores.get("score", 0)
 
-                # NOTE: Wallet profile DB persistence is handled by process_event (RabbitMQ consumer)
-                # via enrich_event_with_agent_b(). This polling function is only used as fallback
-                # for events that missed the queue and is no longer scheduled (disabled in main.py)
+                # =====================================================================
+                # AGENT B ENRICHMENT: Persist wallet profiles + attach profiling data
+                # =====================================================================
+                event_dict = enrich_event_with_agent_b(event_dict)
+                # =====================================================================
 
                 # Save ProcessedEvent and update EventORM content in a single commit
                 processed_event = ProcessedEvent(
@@ -433,7 +435,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                     engagement=scores.get("engagement", 0),
                     bot=scores.get("bot", 0),
                     dedup=scores.get("dedup", 0),
-                    event_data=event_dict,
+                    event_data=event_dict,  # Now includes agent_b profiling after enrichment
                     timestamp=datetime.utcnow(),
                 )
                 db.add(processed_event)
@@ -451,7 +453,9 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 db.refresh(processed_event)
 
                 logger.info(
-                    f"[INTELLIGENCE] ✅ Scored event {event_orm.id} | Priority: {priority} | Score: {score:.2f}"
+                    f"[INTELLIGENCE-POLL] ✅ Event {event_orm.id} | "
+                    f"Priority: {priority} | Score: {score:.2f} | "
+                    f"Agent B: {'Enriched+Persisted' if event_dict.get('agent_b') else 'N/A'}"
                 )
 
                 _generate_alert_for_scored_event(event_orm, event_dict, priority, score)
