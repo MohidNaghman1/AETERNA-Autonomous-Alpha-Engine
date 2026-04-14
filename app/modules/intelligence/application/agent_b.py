@@ -907,7 +907,7 @@ def profile_wallet_from_event(
                 output.confidence_score = min(
                     0.15 + (observed_activity["observed_event_count"] * 0.02), 0.4
                 )
-            if entity:
+            elif entity:
                 output.profiling_signal = "unverified"
                 output.confidence_score = calculate_confidence_score(
                     total_trades=0,
@@ -915,15 +915,7 @@ def profile_wallet_from_event(
                     entity_verified=entity.verified,
                     config=config,
                 )
-            elif output.profiling_signal not in {
-                "observed_wallet",
-                "mint_burn_wallet",
-                "exchange_like",
-                "market_maker_like",
-                "whale_like",
-                "bot_like",
-                "smart_money_like",
-            }:
+            else:
                 output.profiling_signal = "unknown"
             return output
 
@@ -954,7 +946,22 @@ def profile_wallet_from_event(
             )
 
         # Determine profiling signal
-        if tier == WalletTier.HIGH_PERFORMER:
+        if wallet_profile.total_trades == 0 and wallet_profile.entity_type != "unknown":
+            # Use entity_type if wallet has been identified but has no trades yet
+            entity_type_map = {
+                "whale": "whale_like",
+                "exchange": "exchange_like",
+                "market_maker": "market_maker_like",
+                "trading_bot": "bot_like",
+                "system_contract": "mint_burn_wallet",
+            }
+            output.profiling_signal = entity_type_map.get(
+                wallet_profile.entity_type, "unverified"
+            )
+            logger.debug(
+                f"Using entity type '{wallet_profile.entity_type}' as profiling signal for {wallet_address}"
+            )
+        elif tier == WalletTier.HIGH_PERFORMER:
             output.profiling_signal = "high_performer"
             output.should_boost_priority = True
             output.priority_boost_reason = (
