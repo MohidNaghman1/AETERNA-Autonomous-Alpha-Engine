@@ -96,6 +96,9 @@ def lookup_wallet_profile(wallet_address: str, db: Session) -> Optional[WalletPr
     Returns:
         WalletProfile if found, None otherwise
     """
+    if not wallet_address or not isinstance(wallet_address, str):
+        return None
+    
     try:
         # Query wallet from ORM
         wallet_orm = (
@@ -153,6 +156,9 @@ def lookup_entity_by_wallet(wallet_address: str, db: Session) -> Optional[Entity
     Returns:
         Entity info if found, None otherwise
     """
+    if not wallet_address or not isinstance(wallet_address, str):
+        return None
+    
     try:
         entity_orm = (
             db.query(EntityORM)
@@ -205,6 +211,9 @@ def calculate_win_rate_from_trades(
     Returns:
         (win_rate: float, profitable_trades: int, total_trades: int)
     """
+    if not wallet_address or not isinstance(wallet_address, str):
+        return 0.0, 0, 0
+    
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
@@ -254,6 +263,9 @@ def get_best_worst_trades(
     Returns:
         (best_return: float, worst_return: float)
     """
+    if not wallet_address or not isinstance(wallet_address, str):
+        return 0.0, 0.0
+    
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
@@ -301,6 +313,9 @@ def get_preferred_tokens(
     Returns:
         List of token addresses (most frequent first)
     """
+    if not wallet_address or not isinstance(wallet_address, str):
+        return []
+    
     try:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
@@ -358,6 +373,9 @@ def build_wallet_profile_from_trades(
     wallet_address: str, db: Session, config: Optional[ProfilerConfig] = None
 ) -> Optional[WalletProfile]:
     """Synthesize a lightweight wallet profile directly from trade history."""
+    if not wallet_address or not isinstance(wallet_address, str):
+        return None
+    
     if config is None:
         config = ProfilerConfig()
 
@@ -442,6 +460,9 @@ def summarize_wallet_observations(
     wallet_address: str, db: Session, limit: int = 200
 ) -> Optional[Dict[str, Any]]:
     """Build a lightweight observed-activity summary from processed events."""
+    if not wallet_address or not isinstance(wallet_address, str):
+        return None
+    
     try:
         candidate_rows = (
             db.query(ProcessedEvent)
@@ -543,6 +564,9 @@ def infer_entity_from_context(
     wallet_profile: Optional[WalletProfile] = None,
 ) -> Optional[Dict[str, Any]]:
     """Infer a wallet category from repeated behavior without claiming verified ownership."""
+    if not wallet_address or not isinstance(wallet_address, str):
+        return None
+    
     wallet_lower = wallet_address.lower()
     if wallet_lower == ZERO_ADDRESS:
         return {
