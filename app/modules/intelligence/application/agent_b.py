@@ -820,14 +820,14 @@ def build_user_facing_profile(
     elif profiling_output.inferred_entity_name:
         actor_label = profiling_output.inferred_entity_name
         actor_type = profiling_output.inferred_entity_type or profiling_signal
-        summary = f"{role_label} looks like {profiling_output.inferred_entity_name.lower()}."
+        summary = (
+            f"{role_label} looks like {profiling_output.inferred_entity_name.lower()}."
+        )
     else:
         actor_label = _default_actor_label(profiling_signal)
         actor_type = profiling_signal
         if profiling_signal == "observed_wallet":
-            summary = (
-                f"{role_label} is not labeled yet, but it has repeated tracked activity."
-            )
+            summary = f"{role_label} is not labeled yet, but it has repeated tracked activity."
         elif profiling_signal == "unknown":
             summary = f"{role_label} does not have enough evidence to classify yet."
         else:
@@ -875,9 +875,7 @@ def build_transfer_relationship_summary(
         sender_context["actor_label"] if sender_context else "Unclassified sender"
     )
     receiver_label = (
-        receiver_context["actor_label"]
-        if receiver_context
-        else "Unclassified receiver"
+        receiver_context["actor_label"] if receiver_context else "Unclassified receiver"
     )
 
     asset_label = (
@@ -917,7 +915,9 @@ def build_transfer_relationship_summary(
             "this more informative than a one-off unknown wallet movement."
         )
     else:
-        significance = "This adds relationship context to an otherwise anonymous transfer."
+        significance = (
+            "This adds relationship context to an otherwise anonymous transfer."
+        )
 
     return {
         "summary": summary,

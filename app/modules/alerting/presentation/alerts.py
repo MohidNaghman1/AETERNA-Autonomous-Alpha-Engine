@@ -11,7 +11,9 @@ from sqlalchemy import select, and_, desc, or_, func
 from app.shared.application.dependencies import get_db, get_current_user
 from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
-from app.modules.alerting.application.alert_generator import build_user_facing_alert_copy
+from app.modules.alerting.application.alert_generator import (
+    build_user_facing_alert_copy,
+)
 from app.modules.alerting.presentation.schema import Alert, AlertDismissResponse
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.modules.intelligence.infrastructure.models import (
