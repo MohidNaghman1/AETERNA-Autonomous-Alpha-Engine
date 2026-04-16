@@ -471,9 +471,9 @@ def summarize_wallet_observations(
             db.query(ProcessedEvent)
             .filter(
                 or_(
-                    ProcessedEvent.event_data["content"]["from_address"].astext
+                    ProcessedEvent.event_data["content"]["from_address"].astext()
                     == wallet_lower,
-                    ProcessedEvent.event_data["content"]["to_address"].astext
+                    ProcessedEvent.event_data["content"]["to_address"].astext()
                     == wallet_lower,
                 )
             )
