@@ -773,7 +773,7 @@ def _significance_for_signal(profiling_signal: str) -> str:
     )
 
 
-def _build_evidence_points(profiling_output: AgentBOutput) -> List[str]:
+def _build_evidence_points(profiling_output: AgentBOutput, event_data: Optional[Dict[str, Any]] = None) -> List[str]:
     """Return compact evidence snippets that support the wallet label."""
     evidence: List[str] = []
     observed_activity = profiling_output.observed_activity or {}
@@ -799,15 +799,33 @@ def _build_evidence_points(profiling_output: AgentBOutput) -> List[str]:
         if wallet_profile.win_rate > 0:
             evidence.append(f"{wallet_profile.win_rate:.0%} win rate")
 
+    # For cold-start wallets with no history, extract evidence from this event
+    if not evidence and event_data and isinstance(event_data, dict):
+        content = event_data.get("content", {})
+        if isinstance(content, dict):
+            usd_value = content.get("usd_value")
+            token = content.get("token") or content.get("token_out")
+            if isinstance(usd_value, (int, float)) and usd_value > 0:
+                evidence.append(f"${float(usd_value):,.0f} transfer detected")
+            if token:
+                evidence.append(f"Moving {token}")
+
     return evidence[:4]
 
 
 def build_user_facing_profile(
-    profiling_output: AgentBOutput, role: Optional[str] = None
+    profiling_output: AgentBOutput, role: Optional[str] = None, event_data: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Convert raw Agent B output into user-friendly wallet context."""
     profiling_signal = profiling_output.profiling_signal or "unknown"
     role_label = role.capitalize() if role else "Wallet"
+
+    # For cold-start wallets, extract transfer context from event
+    transfer_usd_value = 0.0
+    if event_data and isinstance(event_data, dict):
+        content = event_data.get("content", {})
+        if isinstance(content, dict):
+            transfer_usd_value = content.get("usd_value", 0.0)
 
     if profiling_output.entity_identified and profiling_output.entity_name:
         actor_label = profiling_output.entity_name
@@ -829,7 +847,15 @@ def build_user_facing_profile(
         if profiling_signal == "observed_wallet":
             summary = f"{role_label} is not labeled yet, but it has repeated tracked activity."
         elif profiling_signal == "unknown":
-            summary = f"{role_label} does not have enough evidence to classify yet."
+            # Improve label for cold-start wallets based on transfer amount
+            if isinstance(transfer_usd_value, (int, float)) and transfer_usd_value >= 100000:
+                actor_label = "High-value new wallet"
+                summary = f"{role_label} is new but moving significant volume in this transfer."
+            elif isinstance(transfer_usd_value, (int, float)) and transfer_usd_value >= 50000:
+                actor_label = "Large-transfer new wallet"
+                summary = f"{role_label} is new but involved in substantial transfer."
+            else:
+                summary = f"{role_label} does not have enough evidence to classify yet."
         else:
             summary = f"{role_label} looks like {actor_label.lower()}."
 
@@ -843,7 +869,7 @@ def build_user_facing_profile(
         ),
         "summary": summary,
         "significance": _significance_for_signal(profiling_signal),
-        "evidence": _build_evidence_points(profiling_output),
+        "evidence": _build_evidence_points(profiling_output, event_data),
     }
 
 
@@ -861,12 +887,12 @@ def build_transfer_relationship_summary(
         content = {}
 
     sender_context = (
-        build_user_facing_profile(sender_output, role="sender")
+        build_user_facing_profile(sender_output, role="sender", event_data=event_data)
         if sender_output
         else None
     )
     receiver_context = (
-        build_user_facing_profile(receiver_output, role="receiver")
+        build_user_facing_profile(receiver_output, role="receiver", event_data=event_data)
         if receiver_output
         else None
     )
@@ -878,45 +904,99 @@ def build_transfer_relationship_summary(
         receiver_context["actor_label"] if receiver_context else "Unclassified receiver"
     )
 
+    # Extract asset info from event
     asset_label = (
         content.get("token")
         or content.get("token_out")
         or content.get("token_in")
         or "assets"
     )
-    usd_value = content.get("usd_value")
-
-    if isinstance(usd_value, (int, float)) and usd_value > 0:
-        summary = (
-            f"{sender_label} sent {asset_label} worth ${float(usd_value):,.0f} "
-            f"to {receiver_label}."
-        )
-    else:
-        summary = f"{sender_label} sent {asset_label} to {receiver_label}."
+    usd_value = content.get("usd_value", 0.0)
 
     sender_signal = sender_output.profiling_signal if sender_output else "unknown"
     receiver_signal = receiver_output.profiling_signal if receiver_output else "unknown"
-    liquidity_signals = {"exchange_like", "market_maker_like", "bot_like"}
+    
+    if sender_signal == "unknown" and receiver_signal == "unknown":
+        return None
+
+    liquidity_signals = {"exchange_like", "market_maker_like", "bot_like", "mint_burn_wallet"}
     capital_signals = {"whale_like", "smart_money_like", "high_performer"}
 
-    if sender_signal in liquidity_signals or receiver_signal in liquidity_signals:
+    is_actionable = False
+
+    if sender_signal in liquidity_signals and receiver_signal in liquidity_signals:
+        # Operational Liquidity
+        is_actionable = False
+        if isinstance(usd_value, (int, float)) and usd_value > 0:
+            summary = (
+                f"{sender_label} routed {asset_label} worth ${float(usd_value):,.0f} "
+                f"to {receiver_label}."
+            )
+        else:
+            summary = f"{sender_label} routed {asset_label} to {receiver_label}."
         significance = (
-            "This transfer looks more like liquidity routing or treasury movement than "
-            "a simple anonymous wallet-to-wallet payment."
+            "This appears to be routine operational liquidity movement "
+            "between infrastructure or automated wallets."
         )
+
+    elif sender_signal in capital_signals and receiver_signal in liquidity_signals:
+        # Deposit
+        is_actionable = True
+        if isinstance(usd_value, (int, float)) and usd_value > 0:
+            summary = (
+                f"{sender_label} deposited {asset_label} worth ${float(usd_value):,.0f} "
+                f"to {receiver_label}."
+            )
+        else:
+            summary = f"{sender_label} deposited {asset_label} to {receiver_label}."
+        significance = (
+            "A major capital-holder is moving funds to an active liquidity venue, "
+            "possibly preparing to sell, trade, or deploy capital."
+        )
+
+    elif sender_signal in liquidity_signals and receiver_signal in capital_signals:
+        # Withdrawal
+        is_actionable = True
+        if isinstance(usd_value, (int, float)) and usd_value > 0:
+            summary = (
+                f"{sender_label} withdrew {asset_label} worth ${float(usd_value):,.0f} "
+                f"to {receiver_label}."
+            )
+        else:
+            summary = f"{sender_label} withdrew {asset_label} to {receiver_label}."
+        significance = (
+            "A major capital-holder is withdrawing funds from a liquidity venue, "
+            "often a sign of accumulation or secure storage."
+        )
+
     elif sender_signal in capital_signals or receiver_signal in capital_signals:
+        # Capital movement
+        is_actionable = True
+        if isinstance(usd_value, (int, float)) and usd_value > 0:
+            summary = (
+                f"{sender_label} sent {asset_label} worth ${float(usd_value):,.0f} "
+                f"to {receiver_label}."
+            )
+        else:
+            summary = f"{sender_label} sent {asset_label} to {receiver_label}."
         significance = (
-            "A large transfer involving a capital-heavy wallet can be worth tracking for "
-            "follow-on activity."
+            "A large transfer involving a high-capital wallet; tracking this "
+            "could reveal significant directional intent."
         )
-    elif sender_signal == "observed_wallet" or receiver_signal == "observed_wallet":
-        significance = (
-            "At least one side of the transfer has repeated tracked activity, making "
-            "this more informative than a one-off unknown wallet movement."
-        )
+
     else:
+        # Generic mixed or single unknown
+        is_actionable = False
+        if isinstance(usd_value, (int, float)) and usd_value > 0:
+            summary = (
+                f"{sender_label} sent {asset_label} worth ${float(usd_value):,.0f} "
+                f"to {receiver_label}."
+            )
+        else:
+            summary = f"{sender_label} sent {asset_label} to {receiver_label}."
         significance = (
-            "This adds relationship context to an otherwise anonymous transfer."
+            "At least one side of the transfer has tracked activity, adding some context, "
+            "though clear directional intent is uncertain."
         )
 
     return {
@@ -924,6 +1004,7 @@ def build_transfer_relationship_summary(
         "significance": significance,
         "sender_label": sender_label,
         "receiver_label": receiver_label,
+        "is_actionable": is_actionable,
     }
 
 
