@@ -154,7 +154,15 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                     last_activity=datetime.utcnow(),
                 )
                 db.add(new_profile)
-                reason = "Trades" if wp else ("Inference" if profiling_output.inferred_entity_name else "Cold-Start")
+                reason = (
+                    "Trades"
+                    if wp
+                    else (
+                        "Inference"
+                        if profiling_output.inferred_entity_name
+                        else "Cold-Start"
+                    )
+                )
                 logger.info(
                     f"[DB PERSIST] Created profile: {wallet_addr_lower[:8]}... "
                     f"(entity={profiling_output.inferred_entity_name or 'unknown'}, signal={profiling_output.profiling_signal}, reason={reason})"
@@ -170,12 +178,20 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                     existing_profile.win_rate = wp.win_rate
                     existing_profile.behavior_cluster = str(wp.behavior_cluster)
                     existing_profile.tier = str(wp.tier)
-                    existing_profile.confidence_score = profiling_output.confidence_score
+                    existing_profile.confidence_score = (
+                        profiling_output.confidence_score
+                    )
                     existing_profile.preferred_tokens = wp.preferred_tokens
                 if profiling_output.inferred_entity_name:
                     # Update entity info if inferred
-                    existing_profile.entity_type = profiling_output.inferred_entity_type or existing_profile.entity_type
-                    existing_profile.entity_name = profiling_output.inferred_entity_name or existing_profile.entity_name
+                    existing_profile.entity_type = (
+                        profiling_output.inferred_entity_type
+                        or existing_profile.entity_type
+                    )
+                    existing_profile.entity_name = (
+                        profiling_output.inferred_entity_name
+                        or existing_profile.entity_name
+                    )
                 db.add(existing_profile)
                 logger.debug(
                     f"[DB PERSIST] Updated profile: {wallet_addr_lower[:8]}... "
