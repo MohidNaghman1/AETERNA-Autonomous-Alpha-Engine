@@ -773,7 +773,9 @@ def _significance_for_signal(profiling_signal: str) -> str:
     )
 
 
-def _build_evidence_points(profiling_output: AgentBOutput, event_data: Optional[Dict[str, Any]] = None) -> List[str]:
+def _build_evidence_points(
+    profiling_output: AgentBOutput, event_data: Optional[Dict[str, Any]] = None
+) -> List[str]:
     """Return compact evidence snippets that support the wallet label."""
     evidence: List[str] = []
     observed_activity = profiling_output.observed_activity or {}
@@ -814,7 +816,9 @@ def _build_evidence_points(profiling_output: AgentBOutput, event_data: Optional[
 
 
 def build_user_facing_profile(
-    profiling_output: AgentBOutput, role: Optional[str] = None, event_data: Optional[Dict[str, Any]] = None
+    profiling_output: AgentBOutput,
+    role: Optional[str] = None,
+    event_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Convert raw Agent B output into user-friendly wallet context."""
     profiling_signal = profiling_output.profiling_signal or "unknown"
@@ -848,10 +852,16 @@ def build_user_facing_profile(
             summary = f"{role_label} is not labeled yet, but it has repeated tracked activity."
         elif profiling_signal == "unknown":
             # Improve label for cold-start wallets based on transfer amount
-            if isinstance(transfer_usd_value, (int, float)) and transfer_usd_value >= 100000:
+            if (
+                isinstance(transfer_usd_value, (int, float))
+                and transfer_usd_value >= 100000
+            ):
                 actor_label = "High-value new wallet"
                 summary = f"{role_label} is new but moving significant volume in this transfer."
-            elif isinstance(transfer_usd_value, (int, float)) and transfer_usd_value >= 50000:
+            elif (
+                isinstance(transfer_usd_value, (int, float))
+                and transfer_usd_value >= 50000
+            ):
                 actor_label = "Large-transfer new wallet"
                 summary = f"{role_label} is new but involved in substantial transfer."
             else:
@@ -892,7 +902,9 @@ def build_transfer_relationship_summary(
         else None
     )
     receiver_context = (
-        build_user_facing_profile(receiver_output, role="receiver", event_data=event_data)
+        build_user_facing_profile(
+            receiver_output, role="receiver", event_data=event_data
+        )
         if receiver_output
         else None
     )
@@ -915,11 +927,16 @@ def build_transfer_relationship_summary(
 
     sender_signal = sender_output.profiling_signal if sender_output else "unknown"
     receiver_signal = receiver_output.profiling_signal if receiver_output else "unknown"
-    
+
     if sender_signal == "unknown" and receiver_signal == "unknown":
         return None
 
-    liquidity_signals = {"exchange_like", "market_maker_like", "bot_like", "mint_burn_wallet"}
+    liquidity_signals = {
+        "exchange_like",
+        "market_maker_like",
+        "bot_like",
+        "mint_burn_wallet",
+    }
     capital_signals = {"whale_like", "smart_money_like", "high_performer"}
 
     is_actionable = False

@@ -226,7 +226,9 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                 )
                 profiling_data = profiling_output.model_dump(mode="json")
                 profiling_data["user_context"] = build_user_facing_profile(
-                    profiling_output, role=None if role == "primary" else role, event_data=event
+                    profiling_output,
+                    role=None if role == "primary" else role,
+                    event_data=event,
                 )
                 profiled_wallets[role] = {
                     "address": address,

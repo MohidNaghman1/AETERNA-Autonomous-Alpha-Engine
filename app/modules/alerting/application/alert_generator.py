@@ -182,20 +182,22 @@ def build_user_facing_alert_copy(
     title = f"{prefix_label}: {base_title}" if prefix_label else base_title
 
     body_parts = []
-    
+
     if relationship:
         # Ignore noisy routing operations or purely unclassified things unless they are actionable
-        # But wait, if relationship exists we use its summary. 
+        # But wait, if relationship exists we use its summary.
         if relationship.get("summary"):
             body_parts.append(relationship["summary"])
         significance = relationship.get("significance")
     else:
         # If no relationship, fallback to user context if not generic
-        if user_context.get("summary") and not _is_generic_actor_label(user_context.get("actor_label")):
+        if user_context.get("summary") and not _is_generic_actor_label(
+            user_context.get("actor_label")
+        ):
             body_parts.append(user_context["summary"])
         elif base_body:
             body_parts.append(base_body)
-        
+
         significance = user_context.get("significance")
         if _is_generic_actor_label(user_context.get("actor_label")):
             significance = None
