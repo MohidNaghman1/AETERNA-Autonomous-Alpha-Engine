@@ -697,6 +697,236 @@ def infer_entity_from_context(
     return None
 
 
+def get_confidence_band(
+    confidence_score: float, entity_identified: bool = False
+) -> str:
+    """Convert a raw confidence score into a user-friendly trust band."""
+    if entity_identified or confidence_score >= 0.8:
+        return "high"
+    if confidence_score >= 0.45:
+        return "medium"
+    return "low"
+
+
+def _default_actor_label(profiling_signal: str) -> str:
+    """Map internal profiling signals to user-facing actor labels."""
+    label_map = {
+        "exchange_like": "Likely exchange wallet",
+        "market_maker_like": "Likely market maker",
+        "whale_like": "Likely whale wallet",
+        "smart_money_like": "Likely smart-money wallet",
+        "high_performer": "High-performing wallet",
+        "medium_performer": "Active wallet",
+        "low_performer": "Low-performing wallet",
+        "bot_like": "Likely bot-driven wallet",
+        "observed_wallet": "Observed repeat-activity wallet",
+        "mint_burn_wallet": "Protocol mint/burn wallet",
+        "unverified": "Unverified wallet",
+        "unknown": "Unclassified wallet",
+        "error": "Unavailable wallet profile",
+    }
+    return label_map.get(profiling_signal, "Unclassified wallet")
+
+
+def _significance_for_signal(profiling_signal: str) -> str:
+    """Explain why a wallet classification matters to an end user."""
+    significance_map = {
+        "exchange_like": (
+            "This often reflects venue treasury or hot-wallet movement, which can hint "
+            "at liquidity shifts rather than isolated retail activity."
+        ),
+        "market_maker_like": (
+            "This kind of flow often matches routing or liquidity balancing, which can "
+            "matter more for market structure than for directional conviction."
+        ),
+        "whale_like": (
+            "Large transfers tied to capital-concentrated wallets can be worth watching "
+            "for follow-on positioning or treasury movement."
+        ),
+        "smart_money_like": (
+            "Strong historical performance can make future moves from this wallet more "
+            "interesting to monitor."
+        ),
+        "high_performer": (
+            "This wallet has strong trading history, so its transfers may deserve higher "
+            "attention than anonymous baseline flow."
+        ),
+        "bot_like": (
+            "Automated-looking flow may point to execution or routing behavior rather "
+            "than discretionary trader intent."
+        ),
+        "observed_wallet": (
+            "The wallet is still unlabeled, but it has appeared often enough to matter "
+            "more than a one-off anonymous transfer."
+        ),
+        "mint_burn_wallet": (
+            "This is a protocol/system address, so the transfer may reflect supply or "
+            "accounting mechanics instead of a user decision."
+        ),
+        "unknown": (
+            "There is not enough evidence yet to classify this wallet confidently."
+        ),
+    }
+    return significance_map.get(
+        profiling_signal,
+        "This adds wallet context to an otherwise anonymous transfer.",
+    )
+
+
+def _build_evidence_points(profiling_output: AgentBOutput) -> List[str]:
+    """Return compact evidence snippets that support the wallet label."""
+    evidence: List[str] = []
+    observed_activity = profiling_output.observed_activity or {}
+    wallet_profile = profiling_output.wallet_profile
+
+    observed_event_count = observed_activity.get("observed_event_count")
+    if isinstance(observed_event_count, int) and observed_event_count > 0:
+        evidence.append(f"{observed_event_count} observed transfers")
+
+    total_observed_usd = observed_activity.get("total_observed_usd")
+    if isinstance(total_observed_usd, (int, float)) and total_observed_usd > 0:
+        evidence.append(f"${float(total_observed_usd):,.0f} observed volume")
+
+    tokens_seen = observed_activity.get("tokens_seen") or []
+    if isinstance(tokens_seen, list) and tokens_seen:
+        if len(tokens_seen) == 1:
+            evidence.append(f"seen moving {tokens_seen[0]}")
+        else:
+            evidence.append(f"active across {len(tokens_seen)} tracked tokens")
+
+    if wallet_profile and wallet_profile.total_trades > 0:
+        evidence.append(f"{wallet_profile.total_trades} historical trades")
+        if wallet_profile.win_rate > 0:
+            evidence.append(f"{wallet_profile.win_rate:.0%} win rate")
+
+    return evidence[:4]
+
+
+def build_user_facing_profile(
+    profiling_output: AgentBOutput, role: Optional[str] = None
+) -> Dict[str, Any]:
+    """Convert raw Agent B output into user-friendly wallet context."""
+    profiling_signal = profiling_output.profiling_signal or "unknown"
+    role_label = role.capitalize() if role else "Wallet"
+
+    if profiling_output.entity_identified and profiling_output.entity_name:
+        actor_label = profiling_output.entity_name
+        actor_type = (
+            str(profiling_output.entity_type.value)
+            if profiling_output.entity_type
+            else "known_entity"
+        )
+        summary = f"{role_label} is linked to {profiling_output.entity_name}."
+    elif profiling_output.inferred_entity_name:
+        actor_label = profiling_output.inferred_entity_name
+        actor_type = profiling_output.inferred_entity_type or profiling_signal
+        summary = f"{role_label} looks like {profiling_output.inferred_entity_name.lower()}."
+    else:
+        actor_label = _default_actor_label(profiling_signal)
+        actor_type = profiling_signal
+        if profiling_signal == "observed_wallet":
+            summary = (
+                f"{role_label} is not labeled yet, but it has repeated tracked activity."
+            )
+        elif profiling_signal == "unknown":
+            summary = f"{role_label} does not have enough evidence to classify yet."
+        else:
+            summary = f"{role_label} looks like {actor_label.lower()}."
+
+    return {
+        "role": role,
+        "actor_label": actor_label,
+        "actor_type": actor_type,
+        "profiling_signal": profiling_signal,
+        "trust_level": get_confidence_band(
+            profiling_output.confidence_score, profiling_output.entity_identified
+        ),
+        "summary": summary,
+        "significance": _significance_for_signal(profiling_signal),
+        "evidence": _build_evidence_points(profiling_output),
+    }
+
+
+def build_transfer_relationship_summary(
+    sender_output: Optional[AgentBOutput],
+    receiver_output: Optional[AgentBOutput],
+    event_data: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Summarize the relationship between sender and receiver for the alert user."""
+    if not sender_output and not receiver_output:
+        return None
+
+    content = event_data.get("content", {}) if isinstance(event_data, dict) else {}
+    if not isinstance(content, dict):
+        content = {}
+
+    sender_context = (
+        build_user_facing_profile(sender_output, role="sender")
+        if sender_output
+        else None
+    )
+    receiver_context = (
+        build_user_facing_profile(receiver_output, role="receiver")
+        if receiver_output
+        else None
+    )
+
+    sender_label = (
+        sender_context["actor_label"] if sender_context else "Unclassified sender"
+    )
+    receiver_label = (
+        receiver_context["actor_label"]
+        if receiver_context
+        else "Unclassified receiver"
+    )
+
+    asset_label = (
+        content.get("token")
+        or content.get("token_out")
+        or content.get("token_in")
+        or "assets"
+    )
+    usd_value = content.get("usd_value")
+
+    if isinstance(usd_value, (int, float)) and usd_value > 0:
+        summary = (
+            f"{sender_label} sent {asset_label} worth ${float(usd_value):,.0f} "
+            f"to {receiver_label}."
+        )
+    else:
+        summary = f"{sender_label} sent {asset_label} to {receiver_label}."
+
+    sender_signal = sender_output.profiling_signal if sender_output else "unknown"
+    receiver_signal = receiver_output.profiling_signal if receiver_output else "unknown"
+    liquidity_signals = {"exchange_like", "market_maker_like", "bot_like"}
+    capital_signals = {"whale_like", "smart_money_like", "high_performer"}
+
+    if sender_signal in liquidity_signals or receiver_signal in liquidity_signals:
+        significance = (
+            "This transfer looks more like liquidity routing or treasury movement than "
+            "a simple anonymous wallet-to-wallet payment."
+        )
+    elif sender_signal in capital_signals or receiver_signal in capital_signals:
+        significance = (
+            "A large transfer involving a capital-heavy wallet can be worth tracking for "
+            "follow-on activity."
+        )
+    elif sender_signal == "observed_wallet" or receiver_signal == "observed_wallet":
+        significance = (
+            "At least one side of the transfer has repeated tracked activity, making "
+            "this more informative than a one-off unknown wallet movement."
+        )
+    else:
+        significance = "This adds relationship context to an otherwise anonymous transfer."
+
+    return {
+        "summary": summary,
+        "significance": significance,
+        "sender_label": sender_label,
+        "receiver_label": receiver_label,
+    }
+
+
 # ============================================================================
 # TIER & BEHAVIOR CLASSIFICATION
 # ============================================================================

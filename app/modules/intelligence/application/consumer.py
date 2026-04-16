@@ -18,6 +18,8 @@ from app.modules.intelligence.application.agent_a import score_event
 from app.modules.intelligence.application.agent_b import (
     profile_wallet_from_event,
     ProfilerConfig,
+    build_user_facing_profile,
+    build_transfer_relationship_summary,
 )
 from app.modules.intelligence.infrastructure.models import (
     ProcessedEvent,
@@ -50,6 +52,92 @@ QUEUE_NAME = os.environ.get("RABBITMQ_QUEUE", "events")
 def get_recent_event_embeddings():
     # Return a list of embeddings from recent events (last 30 min)
     return []
+
+
+def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
+    """Create or update a wallet profile from Agent B output."""
+    wallet_addr_lower = wallet_address.lower()
+    wallet_profile = profiling_output.wallet_profile
+
+    entity_type = (
+        profiling_output.entity_type.value
+        if profiling_output.entity_type
+        else profiling_output.inferred_entity_type or "unknown"
+    )
+    entity_name = (
+        profiling_output.entity_name
+        or profiling_output.inferred_entity_name
+        or "New Wallet"
+    )
+
+    existing_profile = db.execute(
+        select(WalletProfileORM).where(WalletProfileORM.address == wallet_addr_lower)
+    ).scalar_one_or_none()
+
+    if not existing_profile:
+        new_profile = WalletProfileORM(
+            address=wallet_addr_lower,
+            blockchain="ethereum",
+            entity_type=entity_type,
+            entity_name=entity_name,
+            total_trades=wallet_profile.total_trades if wallet_profile else 0,
+            profitable_trades=wallet_profile.profitable_trades if wallet_profile else 0,
+            win_rate=wallet_profile.win_rate if wallet_profile else 0.0,
+            avg_return_24h=wallet_profile.avg_return_24h if wallet_profile else 0.0,
+            avg_return_7d=wallet_profile.avg_return_7d if wallet_profile else 0.0,
+            best_trade_return=(
+                wallet_profile.best_trade_return if wallet_profile else 0.0
+            ),
+            worst_trade_return=(
+                wallet_profile.worst_trade_return if wallet_profile else 0.0
+            ),
+            behavior_cluster=(
+                str(wallet_profile.behavior_cluster) if wallet_profile else "UNKNOWN"
+            ),
+            tier=str(wallet_profile.tier) if wallet_profile else "UNVERIFIED",
+            confidence_score=profiling_output.confidence_score or 0.1,
+            activity_frequency=(
+                wallet_profile.activity_frequency if wallet_profile else "inactive"
+            ),
+            last_activity=datetime.utcnow(),
+            first_seen=wallet_profile.first_seen if wallet_profile else None,
+            preferred_tokens=wallet_profile.preferred_tokens if wallet_profile else [],
+            favorite_exchanges=(
+                wallet_profile.favorite_exchanges if wallet_profile else []
+            ),
+            favorite_dexes=wallet_profile.favorite_dexes if wallet_profile else [],
+        )
+        db.add(new_profile)
+        logger.info(
+            f"[DB PERSIST] Created profile: {wallet_addr_lower[:8]}... "
+            f"(entity={entity_name}, signal={profiling_output.profiling_signal})"
+        )
+        return
+
+    existing_profile.last_activity = datetime.utcnow()
+    existing_profile.entity_type = entity_type or existing_profile.entity_type
+    existing_profile.entity_name = entity_name or existing_profile.entity_name
+    existing_profile.confidence_score = profiling_output.confidence_score
+
+    if wallet_profile:
+        existing_profile.total_trades = wallet_profile.total_trades
+        existing_profile.profitable_trades = wallet_profile.profitable_trades
+        existing_profile.win_rate = wallet_profile.win_rate
+        existing_profile.avg_return_24h = wallet_profile.avg_return_24h
+        existing_profile.avg_return_7d = wallet_profile.avg_return_7d
+        existing_profile.best_trade_return = wallet_profile.best_trade_return
+        existing_profile.worst_trade_return = wallet_profile.worst_trade_return
+        existing_profile.behavior_cluster = str(wallet_profile.behavior_cluster)
+        existing_profile.tier = str(wallet_profile.tier)
+        existing_profile.activity_frequency = wallet_profile.activity_frequency
+        existing_profile.first_seen = (
+            existing_profile.first_seen or wallet_profile.first_seen
+        )
+        existing_profile.preferred_tokens = wallet_profile.preferred_tokens
+        existing_profile.favorite_exchanges = wallet_profile.favorite_exchanges
+        existing_profile.favorite_dexes = wallet_profile.favorite_dexes
+
+    db.add(existing_profile)
 
 
 def enrich_event_with_agent_b(event: dict) -> dict:
@@ -86,20 +174,31 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                 }
             return event
 
-        # Extract wallet addresses (both sender and receiver for transfers)
         content = (
             event.get("content", {}) if isinstance(event.get("content"), dict) else {}
         )
+        from_address = content.get("from_address")
+        to_address = content.get("to_address")
+        wallet_addr = event.get("wallet_address") or event.get("address")
 
-        # Try all possible wallet address fields
-        wallet_addr = (
-            event.get("wallet_address")
-            or event.get("address")
-            or content.get("from_address")
-            or content.get("to_address")
-        )
+        addresses_to_profile = []
+        seen_addresses = set()
 
-        if not wallet_addr:
+        if isinstance(from_address, str) and from_address:
+            sender_address = from_address.lower()
+            addresses_to_profile.append(("sender", sender_address))
+            seen_addresses.add(sender_address)
+
+        if isinstance(to_address, str) and to_address:
+            receiver_address = to_address.lower()
+            if receiver_address not in seen_addresses:
+                addresses_to_profile.append(("receiver", receiver_address))
+                seen_addresses.add(receiver_address)
+
+        if not addresses_to_profile and isinstance(wallet_addr, str) and wallet_addr:
+            addresses_to_profile.append(("primary", wallet_addr.lower()))
+
+        if not addresses_to_profile:
             # No wallet to profile
             if "agent_b" not in event:
                 event["agent_b"] = {
@@ -109,112 +208,75 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                 }
             return event
 
-        wallet_addr_lower = wallet_addr.lower()
-
-        # Run Agent B profiling
         config = ProfilerConfig()
-        profiling_output = profile_wallet_from_event(
-            wallet_address=wallet_addr,
-            event_id=str(event.get("id", "unknown")),
-            event_data=event,
-            db=db,
-            config=config,
-        )
+        profiled_wallets = {}
 
         # ====================================================================
         # FIX #4 (CONSOLIDATED): Persist wallet profile to database
         # This is the PRIMARY path for profile creation (not agent_b_polling)
         # ====================================================================
         try:
-            wp = profiling_output.wallet_profile  # Could be None if no trades
-
-            # Check if profile already exists
-            existing_profile = db.execute(
-                select(WalletProfileORM).where(
-                    WalletProfileORM.address == wallet_addr_lower
+            for role, address in addresses_to_profile:
+                profiling_output = profile_wallet_from_event(
+                    wallet_address=address,
+                    event_id=str(event.get("id", "unknown")),
+                    event_data=event,
+                    db=db,
+                    config=config,
                 )
-            ).scalar_one_or_none()
-
-            if not existing_profile:
-                # Create new profile for ANY wallet we see (not just those with history/inference)
-                # This allows tracking of all wallets from first event, avoiding "unknown" blind spots
-                new_profile = WalletProfileORM(
-                    address=wallet_addr_lower,
-                    blockchain="ethereum",
-                    entity_type=profiling_output.inferred_entity_type or "unknown",
-                    entity_name=profiling_output.inferred_entity_name or "New Wallet",
-                    total_trades=wp.total_trades if wp else 0,
-                    profitable_trades=wp.profitable_trades if wp else 0,
-                    win_rate=wp.win_rate if wp else 0.0,
-                    behavior_cluster=str(wp.behavior_cluster) if wp else "UNKNOWN",
-                    tier=str(wp.tier) if wp else "UNVERIFIED",
-                    confidence_score=profiling_output.confidence_score or 0.1,
-                    activity_frequency="inactive",
-                    preferred_tokens=wp.preferred_tokens if wp else [],
-                    last_activity=datetime.utcnow(),
+                profiling_data = profiling_output.model_dump(mode="json")
+                profiling_data["user_context"] = build_user_facing_profile(
+                    profiling_output, role=None if role == "primary" else role
                 )
-                db.add(new_profile)
-                reason = (
-                    "Trades"
-                    if wp
-                    else (
-                        "Inference"
-                        if profiling_output.inferred_entity_name
-                        else "Cold-Start"
-                    )
-                )
-                logger.info(
-                    f"[DB PERSIST] Created profile: {wallet_addr_lower[:8]}... "
-                    f"(entity={profiling_output.inferred_entity_name or 'unknown'}, signal={profiling_output.profiling_signal}, reason={reason})"
-                )
-
-            elif existing_profile and (wp or profiling_output.inferred_entity_name):
-                # Update existing profile if we have new/better information (trades or inference)
-                existing_profile.last_activity = datetime.utcnow()
-                if wp:
-                    # Update trade stats if available
-                    existing_profile.total_trades = wp.total_trades
-                    existing_profile.profitable_trades = wp.profitable_trades
-                    existing_profile.win_rate = wp.win_rate
-                    existing_profile.behavior_cluster = str(wp.behavior_cluster)
-                    existing_profile.tier = str(wp.tier)
-                    existing_profile.confidence_score = (
-                        profiling_output.confidence_score
-                    )
-                    existing_profile.preferred_tokens = wp.preferred_tokens
-                if profiling_output.inferred_entity_name:
-                    # Update entity info if inferred
-                    existing_profile.entity_type = (
-                        profiling_output.inferred_entity_type
-                        or existing_profile.entity_type
-                    )
-                    existing_profile.entity_name = (
-                        profiling_output.inferred_entity_name
-                        or existing_profile.entity_name
-                    )
-                db.add(existing_profile)
-                logger.debug(
-                    f"[DB PERSIST] Updated profile: {wallet_addr_lower[:8]}... "
-                    f"(tier={existing_profile.tier}, trades={existing_profile.total_trades})"
-                )
+                profiled_wallets[role] = {
+                    "address": address,
+                    "output": profiling_output,
+                    "data": profiling_data,
+                }
+                _persist_wallet_profile(db, address, profiling_output)
 
             # Flush to ensure profile is in DB before alert generation
             db.flush()
             db.commit()
 
         except Exception as db_err:
-            logger.error(
-                f"[DB PERSIST] Failed to save profile for {wallet_addr_lower}: {db_err}"
-            )
+            logger.error(f"[DB PERSIST] Failed to save wallet profiles: {db_err}")
             db.rollback()
             # Don't raise - allow event processing to continue
 
         # Attach profiling to event JSON for alert generation
-        event["agent_b"] = profiling_output.model_dump(mode="json")
-        logger.info(
-            f"[AGENT B] ✓ Enriched {event.get('id')}: {profiling_output.profiling_signal} "
-            f"(boost={profiling_output.should_boost_priority})"
+        sender_profile = profiled_wallets.get("sender")
+        receiver_profile = profiled_wallets.get("receiver")
+        primary_profile = (
+            sender_profile
+            or profiled_wallets.get("primary")
+            or receiver_profile
+            or next(iter(profiled_wallets.values()))
         )
+
+        relationship_summary = build_transfer_relationship_summary(
+            sender_profile["output"] if sender_profile else None,
+            receiver_profile["output"] if receiver_profile else None,
+            event,
+        )
+
+        primary_data = deepcopy(primary_profile["data"])
+        if sender_profile:
+            event["agent_b_sender"] = deepcopy(sender_profile["data"])
+            primary_data["sender"] = deepcopy(sender_profile["data"])
+        if receiver_profile:
+            event["agent_b_receiver"] = deepcopy(receiver_profile["data"])
+            primary_data["receiver"] = deepcopy(receiver_profile["data"])
+        if relationship_summary:
+            event["agent_b_relationship"] = relationship_summary
+            primary_data["relationship"] = relationship_summary
+
+        event["agent_b"] = primary_data
+        profile_signals = ", ".join(
+            f"{role}={info['output'].profiling_signal}"
+            for role, info in profiled_wallets.items()
+        )
+        logger.info(f"[AGENT B] Enriched {event.get('id')}: {profile_signals}")
 
     except Exception as e:
         logger.error(
@@ -259,11 +321,15 @@ def _generate_alert_for_scored_event(event_orm, event_dict, priority, score):
             "priority": priority,
             "score": score,
             "title": (
-                event_orm.content.get("title", "New Alert")
-                if event_orm.content
+                event_dict.get("content", {}).get("title", "New Alert")
+                if event_dict.get("content")
                 else "New Alert"
             ),
-            "content": event_orm.content or {},
+            "content": event_dict.get("content", {}) or {},
+            "agent_b": event_dict.get("agent_b", {}),
+            "agent_b_sender": event_dict.get("agent_b_sender"),
+            "agent_b_receiver": event_dict.get("agent_b_receiver"),
+            "agent_b_relationship": event_dict.get("agent_b_relationship"),
         }
 
         alert = generate_alert(alert_event, user_prefs=None)

@@ -11,6 +11,7 @@ from sqlalchemy import select, and_, desc, or_, func
 from app.shared.application.dependencies import get_db, get_current_user
 from app.modules.admin.application.dependencies import require_role
 from app.modules.alerting.infrastructure.models import Alert as AlertORM
+from app.modules.alerting.application.alert_generator import build_user_facing_alert_copy
 from app.modules.alerting.presentation.schema import Alert, AlertDismissResponse
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.modules.intelligence.infrastructure.models import (
@@ -40,6 +41,10 @@ def _format_agent_b_for_response(
 
     profiling_signal = agent_b_data.get("profiling_signal")
     wallet_profile = agent_b_data.get("wallet_profile")
+    user_context = agent_b_data.get("user_context")
+    sender_data = agent_b_data.get("sender")
+    receiver_data = agent_b_data.get("receiver")
+    relationship = agent_b_data.get("relationship")
     formatted = {
         "wallet_address": agent_b_data.get("wallet_address"),
         "counterparty_address": agent_b_data.get("counterparty_address"),
@@ -67,6 +72,30 @@ def _format_agent_b_for_response(
             "total_trades": wallet_profile.get("total_trades"),
             "behavior_cluster": wallet_profile.get("behavior_cluster"),
             "activity_frequency": wallet_profile.get("activity_frequency"),
+        }
+
+    if isinstance(user_context, dict):
+        formatted["user_context"] = {
+            key: value
+            for key, value in user_context.items()
+            if value not in (None, "", [], {})
+        }
+
+    if isinstance(sender_data, dict):
+        formatted_sender = _format_agent_b_for_response(sender_data, event_type)
+        if formatted_sender:
+            formatted["sender"] = formatted_sender
+
+    if isinstance(receiver_data, dict):
+        formatted_receiver = _format_agent_b_for_response(receiver_data, event_type)
+        if formatted_receiver:
+            formatted["receiver"] = formatted_receiver
+
+    if isinstance(relationship, dict):
+        formatted["relationship"] = {
+            key: value
+            for key, value in relationship.items()
+            if value not in (None, "", [], {})
         }
 
     cleaned = {
@@ -432,6 +461,7 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                             f"[Agent B] Query result: {processed_event is not None}"
                         )
                         formatted_agent_b = None
+                        agent_b_copy_source = None
 
                         if processed_event:
                             proc_event_data = processed_event.event_data
@@ -445,6 +475,7 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                 # Extract Agent B profiling if available
                                 agent_b_data = proc_event_data.get("agent_b")
                                 if agent_b_data:
+                                    agent_b_copy_source = agent_b_data
                                     formatted_agent_b = _format_agent_b_for_response(
                                         agent_b_data, event_type
                                     )
@@ -480,6 +511,17 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                 logger.debug(
                                     f"[Agent B] Added pending profiling placeholder for event {alert.event_id}"
                                 )
+
+                        alert_copy = build_user_facing_alert_copy(
+                            content=content,
+                            agent_b=agent_b_copy_source or formatted_agent_b,
+                        )
+                        if alert_copy.get("title"):
+                            title = alert_copy["title"]
+                        if alert_copy.get("body"):
+                            content["summary"] = alert_copy["body"]
+                        if alert_copy.get("insight"):
+                            content["agent_b_insight"] = alert_copy["insight"]
                     except Exception as e:
                         logger.warning(
                             f"[Agent B] Could not fetch profiling data: {type(e).__name__}: {e}",

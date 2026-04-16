@@ -141,6 +141,67 @@ def save_alert(alert: dict) -> Alert:
         db.close()
 
 
+def _is_generic_actor_label(actor_label: Optional[str]) -> bool:
+    """Return True when a label is too generic to improve the alert title."""
+    if not actor_label:
+        return True
+    generic_labels = {
+        "Unclassified wallet",
+        "Observed repeat-activity wallet",
+        "Unverified wallet",
+        "Unavailable wallet profile",
+    }
+    return actor_label in generic_labels
+
+
+def build_user_facing_alert_copy(
+    content: Optional[Dict[str, Any]], agent_b: Optional[Dict[str, Any]] = None
+) -> Dict[str, Optional[str]]:
+    """Build user-facing alert title/body using Agent B context when available."""
+    content = content if isinstance(content, dict) else {}
+    agent_b = agent_b if isinstance(agent_b, dict) else {}
+
+    base_title = content.get("title", "New Event Alert")
+    base_body = (
+        content.get("summary")
+        or content.get("body")
+        or content.get("alert_reason")
+        or ""
+    )
+
+    user_context = agent_b.get("user_context") or {}
+    sender_context = (agent_b.get("sender") or {}).get("user_context") or {}
+    relationship = agent_b.get("relationship") or {}
+
+    prefix_label = None
+    if not _is_generic_actor_label(sender_context.get("actor_label")):
+        prefix_label = sender_context.get("actor_label")
+    elif not _is_generic_actor_label(user_context.get("actor_label")):
+        prefix_label = user_context.get("actor_label")
+
+    title = f"{prefix_label}: {base_title}" if prefix_label else base_title
+
+    body_parts = []
+    if relationship.get("summary"):
+        body_parts.append(relationship["summary"])
+    elif user_context.get("summary"):
+        body_parts.append(user_context["summary"])
+    elif base_body:
+        body_parts.append(base_body)
+
+    significance = relationship.get("significance") or user_context.get("significance")
+    if significance and significance not in body_parts:
+        body_parts.append(significance)
+
+    body = " ".join(part for part in body_parts if part) or base_body or base_title
+
+    return {
+        "title": title,
+        "body": body,
+        "insight": significance,
+    }
+
+
 def generate_alert(
     event: Dict[str, Any], user_prefs: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, Any]]:
@@ -192,14 +253,12 @@ def generate_alert(
             f"({agent_b.get('priority_boost_reason')})"
         )
 
+    content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
+    alert_copy = build_user_facing_alert_copy(content=content, agent_b=agent_b)
+
     print(
         f"[ALERT-GENERATE] Event {event_id}: Passed all filters. Priority={alert_priority}, Channels={channels}"
     )
-    # Extract content dict (where enriched fields are stored)
-    content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
-
-    # Extract content dict (where enriched fields are stored)
-    content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
 
     alert = {
         "alert_id": f"alert_{event.get('id')}",
@@ -209,8 +268,8 @@ def generate_alert(
         "score": event.get("score"),
         "timestamp": datetime.utcnow().isoformat(),
         "channels": channels,
-        "title": event.get("title", content.get("title", "New Event Alert")),
-        "body": event.get("summary", event.get("text", content.get("summary", ""))),
+        "title": alert_copy["title"] or event.get("title") or "New Event Alert",
+        "body": alert_copy["body"] or event.get("summary") or event.get("text") or "",
         "raw_event": event,
         "status": "pending",
         # Core content metadata
@@ -235,6 +294,7 @@ def generate_alert(
         # References
         "urls": content.get("urls", [])[:3],  # Top 3 relevant URLs
         "link": content.get("link"),  # Original source link
+        "agent_b_insight": alert_copy["insight"],
         #  NEW: Agent B profiling data
         "agent_b_profiling": (
             {
@@ -249,6 +309,10 @@ def generate_alert(
                 "profiling_signal": agent_b.get("profiling_signal"),
                 "should_boost_priority": agent_b.get("should_boost_priority"),
                 "priority_boost_reason": agent_b.get("priority_boost_reason"),
+                "user_context": agent_b.get("user_context"),
+                "relationship": agent_b.get("relationship"),
+                "sender": agent_b.get("sender"),
+                "receiver": agent_b.get("receiver"),
             }
             if agent_b
             else None
