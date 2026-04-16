@@ -19,7 +19,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 import json
 import logging
-from sqlalchemy import and_, cast, String
+from sqlalchemy import and_, cast, String, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -466,11 +466,15 @@ def summarize_wallet_observations(
         return None
 
     try:
+        wallet_lower = wallet_address.lower()
         candidate_rows = (
             db.query(ProcessedEvent)
             .filter(
-                cast(ProcessedEvent.event_data, String).ilike(
-                    f"%{wallet_address.lower()}%"
+                or_(
+                    ProcessedEvent.event_data["content"]["from_address"].astext
+                    == wallet_lower,
+                    ProcessedEvent.event_data["content"]["to_address"].astext
+                    == wallet_lower,
                 )
             )
             .order_by(ProcessedEvent.timestamp.desc())
@@ -489,8 +493,6 @@ def summarize_wallet_observations(
         counterparties = set()
         first_seen = None
         last_seen = None
-        wallet_lower = wallet_address.lower()
-
         for row in candidate_rows:
             event_data = row.event_data
             if isinstance(event_data, str):

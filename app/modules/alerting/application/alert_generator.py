@@ -105,6 +105,21 @@ def save_alert(alert: dict) -> Alert:
         if event_id is not None:
             event_id = int(event_id)
 
+        # Idempotency guard: retries or duplicate processing should not create
+        # multiple alert rows for the same event/user pair.
+        existing_alert_query = db.query(Alert).filter(Alert.event_id == event_id)
+        if user_id is None:
+            existing_alert_query = existing_alert_query.filter(Alert.user_id.is_(None))
+        else:
+            existing_alert_query = existing_alert_query.filter(Alert.user_id == user_id)
+
+        existing_alert = existing_alert_query.first()
+        if existing_alert:
+            print(
+                f"[DB] Skipped duplicate alert for event {event_id} and user {user_id}"
+            )
+            return existing_alert
+
         db_alert = Alert(
             user_id=user_id,  # None for system/broadcast alerts
             event_id=event_id,
