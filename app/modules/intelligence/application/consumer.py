@@ -21,6 +21,7 @@ from app.modules.intelligence.application.agent_b import (
     build_user_facing_profile,
     build_transfer_relationship_summary,
 )
+from app.modules.intelligence.domain.agent_b_models import WalletTier, BehaviorCluster
 from app.modules.intelligence.infrastructure.models import (
     ProcessedEvent,
     WalletProfileORM,
@@ -109,9 +110,15 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
                 wallet_profile.worst_trade_return if wallet_profile else 0.0
             ),
             behavior_cluster=(
-                str(wallet_profile.behavior_cluster) if wallet_profile else "UNKNOWN"
+                wallet_profile.behavior_cluster.value
+                if wallet_profile and wallet_profile.behavior_cluster
+                else BehaviorCluster.UNKNOWN.value
             ),
-            tier=str(wallet_profile.tier) if wallet_profile else "UNVERIFIED",
+            tier=(
+                wallet_profile.tier.value
+                if wallet_profile and wallet_profile.tier
+                else WalletTier.UNVERIFIED.value
+            ),
             confidence_score=confidence_score,
             activity_frequency=(
                 wallet_profile.activity_frequency if wallet_profile else "inactive"
@@ -145,8 +152,8 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
         existing_profile.avg_return_7d = wallet_profile.avg_return_7d
         existing_profile.best_trade_return = wallet_profile.best_trade_return
         existing_profile.worst_trade_return = wallet_profile.worst_trade_return
-        existing_profile.behavior_cluster = str(wallet_profile.behavior_cluster)
-        existing_profile.tier = str(wallet_profile.tier)
+        existing_profile.behavior_cluster = wallet_profile.behavior_cluster.value
+        existing_profile.tier = wallet_profile.tier.value
         existing_profile.activity_frequency = wallet_profile.activity_frequency
         existing_profile.first_seen = (
             existing_profile.first_seen or wallet_profile.first_seen or now

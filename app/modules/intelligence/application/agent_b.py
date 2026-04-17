@@ -44,6 +44,40 @@ logger = logging.getLogger(__name__)
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 
+def _coerce_enum(enum_cls, raw_value, default_value):
+    """Coerce legacy enum representations from DB into canonical enum members."""
+    if raw_value is None:
+        return default_value
+
+    # Already the enum type
+    if isinstance(raw_value, enum_cls):
+        return raw_value
+
+    text = str(raw_value).strip()
+    if not text:
+        return default_value
+
+    # Legacy variants seen in DB: "UNKNOWN", "UNVERIFIED", "EnumClass.UNKNOWN"
+    candidates = [text, text.lower(), text.upper()]
+    if "." in text:
+        tail = text.split(".")[-1]
+        candidates.extend([tail, tail.lower(), tail.upper()])
+
+    for candidate in candidates:
+        try:
+            return enum_cls(candidate)
+        except Exception:
+            pass
+
+        # Enum by member name
+        try:
+            return enum_cls[candidate]
+        except Exception:
+            pass
+
+    return default_value
+
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -116,7 +150,9 @@ def lookup_wallet_profile(wallet_address: str, db: Session) -> Optional[WalletPr
             wallet_id=wallet_orm.wallet_id,
             address=wallet_orm.address,
             blockchain=wallet_orm.blockchain,
-            entity_type=EntityType(wallet_orm.entity_type),
+            entity_type=_coerce_enum(
+                EntityType, wallet_orm.entity_type, EntityType.UNKNOWN
+            ),
             entity_name=wallet_orm.entity_name,
             total_trades=wallet_orm.total_trades,
             profitable_trades=wallet_orm.profitable_trades,
@@ -125,8 +161,12 @@ def lookup_wallet_profile(wallet_address: str, db: Session) -> Optional[WalletPr
             avg_return_7d=wallet_orm.avg_return_7d,
             best_trade_return=wallet_orm.best_trade_return,
             worst_trade_return=wallet_orm.worst_trade_return,
-            behavior_cluster=BehaviorCluster(wallet_orm.behavior_cluster),
-            tier=WalletTier(wallet_orm.tier),
+            behavior_cluster=_coerce_enum(
+                BehaviorCluster,
+                wallet_orm.behavior_cluster,
+                BehaviorCluster.UNKNOWN,
+            ),
+            tier=_coerce_enum(WalletTier, wallet_orm.tier, WalletTier.UNVERIFIED),
             confidence_score=wallet_orm.confidence_score,
             activity_frequency=wallet_orm.activity_frequency,
             last_activity=wallet_orm.last_activity,
