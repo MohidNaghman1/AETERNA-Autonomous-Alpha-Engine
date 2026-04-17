@@ -1,6 +1,6 @@
 """Backfill wallet_profiles enum casing and cold-start defaults.
 
-Revision ID: wallet_profiles_data_backfill_20260417
+Revision ID: wp_backfill_20260417
 Revises: add_processed_event_updated_at
 Create Date: 2026-04-17 18:40:00.000000
 
@@ -9,7 +9,7 @@ Create Date: 2026-04-17 18:40:00.000000
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "wallet_profiles_data_backfill_20260417"
+revision = "wp_backfill_20260417"
 down_revision = "add_processed_event_updated_at"
 branch_labels = None
 depends_on = None
