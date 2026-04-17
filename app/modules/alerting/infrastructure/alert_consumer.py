@@ -8,12 +8,14 @@ import asyncio
 import json
 import os
 import pika
+import time
+import logging
 from threading import Thread
 from socketio import AsyncServer
 
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+logger = logging.getLogger("alert-consumer")
+
+RABBITMQ_URL = os.getenv("RABBITMQ_URL")
 RABBITMQ_QUEUE = os.getenv("ALERT_QUEUE_NAME", "alerts")
 
 
@@ -70,16 +72,34 @@ class AlertConsumer(Thread):
         Establishes RabbitMQ connection and begins consuming messages from the alerts queue.
         This method blocks indefinitely while consuming.
         """
-        creds = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
-        params = pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=creds)
-        self.connection = pika.BlockingConnection(params)
-        self.channel = self.connection.channel()
-        self.channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
-        self.channel.basic_consume(
-            queue=RABBITMQ_QUEUE, on_message_callback=self.on_message, auto_ack=True
-        )
-        print("[AlertConsumer] Started listening for alerts...")
-        self.channel.start_consuming()
+        while True:
+            try:
+                if not RABBITMQ_URL:
+                    raise RuntimeError("RABBITMQ_URL is required for AlertConsumer")
+
+                params = pika.URLParameters(RABBITMQ_URL)
+
+                # Keep connection stable during transient broker/network stalls.
+                params.heartbeat = 600
+                params.blocked_connection_timeout = 300
+
+                self.connection = pika.BlockingConnection(params)
+                self.channel = self.connection.channel()
+                self.channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
+                self.channel.basic_consume(
+                    queue=RABBITMQ_QUEUE,
+                    on_message_callback=self.on_message,
+                    auto_ack=True,
+                )
+                print("[AlertConsumer] Started listening for alerts...")
+                self.channel.start_consuming()
+
+            except Exception as e:
+                logger.error(
+                    f"[AlertConsumer] Connection/consume error: {type(e).__name__}: {e}"
+                )
+                # Keep service alive and retry in background.
+                time.sleep(5)
 
     def on_message(self, ch, method, properties, body):
         """Handle incoming alert message from RabbitMQ.
