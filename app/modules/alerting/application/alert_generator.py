@@ -145,13 +145,20 @@ def _is_generic_actor_label(actor_label: Optional[str]) -> bool:
     """Return True when a label is too generic to improve the alert title."""
     if not actor_label:
         return True
+    normalized_label = actor_label.strip().lower()
     generic_labels = {
-        "Unclassified wallet",
-        "Observed repeat-activity wallet",
-        "Unverified wallet",
-        "Unavailable wallet profile",
+        "unclassified wallet",
+        "observed repeat-activity wallet",
+        "unverified wallet",
+        "unavailable wallet profile",
+        "large-transfer new wallet",
+        "high-value new wallet",
     }
-    return actor_label in generic_labels
+    if normalized_label in generic_labels:
+        return True
+
+    # Future-proof: treat generic cold-start wallet placeholders as non-distinct.
+    return "new wallet" in normalized_label
 
 
 def build_user_facing_alert_copy(

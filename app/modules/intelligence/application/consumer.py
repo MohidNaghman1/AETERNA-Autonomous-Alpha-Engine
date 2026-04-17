@@ -58,6 +58,7 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
     """Create or update a wallet profile from Agent B output."""
     wallet_addr_lower = wallet_address.lower()
     wallet_profile = profiling_output.wallet_profile
+    now = datetime.utcnow()
 
     entity_type = (
         profiling_output.entity_type.value
@@ -73,6 +74,22 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
     existing_profile = db.execute(
         select(WalletProfileORM).where(WalletProfileORM.address == wallet_addr_lower)
     ).scalar_one_or_none()
+
+    # Keep a small baseline confidence for cold-start wallets so they do not
+    # oscillate between 0.0 and 0.1 across inserts/updates.
+    raw_confidence = profiling_output.confidence_score
+    confidence_score = (
+        float(raw_confidence)
+        if isinstance(raw_confidence, (int, float))
+        else None
+    )
+    if confidence_score is None:
+        confidence_score = 0.1
+    elif confidence_score <= 0 and profiling_output.profiling_signal in {
+        "unknown",
+        "unverified",
+    }:
+        confidence_score = 0.1
 
     if not existing_profile:
         new_profile = WalletProfileORM(
@@ -95,12 +112,12 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
                 str(wallet_profile.behavior_cluster) if wallet_profile else "UNKNOWN"
             ),
             tier=str(wallet_profile.tier) if wallet_profile else "UNVERIFIED",
-            confidence_score=profiling_output.confidence_score or 0.1,
+            confidence_score=confidence_score,
             activity_frequency=(
                 wallet_profile.activity_frequency if wallet_profile else "inactive"
             ),
-            last_activity=datetime.utcnow(),
-            first_seen=wallet_profile.first_seen if wallet_profile else None,
+            last_activity=now,
+            first_seen=wallet_profile.first_seen if wallet_profile else now,
             preferred_tokens=wallet_profile.preferred_tokens if wallet_profile else [],
             favorite_exchanges=(
                 wallet_profile.favorite_exchanges if wallet_profile else []
@@ -114,10 +131,11 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
         )
         return
 
-    existing_profile.last_activity = datetime.utcnow()
+    existing_profile.last_activity = now
     existing_profile.entity_type = entity_type or existing_profile.entity_type
     existing_profile.entity_name = entity_name or existing_profile.entity_name
-    existing_profile.confidence_score = profiling_output.confidence_score
+    existing_profile.confidence_score = confidence_score
+    existing_profile.first_seen = existing_profile.first_seen or existing_profile.created_at or now
 
     if wallet_profile:
         existing_profile.total_trades = wallet_profile.total_trades
@@ -131,7 +149,7 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
         existing_profile.tier = str(wallet_profile.tier)
         existing_profile.activity_frequency = wallet_profile.activity_frequency
         existing_profile.first_seen = (
-            existing_profile.first_seen or wallet_profile.first_seen
+            existing_profile.first_seen or wallet_profile.first_seen or now
         )
         existing_profile.preferred_tokens = wallet_profile.preferred_tokens
         existing_profile.favorite_exchanges = wallet_profile.favorite_exchanges
