@@ -17,8 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     # 1) Normalize enum-like strings (supports legacy forms like "BehaviorCluster.UNKNOWN")
-    op.execute(
-        """
+    op.execute("""
         UPDATE wallet_profiles
         SET behavior_cluster = lower(
             btrim(
@@ -40,11 +39,9 @@ def upgrade() -> None:
                     END
                 )
             );
-        """
-    )
+        """)
 
-    op.execute(
-        """
+    op.execute("""
         UPDATE wallet_profiles
         SET tier = lower(
             btrim(
@@ -66,12 +63,10 @@ def upgrade() -> None:
                     END
                 )
             );
-        """
-    )
+        """)
 
     # 2) Enforce known canonical values for enums used by Agent B model parsing.
-    op.execute(
-        """
+    op.execute("""
         UPDATE wallet_profiles
         SET behavior_cluster = 'unknown'
         WHERE behavior_cluster IS NULL
@@ -85,11 +80,9 @@ def upgrade() -> None:
                'bot',
                'unknown'
            );
-        """
-    )
+        """)
 
-    op.execute(
-        """
+    op.execute("""
         UPDATE wallet_profiles
         SET tier = 'unverified'
         WHERE tier IS NULL
@@ -100,28 +93,23 @@ def upgrade() -> None:
                'low_performer',
                'unverified'
            );
-        """
-    )
+        """)
 
     # 3) Backfill first_seen when missing so cold-start wallets are still timestamped.
-    op.execute(
-        """
+    op.execute("""
         UPDATE wallet_profiles
         SET first_seen = COALESCE(first_seen, created_at, updated_at, NOW())
         WHERE first_seen IS NULL;
-        """
-    )
+        """)
 
     # 4) Prevent cold-start unknown/unverified wallets from carrying zero confidence.
-    op.execute(
-        """
+    op.execute("""
         UPDATE wallet_profiles
         SET confidence_score = 0.1
         WHERE COALESCE(confidence_score, 0) <= 0
           AND lower(COALESCE(entity_type, 'unknown')) = 'unknown'
           AND lower(COALESCE(tier, 'unverified')) = 'unverified';
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
