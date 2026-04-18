@@ -21,6 +21,9 @@ from app.modules.intelligence.application.agent_b import (
     build_user_facing_profile,
     build_transfer_relationship_summary,
 )
+from app.modules.intelligence.application.trade_records import (
+    upsert_trade_record_from_event,
+)
 from app.modules.intelligence.domain.agent_b_models import WalletTier, BehaviorCluster
 from app.modules.intelligence.infrastructure.models import (
     ProcessedEvent,
@@ -235,6 +238,19 @@ def enrich_event_with_agent_b(event: dict) -> dict:
 
         config = ProfilerConfig()
         profiled_wallets = {}
+
+        # Persist trade records (idempotent) when event is a swap/trade payload.
+        # This runs in the same DB transaction scope as profile persistence.
+        try:
+            trade_record_action = upsert_trade_record_from_event(db, event)
+            if trade_record_action != "skipped":
+                logger.info(
+                    f"[TRADE-RECORD] {trade_record_action.upper()} for event {event.get('id')}"
+                )
+        except Exception as trade_err:
+            logger.error(
+                f"[TRADE-RECORD] Failed to upsert trade record for {event.get('id')}: {trade_err}"
+            )
 
         # ====================================================================
         # FIX #4 (CONSOLIDATED): Persist wallet profile to database
