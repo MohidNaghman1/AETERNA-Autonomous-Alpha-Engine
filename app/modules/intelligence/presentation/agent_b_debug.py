@@ -20,9 +20,14 @@ from app.modules.intelligence.infrastructure.models import (
     EntityProfileORM,
     ProcessedEvent,
 )
+from app.modules.intelligence.application.trade_records import (
+    get_trade_resolution_snapshot,
+    run_trade_outcome_resolution,
+)
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
+from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/debug/agent-b", tags=["agent-b-debug"])
@@ -218,6 +223,7 @@ async def get_trade_records(
     wallet_address: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     profitable_only: bool = Query(False),
+    unresolved_only: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -239,6 +245,9 @@ async def get_trade_records(
         if profitable_only:
             query = query.where(TradeRecordORM.is_profitable == True)
 
+        if unresolved_only:
+            query = query.where(TradeRecordORM.is_profitable.is_(None))
+
         query = query.order_by(desc(TradeRecordORM.timestamp)).limit(limit)
 
         result = await db.execute(query)
@@ -257,6 +266,11 @@ async def get_trade_records(
                     "usd_value": trade.usd_value,
                     "exchange_or_dex": trade.exchange_or_dex,
                     "is_profitable": trade.is_profitable,
+                    "resolution_status": (
+                        "pending"
+                        if trade.is_profitable is None
+                        else "profitable" if trade.is_profitable else "unprofitable"
+                    ),
                     "return_percentage": trade.return_percentage,
                     "return_usd": trade.return_usd,
                     "timestamp": trade.timestamp,
@@ -269,6 +283,40 @@ async def get_trade_records(
 
     except Exception as e:
         logger.error(f"Error fetching trade records: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/trade-records/resolution-stats", response_model=Dict[str, Any])
+async def get_trade_resolution_stats(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get resolver coverage and unresolved backlog for trade outcomes."""
+    try:
+        snapshot = await db.run_sync(get_trade_resolution_snapshot)
+        snapshot["timestamp"] = datetime.utcnow()
+        return snapshot
+    except Exception as e:
+        logger.error(f"Error fetching trade resolution stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/trigger-resolver", response_model=Dict[str, Any])
+async def trigger_resolver_manually(
+    batch_size: int = Query(500, ge=1, le=5000),
+):
+    """Manually trigger the trade outcome resolver (debug/admin use)."""
+    try:
+        resolved_count = await run_in_threadpool(
+            run_trade_outcome_resolution, batch_size
+        )
+        return {
+            "status": "triggered",
+            "resolved_count": resolved_count,
+            "batch_size": batch_size,
+            "timestamp": datetime.utcnow(),
+        }
+    except Exception as e:
+        logger.error(f"Error triggering resolver manually: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
