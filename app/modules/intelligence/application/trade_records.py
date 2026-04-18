@@ -123,7 +123,9 @@ def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, An
 
 def build_deterministic_trade_id(payload: Dict[str, Any]) -> str:
     """Build deterministic trade_id using on-chain identities first."""
-    tx_hash = str(payload.get("transaction_hash") or payload.get("tx_hash") or "").strip()
+    tx_hash = str(
+        payload.get("transaction_hash") or payload.get("tx_hash") or ""
+    ).strip()
     wallet = str(payload.get("wallet_address") or "").strip().lower()
     log_index = payload.get("log_index")
     log_index = str(log_index if log_index is not None else 0).strip()

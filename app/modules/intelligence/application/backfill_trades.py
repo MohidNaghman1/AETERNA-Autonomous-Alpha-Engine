@@ -11,7 +11,9 @@ import logging
 from typing import Any, Dict
 
 from app.config.db import SessionLocal
-from app.modules.intelligence.application.trade_records import upsert_trade_record_from_event
+from app.modules.intelligence.application.trade_records import (
+    upsert_trade_record_from_event,
+)
 from app.modules.intelligence.infrastructure.models import ProcessedEvent
 
 logger = logging.getLogger("trade-backfill")
@@ -19,7 +21,11 @@ logger = logging.getLogger("trade-backfill")
 
 def _to_event_dict(processed: ProcessedEvent) -> Dict[str, Any]:
     event_data = processed.event_data if isinstance(processed.event_data, dict) else {}
-    content = event_data.get("content", {}) if isinstance(event_data.get("content"), dict) else {}
+    content = (
+        event_data.get("content", {})
+        if isinstance(event_data.get("content"), dict)
+        else {}
+    )
     source = event_data.get("source") or "ethereum"
 
     return {
@@ -88,7 +94,9 @@ def main() -> None:
     parser.add_argument("--commit-every", type=int, default=500)
     args = parser.parse_args()
 
-    summary = run_backfill(limit=max(1, args.limit), commit_every=max(1, args.commit_every))
+    summary = run_backfill(
+        limit=max(1, args.limit), commit_every=max(1, args.commit_every)
+    )
     print("[BACKFILL COMPLETE]", summary)
 
 

@@ -33,10 +33,6 @@ from app.modules.intelligence.presentation.agent_b_debug import (
     router as agent_b_debug_router,
 )
 from app.modules.ingestion.application.consumer import run_consumer
-from app.modules.intelligence.application.consumer import run_intelligence_poll
-from app.modules.intelligence.application.agent_b_polling import (
-    process_batch as process_agent_b_batch,
-)
 from app.modules.intelligence.application.trade_records import (
     run_trade_outcome_resolution,
 )
@@ -49,12 +45,6 @@ load_dotenv()
 RSS_COLLECTOR_INTERVAL_SECONDS = int(os.getenv("RSS_COLLECTOR_INTERVAL_SECONDS", "60"))
 PRICE_COLLECTOR_INTERVAL_SECONDS = int(
     os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "120")
-)
-INTELLIGENCE_SCORER_INTERVAL_SECONDS = int(
-    os.getenv("INTELLIGENCE_SCORER_INTERVAL_SECONDS", "10")
-)
-AGENT_B_PROFILER_INTERVAL_SECONDS = int(
-    os.getenv("AGENT_B_PROFILER_INTERVAL_SECONDS", "10")
 )
 TRADE_RESOLVER_INTERVAL_SECONDS = int(
     os.getenv("TRADE_RESOLVER_INTERVAL_SECONDS", "120")
@@ -186,22 +176,6 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
 
-        def run_intelligence_scoring():
-            try:
-                count = run_intelligence_poll(batch_size=50)
-                if count > 0:
-                    print(f"[INTELLIGENCE] Scored {count} events")
-            except Exception as e:
-                print(f"[INTELLIGENCE] Error: {e}")
-
-        def run_agent_b_profiling():
-            try:
-                count = process_agent_b_batch()
-                if count > 0:
-                    print(f"[AGENT B] Profiled {count} wallets")
-            except Exception as e:
-                print(f"[AGENT B] Error: {e}")
-
         def run_trade_resolver():
             try:
                 count = run_trade_outcome_resolution(batch_size=200)
@@ -234,13 +208,13 @@ async def lifespan(app: FastAPI):
         # background_scheduler.add_job(
         #     run_intelligence_scoring,
         #     "interval",
-        #     seconds=INTELLIGENCE_SCORER_INTERVAL_SECONDS,
+        #     seconds=10,
         #     id="intelligence_scorer",
         # )
         # background_scheduler.add_job(
         #     run_agent_b_profiling,
         #     "interval",
-        #     seconds=AGENT_B_PROFILER_INTERVAL_SECONDS,
+        #     seconds=10,
         #     id="agent_b_profiler",
         # )
         background_scheduler.add_job(
