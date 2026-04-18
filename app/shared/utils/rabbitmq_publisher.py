@@ -118,6 +118,21 @@ class RabbitMQPublisher:
                 f"Will attempt to connect on first publish."
             )
 
+    @staticmethod
+    def _is_channel_usable(conn, channel) -> bool:
+        """Return True when both connection and channel are open."""
+        try:
+            return bool(conn and channel and conn.is_open and channel.is_open)
+        except Exception:
+            return False
+
+    def _create_connection_pair(self):
+        """Create a fresh (connection, channel) pair with queue declared."""
+        new_conn = self._create_connection()
+        new_channel = new_conn.channel()
+        new_channel.queue_declare(queue=self.queue_name, durable=True)
+        return new_conn, new_channel
+
     def publish(self, body: str) -> bool:
         """Publish message to queue with retries and auto-reconnection.
 
@@ -133,6 +148,16 @@ class RabbitMQPublisher:
         for attempt in range(self.retry_attempts):
             try:
                 conn, channel = self._pool.get(timeout=5)
+
+                # Heal stale pooled objects (e.g., broker closed socket/EOF).
+                if not self._is_channel_usable(conn, channel):
+                    try:
+                        if conn and conn.is_open:
+                            conn.close()
+                    except Exception:
+                        pass
+                    conn, channel = self._create_connection_pair()
+
                 try:
                     channel.basic_publish(
                         exchange="", routing_key=self.queue_name, body=body
@@ -142,14 +167,13 @@ class RabbitMQPublisher:
                 except Exception as e:
                     self.logger.error(f"Publish failed: {e}")
                     try:
-                        conn.close()
+                        if conn and conn.is_open:
+                            conn.close()
                     except Exception:
                         pass
                     # Create new connection to replace the failed one
                     try:
-                        new_conn = self._create_connection()
-                        new_channel = new_conn.channel()
-                        new_channel.queue_declare(queue=self.queue_name, durable=True)
+                        new_conn, new_channel = self._create_connection_pair()
                         self._pool.put((new_conn, new_channel))
                     except Exception as create_err:
                         self.logger.error(
@@ -158,6 +182,17 @@ class RabbitMQPublisher:
                     time.sleep(2**attempt)
             except Empty:
                 self.logger.error("No available RabbitMQ connections in pool.")
+                # Pool may be empty after repeated failures - try to self-heal.
+                try:
+                    new_conn, new_channel = self._create_connection_pair()
+                    self._pool.put((new_conn, new_channel))
+                except Exception as create_err:
+                    self.logger.error(
+                        f"Failed to create connection while pool empty: {create_err}"
+                    )
+                time.sleep(2**attempt)
+            except Exception as e:
+                self.logger.error(f"Unexpected publisher error: {e}")
                 time.sleep(2**attempt)
         self.logger.error("Failed to publish after retries.")
         return False

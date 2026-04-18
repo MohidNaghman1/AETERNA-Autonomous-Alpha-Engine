@@ -194,6 +194,7 @@ def run_collector():
                         success = publish_event(event, None)
                         if success:
                             entries_added += 1
+                            mark_as_seen(event.id)
                         else:
                             publish_failed += 1
                             logger.warning(
@@ -201,7 +202,6 @@ def run_collector():
                             )
 
                     EVENTS_PROCESSED.labels(collector="rss").inc()
-                    mark_as_seen(event.id)
 
                 results["success"].append(
                     {

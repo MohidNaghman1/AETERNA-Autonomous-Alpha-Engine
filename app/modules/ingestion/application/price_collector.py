@@ -149,13 +149,14 @@ def validate_event(event: Event) -> bool:
     return True
 
 
-def publish_event(event: Event, _metadata=None):
+def publish_event(event: Event, _metadata=None) -> bool:
     if not validate_event(event):
         logger.warning(f"[INVALID] Event {event.id} failed validation, not published.")
-        return
+        return False
     success = publisher.publish(event.model_dump_json())
     if not success:
         logger.error(f"[ERROR] Failed to publish event {event.id} after retries.")
+    return success
 
 
 def run_collector():
@@ -197,9 +198,14 @@ def run_collector():
             logger.info(
                 f"Publishing price event: {event.id} | Symbol: {event.content.get('symbol')} | {alert_reasons}"
             )
-            publish_event(event, None)
-            mark_as_seen(event.id)
-            published += 1
+            success = publish_event(event, None)
+            if success:
+                mark_as_seen(event.id)
+                published += 1
+            else:
+                logger.warning(
+                    f"Publish failed for {event.id}; leaving dedup unset so it can retry next cycle"
+                )
 
         logger.info(
             f"Published {published} price events this cycle. "
