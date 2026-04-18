@@ -37,6 +37,9 @@ from app.modules.intelligence.application.consumer import run_intelligence_poll
 from app.modules.intelligence.application.agent_b_polling import (
     process_batch as process_agent_b_batch,
 )
+from app.modules.intelligence.application.trade_records import (
+    run_trade_outcome_resolution,
+)
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
@@ -52,6 +55,9 @@ INTELLIGENCE_SCORER_INTERVAL_SECONDS = int(
 )
 AGENT_B_PROFILER_INTERVAL_SECONDS = int(
     os.getenv("AGENT_B_PROFILER_INTERVAL_SECONDS", "10")
+)
+TRADE_RESOLVER_INTERVAL_SECONDS = int(
+    os.getenv("TRADE_RESOLVER_INTERVAL_SECONDS", "120")
 )
 
 
@@ -196,6 +202,14 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[AGENT B] Error: {e}")
 
+        def run_trade_resolver():
+            try:
+                count = run_trade_outcome_resolution(batch_size=200)
+                if count > 0:
+                    print(f"[TRADE RESOLVER] Resolved {count} trade outcomes")
+            except Exception as e:
+                print(f"[TRADE RESOLVER] Error: {e}")
+
         background_scheduler.add_job(
             run_rss_collector,
             "interval",
@@ -229,11 +243,18 @@ async def lifespan(app: FastAPI):
         #     seconds=AGENT_B_PROFILER_INTERVAL_SECONDS,
         #     id="agent_b_profiler",
         # )
+        background_scheduler.add_job(
+            run_trade_resolver,
+            "interval",
+            seconds=TRADE_RESOLVER_INTERVAL_SECONDS,
+            id="trade_outcome_resolver",
+        )
         background_scheduler.start()
         print(
             "[STARTUP] Scheduler started: "
             f"RSS({RSS_COLLECTOR_INTERVAL_SECONDS}s), "
-            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s)"
+            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s), "
+            f"TradeResolver({TRADE_RESOLVER_INTERVAL_SECONDS}s)"
         )
         print(
             "[STARTUP] ✅ PRIMARY: Using blocking RabbitMQ consumer (run_consumer) in background thread"
