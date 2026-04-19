@@ -23,10 +23,12 @@ from app.modules.intelligence.infrastructure.models import (
 from app.modules.intelligence.application.trade_records import (
     get_trade_resolution_snapshot,
     run_trade_outcome_resolution,
+    extract_trade_record_payload,
 )
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
+import json
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
@@ -519,6 +521,74 @@ async def get_agent_b_statistics(
             await db.execute(select(func.count(ProcessedEvent.id)))
         ).scalar() or 0
 
+        # Diagnose trade-record pipeline capture coverage.
+        # NOTE: The live on-chain collector mainly emits transfer events; only
+        # swap-shaped payloads are eligible for trade record persistence.
+        event_payloads = (
+            await db.execute(select(ProcessedEvent.event_data))
+        ).scalars().all()
+
+        trade_ids = (
+            await db.execute(select(TradeRecordORM.trade_id))
+        ).scalars().all()
+
+        onchain_transfer_events = 0
+        onchain_swap_events = 0
+        trade_eligible_events = 0
+        payload_parse_failures = 0
+
+        # Distinguish legacy/manual UUID-like IDs from current deterministic IDs.
+        # Current deterministic format is usually: "<tx_hash>_<log_index>_<wallet>"
+        # or a compact 40-char hash fallback (no dashes).
+        legacy_trade_id_count = 0
+        deterministic_trade_id_count = 0
+
+        for trade_id in trade_ids:
+            if not isinstance(trade_id, str):
+                continue
+            normalized = trade_id.strip()
+            if not normalized:
+                continue
+
+            if "_" in normalized or (len(normalized) == 40 and "-" not in normalized):
+                deterministic_trade_id_count += 1
+            else:
+                # UUID-like or any other legacy format.
+                legacy_trade_id_count += 1
+
+        for payload in event_payloads:
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload_parse_failures += 1
+                    continue
+
+            if not isinstance(payload, dict):
+                continue
+
+            source = str(payload.get("source", "")).lower()
+            content = payload.get("content", {})
+            if not isinstance(content, dict):
+                content = {}
+
+            event_type = str(content.get("event_type", "")).lower()
+            tx_type = str(content.get("transaction_type", "")).lower()
+
+            if source == "ethereum" and tx_type == "transfer":
+                onchain_transfer_events += 1
+            if source == "ethereum" and (event_type == "dex_swap" or tx_type == "swap"):
+                onchain_swap_events += 1
+
+            if extract_trade_record_payload(payload) is not None:
+                trade_eligible_events += 1
+
+        trade_record_capture_rate = (
+            round((trade_count / trade_eligible_events), 4)
+            if trade_eligible_events > 0
+            else 0.0
+        )
+
         # Average win rate
         avg_win_rate = (
             await db.execute(select(func.avg(WalletProfileORM.win_rate)))
@@ -533,8 +603,15 @@ async def get_agent_b_statistics(
             "total_wallet_profiles": wallet_count,
             "total_entities": entity_count,
             "total_trade_records": trade_count,
+            "deterministic_trade_records": deterministic_trade_id_count,
+            "legacy_or_manual_trade_records": legacy_trade_id_count,
             "total_entity_profiles": profile_count,
             "total_processed_events": events_with_agent_b,
+            "onchain_transfer_events": onchain_transfer_events,
+            "onchain_swap_events": onchain_swap_events,
+            "trade_eligible_events": trade_eligible_events,
+            "trade_record_capture_rate": trade_record_capture_rate,
+            "event_payload_parse_failures": payload_parse_failures,
             "average_wallet_win_rate": round(avg_win_rate, 4),
             "average_confidence_score": round(avg_confidence, 4),
             "timestamp": datetime.utcnow(),
