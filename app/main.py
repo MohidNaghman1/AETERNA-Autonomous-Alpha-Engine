@@ -14,6 +14,7 @@ import socketio
 from socketio import ASGIApp
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
+from sqlalchemy import text
 from app.shared.utils.auth_utils import decode_token
 from app.modules.alerting.infrastructure.alert_consumer import AlertConsumer
 from app.modules.identity.infrastructure.models import User, UserPreference
@@ -305,9 +306,12 @@ def system_health():
     # Check RabbitMQ
     rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
     try:
-        connection = pika.BlockingConnection(
-            pika.URLParameters(rabbitmq_url), connection_attempts=2, retry_delay=1
-        )
+        params = pika.URLParameters(rabbitmq_url)
+        # pika.BlockingConnection accepts only a single parameters argument.
+        # Retry options belong on the connection parameters object itself.
+        params.connection_attempts = 2
+        params.retry_delay = 1
+        connection = pika.BlockingConnection(params)
         connection.close()
         diagnostics["rabbitmq"] = "[OK] Connected"
     except Exception as e:
@@ -325,7 +329,7 @@ def system_health():
     # Check PostgreSQL
     try:
         with sync_engine.connect() as connection:
-            connection.execute("SELECT 1")
+            connection.execute(text("SELECT 1"))
         diagnostics["postgresql"] = "[OK] Connected"
     except Exception as e:
         diagnostics["postgresql"] = f"[ERROR] {str(e)}"
