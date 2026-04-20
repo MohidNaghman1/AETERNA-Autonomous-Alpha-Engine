@@ -275,6 +275,13 @@ def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
         return None
 
 
+def is_dex_pool_address(address: str) -> bool:
+    """Return True when address is a known DEX pool in the current runtime cache."""
+    if not address:
+        return False
+    return address.lower() in pool_tokens_cache
+
+
 async def fetch_eth_price() -> float:
     """Fetch current ETH price from CoinGecko API."""
     if not http_session:
@@ -444,6 +451,7 @@ def normalize_transfer_event(
 
         content = {
             "transaction_hash": tx_hash,
+            "event_type": "erc20_transfer",
             "from_address": from_address,
             "to_address": to_address,
             "amount": str(amount),
@@ -768,7 +776,10 @@ def publish_event(event: Event) -> bool:
         return False
 
 
-def process_erc20_transfer_event(log_entry: Dict[str, Any]) -> bool:
+def process_erc20_transfer_event(
+    log_entry: Dict[str, Any],
+    swap_tx_hashes: Optional[set[str]] = None,
+) -> bool:
     """
     Process ERC20 Transfer event log from blockchain.
     Decodes the event, calculates USD value, and normalizes for storage.
@@ -780,6 +791,9 @@ def process_erc20_transfer_event(log_entry: Dict[str, Any]) -> bool:
             if isinstance(log_entry.get("transactionHash"), bytes)
             else log_entry.get("transactionHash", "0x")
         )
+        tx_hash = str(tx_hash or "").lower()
+        if tx_hash and not tx_hash.startswith("0x"):
+            tx_hash = f"0x{tx_hash}"
         from_address = (
             ("0x" + log_entry["topics"][1].hex()[-40:]).lower()
             if len(log_entry.get("topics", [])) > 1
@@ -790,6 +804,21 @@ def process_erc20_transfer_event(log_entry: Dict[str, Any]) -> bool:
             if len(log_entry.get("topics", [])) > 2
             else "0x"
         )
+
+        # EARLY EXIT: if this tx is already a DEX swap in this cycle,
+        # skip transfer leg publication to avoid duplicate semantic events.
+        if swap_tx_hashes and tx_hash in swap_tx_hashes:
+            logger.debug(
+                f"[ERC20] Skipping transfer {tx_hash[:10]}... (swap tx detected this cycle)"
+            )
+            return False
+
+        # Secondary guard: skip transfers to/from known pool addresses.
+        if is_dex_pool_address(to_address) or is_dex_pool_address(from_address):
+            logger.debug(
+                f"[ERC20] Skipping transfer {tx_hash[:10]}... (known DEX pool leg)"
+            )
+            return False
 
         # Decode amount from data field (handle both bytes and hex string)
         data_hex = log_entry.get("data", "0x")
@@ -939,7 +968,55 @@ def monitor_large_transfers():
         )
         logger.info(f"[MONITOR] EXCHANGE_ADDRESSES: {list(EXCHANGE_ADDRESSES.keys())}")
 
-        # ==== STRATEGY 1: Query ERC20 Transfers (Stablecoins) ====
+        # ==== STRATEGY 1: Query DEX Swap Logs (trade-eligible events) ====
+        logger.info("[MONITOR] Querying DEX swap logs (V2/V3 signatures)...")
+        swap_tx_hashes: set[str] = set()
+        try:
+            swap_logs = w3.eth.get_logs(
+                {
+                    "topics": [[UNISWAP_V2_SWAP_TOPIC, UNISWAP_V3_SWAP_TOPIC]],
+                    "fromBlock": hex(current_block - block_range),
+                    "toBlock": hex(current_block),
+                }
+            )
+
+            if len(swap_logs) > OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE:
+                logger.warning(
+                    f"[SWAP] Swap logs capped: {len(swap_logs)} -> {OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE}"
+                )
+                swap_logs = swap_logs[: OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE]
+
+            logger.info(f"[SWAP] Found {len(swap_logs)} candidate swap logs")
+
+            # Build tx-hash suppression set for later transfer-leg filtering.
+            for swap_log in swap_logs:
+                tx_hash_raw = swap_log.get("transactionHash")
+                tx_hash = (
+                    tx_hash_raw.hex()
+                    if isinstance(tx_hash_raw, bytes)
+                    else str(tx_hash_raw or "")
+                ).lower()
+                if tx_hash:
+                    if not tx_hash.startswith("0x"):
+                        tx_hash = f"0x{tx_hash}"
+                    swap_tx_hashes.add(tx_hash)
+
+            swap_published = 0
+            for swap_log in swap_logs:
+                if process_dex_swap_log_event(swap_log):
+                    swap_published += 1
+
+            if swap_published > 0:
+                logger.info(
+                    f"[SWAP] Published {swap_published} swap events to RabbitMQ"
+                )
+            events_found_total += swap_published
+
+        except Exception as e:
+            logger.error(f"[SWAP] ERROR querying swap logs: {e}")
+            logger.debug(f"[SWAP] Traceback: {traceback.format_exc()}")
+
+        # ==== STRATEGY 1.5: Query ERC20 Transfers (Stablecoins) ====
         transfer_signature = w3.keccak(text="Transfer(address,address,uint256)")
 
         logger.info(
@@ -974,7 +1051,9 @@ def monitor_large_transfers():
                     )
 
                 for log_event in erc20_logs:
-                    process_erc20_transfer_event(log_event)
+                    process_erc20_transfer_event(
+                        log_event, swap_tx_hashes=swap_tx_hashes
+                    )
 
             except Exception as e:
                 logger.error(f"[ERC20] ERROR querying {token_symbol}: {e}")
@@ -983,40 +1062,6 @@ def monitor_large_transfers():
 
             # Small delay to avoid rate limiting
             time.sleep(0.5)
-
-        # ==== STRATEGY 1.5: Query DEX Swap Logs (trade-eligible events) ====
-        logger.info("[MONITOR] Querying DEX swap logs (V2/V3 signatures)...")
-        try:
-            swap_logs = w3.eth.get_logs(
-                {
-                    "topics": [[UNISWAP_V2_SWAP_TOPIC, UNISWAP_V3_SWAP_TOPIC]],
-                    "fromBlock": hex(current_block - block_range),
-                    "toBlock": hex(current_block),
-                }
-            )
-
-            if len(swap_logs) > OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE:
-                logger.warning(
-                    f"[SWAP] Swap logs capped: {len(swap_logs)} -> {OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE}"
-                )
-                swap_logs = swap_logs[: OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE]
-
-            logger.info(f"[SWAP] Found {len(swap_logs)} candidate swap logs")
-
-            swap_published = 0
-            for swap_log in swap_logs:
-                if process_dex_swap_log_event(swap_log):
-                    swap_published += 1
-
-            if swap_published > 0:
-                logger.info(
-                    f"[SWAP] Published {swap_published} swap events to RabbitMQ"
-                )
-            events_found_total += swap_published
-
-        except Exception as e:
-            logger.error(f"[SWAP] ERROR querying swap logs: {e}")
-            logger.debug(f"[SWAP] Traceback: {traceback.format_exc()}")
 
         # ==== STRATEGY 2: Query ETH Transfers (Check exchange addresses) ====
         logger.info("[MONITOR] Checking exchange addresses for ETH transfers...")
