@@ -87,12 +87,12 @@ def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, An
     token_in = content.get("token_in") or content.get("token")
     token_out = content.get("token_out")
 
-    if not token_in or not token_out:
-        return None
-
     amount_in = _to_float(content.get("amount_in"), 0.0)
     amount_out = _to_float(content.get("amount_out"), 0.0)
     usd_value = _to_float(content.get("usd_value"), 0.0)
+
+    if not token_in or not token_out:
+        return None
 
     if amount_in <= 0 or amount_out <= 0 or usd_value <= 0:
         return None
