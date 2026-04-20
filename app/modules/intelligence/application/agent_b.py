@@ -1269,6 +1269,26 @@ def profile_wallet_from_event(
             if inferred_entity:
                 output.profiling_signal = inferred_entity["profiling_signal"]
                 output.confidence_score = inferred_entity["confidence_score"]
+
+                # Promote high-value volume signals even before swap/PnL history matures.
+                transfer_usd = 0.0
+                content = (
+                    event_data.get("content", {})
+                    if isinstance(event_data.get("content"), dict)
+                    else {}
+                )
+                if isinstance(content.get("usd_value"), (int, float)):
+                    transfer_usd = float(content["usd_value"])
+
+                if (
+                    output.profiling_signal in {"whale_like", "smart_money_like"}
+                    and transfer_usd >= 50_000
+                ):
+                    output.should_boost_priority = True
+                    output.priority_boost_reason = (
+                        f"High-value transfer with {output.profiling_signal} signal "
+                        f"(${transfer_usd:,.0f})"
+                    )
             elif (
                 observed_activity
                 and observed_activity.get("observed_event_count", 0) >= 2
@@ -1343,6 +1363,37 @@ def profile_wallet_from_event(
             output.profiling_signal = "low_performer"
         else:
             output.profiling_signal = "unverified"
+
+        # If tier-based signal is still unverified, surface stronger inferred context.
+        if inferred_entity and output.profiling_signal == "unverified":
+            inferred_signal = inferred_entity.get("profiling_signal")
+            if inferred_signal in {
+                "whale_like",
+                "exchange_like",
+                "market_maker_like",
+                "bot_like",
+                "smart_money_like",
+            }:
+                output.profiling_signal = inferred_signal
+                inferred_conf = inferred_entity.get("confidence_score", 0.0)
+                if isinstance(inferred_conf, (int, float)):
+                    output.confidence_score = max(output.confidence_score, float(inferred_conf))
+
+                transfer_usd = 0.0
+                content = (
+                    event_data.get("content", {})
+                    if isinstance(event_data.get("content"), dict)
+                    else {}
+                )
+                if isinstance(content.get("usd_value"), (int, float)):
+                    transfer_usd = float(content["usd_value"])
+
+                if inferred_signal in {"whale_like", "smart_money_like"} and transfer_usd >= 50_000:
+                    output.should_boost_priority = True
+                    output.priority_boost_reason = (
+                        f"High-value transfer with {inferred_signal} signal "
+                        f"(${transfer_usd:,.0f})"
+                    )
 
         if (
             not entity
