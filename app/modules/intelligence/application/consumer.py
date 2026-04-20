@@ -207,7 +207,12 @@ def enrich_event_with_agent_b(event: dict) -> dict:
         )
         from_address = content.get("from_address")
         to_address = content.get("to_address")
-        wallet_addr = event.get("wallet_address") or event.get("address")
+        wallet_addr = (
+            event.get("wallet_address")
+            or event.get("address")
+            or content.get("wallet_address")
+            or content.get("trader_address")
+        )
 
         addresses_to_profile = []
         seen_addresses = set()
