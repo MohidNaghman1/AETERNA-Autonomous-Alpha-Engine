@@ -667,9 +667,7 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
 
         tx_hash_raw = log_entry.get("transactionHash", "")
         tx_hash = (
-            tx_hash_raw.hex()
-            if isinstance(tx_hash_raw, bytes)
-            else str(tx_hash_raw)
+            tx_hash_raw.hex() if isinstance(tx_hash_raw, bytes) else str(tx_hash_raw)
         )
         if not tx_hash:
             return False
@@ -689,7 +687,9 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
                 logger.debug(f"[SWAP] Could not resolve block timestamp: {e}")
 
         log_index = int(log_entry.get("logIndex") or 0)
-        dex_name = "Uniswap V2-like" if topic0 == UNISWAP_V2_SWAP_TOPIC else "Uniswap V3-like"
+        dex_name = (
+            "Uniswap V2-like" if topic0 == UNISWAP_V2_SWAP_TOPIC else "Uniswap V3-like"
+        )
 
         event = normalize_dex_swap_event(
             tx_hash=tx_hash,

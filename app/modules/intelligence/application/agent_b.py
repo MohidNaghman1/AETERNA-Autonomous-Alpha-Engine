@@ -1377,7 +1377,9 @@ def profile_wallet_from_event(
                 output.profiling_signal = inferred_signal
                 inferred_conf = inferred_entity.get("confidence_score", 0.0)
                 if isinstance(inferred_conf, (int, float)):
-                    output.confidence_score = max(output.confidence_score, float(inferred_conf))
+                    output.confidence_score = max(
+                        output.confidence_score, float(inferred_conf)
+                    )
 
                 transfer_usd = 0.0
                 content = (
@@ -1388,7 +1390,10 @@ def profile_wallet_from_event(
                 if isinstance(content.get("usd_value"), (int, float)):
                     transfer_usd = float(content["usd_value"])
 
-                if inferred_signal in {"whale_like", "smart_money_like"} and transfer_usd >= 50_000:
+                if (
+                    inferred_signal in {"whale_like", "smart_money_like"}
+                    and transfer_usd >= 50_000
+                ):
                     output.should_boost_priority = True
                     output.priority_boost_reason = (
                         f"High-value transfer with {inferred_signal} signal "

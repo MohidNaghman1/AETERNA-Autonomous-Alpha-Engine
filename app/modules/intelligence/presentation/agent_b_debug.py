@@ -525,12 +525,10 @@ async def get_agent_b_statistics(
         # NOTE: The live on-chain collector mainly emits transfer events; only
         # swap-shaped payloads are eligible for trade record persistence.
         event_payloads = (
-            await db.execute(select(ProcessedEvent.event_data))
-        ).scalars().all()
+            (await db.execute(select(ProcessedEvent.event_data))).scalars().all()
+        )
 
-        trade_ids = (
-            await db.execute(select(TradeRecordORM.trade_id))
-        ).scalars().all()
+        trade_ids = (await db.execute(select(TradeRecordORM.trade_id))).scalars().all()
 
         onchain_transfer_events = 0
         onchain_swap_events = 0
