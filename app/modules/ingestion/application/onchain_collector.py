@@ -15,8 +15,9 @@ import logging
 import traceback
 import asyncio
 import aiohttp
+import requests
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from decimal import Decimal
 from dotenv import load_dotenv
 
@@ -91,6 +92,9 @@ class OnChainConfig:
     # Rate Limiting
     RPC_CALLS_PER_SECOND = int(os.getenv("RPC_CALLS_PER_SECOND", "100"))
 
+    # Swap Monitoring
+    MAX_SWAP_LOGS_PER_CYCLE = int(os.getenv("MAX_SWAP_LOGS_PER_CYCLE", "500"))
+
 
 # Token Addresses (Ethereum Mainnet) - Lowercase for consistent lookups
 STABLECOIN_ADDRESSES = {
@@ -117,6 +121,51 @@ publisher: Optional[RabbitMQPublisher] = None
 http_session: Optional[aiohttp.ClientSession] = None
 eth_price_cache: Dict[str, Any] = {"price": 3000, "timestamp": time.time()}
 graceful_shutdown = False
+pool_tokens_cache: Dict[str, Tuple[str, str]] = {}
+token_meta_cache: Dict[str, Tuple[str, int]] = {}
+
+# Swap signatures (mainnet-compatible)
+UNISWAP_V2_SWAP_TOPIC = (
+    "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+)
+UNISWAP_V3_SWAP_TOPIC = (
+    "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
+)
+WETH_MAINNET = "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2"
+
+ERC20_META_ABI = [
+    {
+        "name": "symbol",
+        "outputs": [{"type": "string", "name": ""}],
+        "inputs": [],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "name": "decimals",
+        "outputs": [{"type": "uint8", "name": ""}],
+        "inputs": [],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+POOL_TOKEN_ABI = [
+    {
+        "name": "token0",
+        "outputs": [{"type": "address", "name": ""}],
+        "inputs": [],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "name": "token1",
+        "outputs": [{"type": "address", "name": ""}],
+        "inputs": [],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
 
 
 # ============================================================================
@@ -132,6 +181,98 @@ def get_token_symbol(address: str) -> str:
 def get_exchange_name(address: str) -> Optional[str]:
     """Detect if address is a known exchange (address should be lowercase)."""
     return EXCHANGE_ADDRESSES.get(address)
+
+
+def _topic_hex(topic: Any) -> str:
+    """Normalize a log topic into lowercase hex string."""
+    if topic is None:
+        return ""
+    if isinstance(topic, bytes):
+        return "0x" + topic.hex()
+    text = str(topic)
+    return text.lower()
+
+
+def _decode_hex_words(data_hex: str) -> list[int]:
+    """Decode ABI-encoded 32-byte words into integers."""
+    if not data_hex:
+        return []
+    if data_hex.startswith("0x"):
+        data_hex = data_hex[2:]
+    if not data_hex or len(data_hex) % 64 != 0:
+        return []
+
+    words = []
+    for i in range(0, len(data_hex), 64):
+        words.append(int(data_hex[i : i + 64], 16))
+    return words
+
+
+def _signed_256(value: int) -> int:
+    """Convert uint256-encoded integer to signed int256."""
+    if value >= 2**255:
+        return value - 2**256
+    return value
+
+
+def _get_token_metadata(token_address: str) -> Tuple[str, int]:
+    """Fetch token symbol/decimals with caching and safe fallbacks."""
+    token_addr = (token_address or "").lower()
+    if not token_addr:
+        return "UNKNOWN", 18
+
+    if token_addr in token_meta_cache:
+        return token_meta_cache[token_addr]
+
+    # Fast path for tracked stablecoins
+    stable_symbol = STABLECOIN_ADDRESSES.get(token_addr)
+    if stable_symbol:
+        decimals = 18 if stable_symbol == "DAI" else 6
+        token_meta_cache[token_addr] = (stable_symbol, decimals)
+        return stable_symbol, decimals
+
+    symbol = "UNKNOWN"
+    decimals = 18
+
+    try:
+        token_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(token_addr), abi=ERC20_META_ABI
+        )
+        try:
+            symbol = token_contract.functions.symbol().call() or "UNKNOWN"
+        except Exception:
+            symbol = "UNKNOWN"
+        try:
+            decimals = int(token_contract.functions.decimals().call())
+        except Exception:
+            decimals = 18
+    except Exception as e:
+        logger.debug(f"[SWAP] Token metadata lookup failed for {token_addr}: {e}")
+
+    token_meta_cache[token_addr] = (symbol, decimals)
+    return symbol, decimals
+
+
+def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
+    """Read token0/token1 for a swap pool/pair contract."""
+    pool_addr = (pool_address or "").lower()
+    if not pool_addr:
+        return None
+
+    if pool_addr in pool_tokens_cache:
+        return pool_tokens_cache[pool_addr]
+
+    try:
+        pool_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(pool_addr), abi=POOL_TOKEN_ABI
+        )
+        token0 = pool_contract.functions.token0().call().lower()
+        token1 = pool_contract.functions.token1().call().lower()
+        pool_tokens_cache[pool_addr] = (token0, token1)
+        return token0, token1
+    except Exception as e:
+        logger.debug(f"[SWAP] Could not resolve pool tokens for {pool_addr}: {e}")
+        return None
 
 
 async def fetch_eth_price() -> float:
@@ -248,9 +389,11 @@ def determine_priority_by_threshold(
 
 def initialize_web3():
     """Initialize Web3 connection to Ethereum node."""
+    global w3
     try:
-        w3 = Web3(WebsocketProvider(OnChainConfig.QUICKNODE_URL))
-        if w3.is_connected():
+        web3_client = Web3(WebsocketProvider(OnChainConfig.QUICKNODE_URL))
+        if web3_client.is_connected():
+            w3 = web3_client
             logger.info("[OK] Connected to Ethereum node")
             return w3
         else:
@@ -342,14 +485,44 @@ def normalize_transfer_event(
         return None
 
 
+def get_eth_price_sync() -> float:
+    """Get ETH price for synchronous paths with safe refresh fallback."""
+    cache_age = time.time() - eth_price_cache["timestamp"]
+    if cache_age <= 300:
+        return float(eth_price_cache.get("price", 3000))
+
+    try:
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {"ids": "ethereum", "vs_currencies": "usd"}
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            payload = response.json()
+            price = float(payload["ethereum"]["usd"])
+            eth_price_cache["price"] = price
+            eth_price_cache["timestamp"] = time.time()
+            return price
+        logger.warning(
+            f"[PRICE] CoinGecko sync API error: {response.status_code}; using cached price"
+        )
+    except Exception as e:
+        logger.warning(
+            f"[PRICE] Error refreshing ETH price synchronously: {e}; using cached price"
+        )
+
+    return float(eth_price_cache.get("price", 3000))
+
+
 def normalize_dex_swap_event(
     tx_hash: str,
+    wallet_address: str,
     token_in: str,
     token_out: str,
     amount_in: float,
     amount_out: float,
     usd_value: float,
     dex_name: str,
+    pool_address: str,
+    log_index: int,
     block_timestamp: int,
 ) -> Optional[Event]:
     """Normalize a DEX swap event to unified schema."""
@@ -376,8 +549,13 @@ def normalize_dex_swap_event(
 
         content = {
             "transaction_hash": tx_hash,
+            "wallet_address": wallet_address,
+            "trader_address": wallet_address,
             "event_type": "dex_swap",
+            "transaction_type": "swap",
             "dex": dex_name,
+            "pool_address": pool_address,
+            "log_index": log_index,
             "token_in": token_in,
             "token_out": token_out,
             "amount_in": str(amount_in),
@@ -412,6 +590,133 @@ def normalize_dex_swap_event(
     except Exception as e:
         logger.error(f"Error normalizing DEX swap event: {e}")
         return None
+
+
+def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
+    """Decode and publish DEX swap log as trade-eligible event."""
+    try:
+        topic0 = _topic_hex((log_entry.get("topics") or [None])[0])
+        if topic0 not in {UNISWAP_V2_SWAP_TOPIC, UNISWAP_V3_SWAP_TOPIC}:
+            return False
+
+        pool_address = str(log_entry.get("address", "")).lower()
+        if not pool_address:
+            return False
+
+        pool_tokens = _get_pool_tokens(pool_address)
+        if not pool_tokens:
+            return False
+        token0_addr, token1_addr = pool_tokens
+
+        data_hex = log_entry.get("data", "0x")
+        if isinstance(data_hex, bytes):
+            data_hex = "0x" + data_hex.hex()
+        words = _decode_hex_words(data_hex)
+        if not words:
+            return False
+
+        token_in_addr = None
+        token_out_addr = None
+        amount_in_raw = 0
+        amount_out_raw = 0
+
+        if topic0 == UNISWAP_V2_SWAP_TOPIC and len(words) >= 4:
+            amount0_in, amount1_in, amount0_out, amount1_out = words[:4]
+            if amount0_in > 0 and amount1_out > 0:
+                token_in_addr, token_out_addr = token0_addr, token1_addr
+                amount_in_raw, amount_out_raw = amount0_in, amount1_out
+            elif amount1_in > 0 and amount0_out > 0:
+                token_in_addr, token_out_addr = token1_addr, token0_addr
+                amount_in_raw, amount_out_raw = amount1_in, amount0_out
+            else:
+                return False
+
+        elif topic0 == UNISWAP_V3_SWAP_TOPIC and len(words) >= 2:
+            amount0 = _signed_256(words[0])
+            amount1 = _signed_256(words[1])
+            if amount0 > 0 and amount1 < 0:
+                token_in_addr, token_out_addr = token0_addr, token1_addr
+                amount_in_raw, amount_out_raw = amount0, abs(amount1)
+            elif amount1 > 0 and amount0 < 0:
+                token_in_addr, token_out_addr = token1_addr, token0_addr
+                amount_in_raw, amount_out_raw = amount1, abs(amount0)
+            else:
+                return False
+        else:
+            return False
+
+        token_in_symbol, token_in_decimals = _get_token_metadata(token_in_addr)
+        token_out_symbol, token_out_decimals = _get_token_metadata(token_out_addr)
+
+        amount_in = float(Decimal(amount_in_raw) / Decimal(10**token_in_decimals))
+        amount_out = float(Decimal(amount_out_raw) / Decimal(10**token_out_decimals))
+
+        # Prefer stablecoin leg for USD valuation; fallback to WETH leg × ETH price.
+        usd_value = 0.0
+        if token_in_addr in STABLECOIN_ADDRESSES:
+            usd_value = amount_in
+        elif token_out_addr in STABLECOIN_ADDRESSES:
+            usd_value = amount_out
+        elif token_in_addr == WETH_MAINNET:
+            usd_value = amount_in * float(eth_price_cache.get("price", 3000))
+        elif token_out_addr == WETH_MAINNET:
+            usd_value = amount_out * float(eth_price_cache.get("price", 3000))
+
+        if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+            return False
+
+        tx_hash_raw = log_entry.get("transactionHash", "")
+        tx_hash = (
+            tx_hash_raw.hex()
+            if isinstance(tx_hash_raw, bytes)
+            else str(tx_hash_raw)
+        )
+        if not tx_hash:
+            return False
+
+        tx = w3.eth.get_transaction(tx_hash)
+        wallet_address = str(tx.get("from", "") or "").lower()
+        if not wallet_address:
+            wallet_address = "0x"
+
+        block_number = int(log_entry.get("blockNumber") or 0)
+        block_timestamp = int(time.time())
+        if block_number > 0:
+            try:
+                block = w3.eth.get_block(block_number)
+                block_timestamp = int(block.get("timestamp", block_timestamp))
+            except Exception as e:
+                logger.debug(f"[SWAP] Could not resolve block timestamp: {e}")
+
+        log_index = int(log_entry.get("logIndex") or 0)
+        dex_name = "Uniswap V2-like" if topic0 == UNISWAP_V2_SWAP_TOPIC else "Uniswap V3-like"
+
+        event = normalize_dex_swap_event(
+            tx_hash=tx_hash,
+            wallet_address=wallet_address,
+            token_in=token_in_symbol,
+            token_out=token_out_symbol,
+            amount_in=amount_in,
+            amount_out=amount_out,
+            usd_value=usd_value,
+            dex_name=dex_name,
+            pool_address=pool_address,
+            log_index=log_index,
+            block_timestamp=block_timestamp,
+        )
+
+        if event:
+            logger.info(
+                f"[SWAP] {dex_name}: {token_in_symbol}->{token_out_symbol} "
+                f"~${usd_value:,.0f} | TX: {tx_hash[:10]}..."
+            )
+            return publish_event(event)
+
+        return False
+
+    except Exception as e:
+        logger.debug(f"[SWAP] Failed to process swap log: {e}")
+        return False
 
 
 def publish_event(event: Event) -> bool:
@@ -561,7 +866,7 @@ def process_exchange_transaction(tx_hash: str) -> bool:
         amount_wei = tx.get("value", 0)
 
         # Convert to USD
-        eth_price = eth_price_cache.get("price", 3000)
+        eth_price = get_eth_price_sync()
         eth_amount = float(Decimal(amount_wei) / Decimal(10**18))
         usd_value = eth_amount * eth_price
 
@@ -679,6 +984,40 @@ def monitor_large_transfers():
             # Small delay to avoid rate limiting
             time.sleep(0.5)
 
+        # ==== STRATEGY 1.5: Query DEX Swap Logs (trade-eligible events) ====
+        logger.info("[MONITOR] Querying DEX swap logs (V2/V3 signatures)...")
+        try:
+            swap_logs = w3.eth.get_logs(
+                {
+                    "topics": [[UNISWAP_V2_SWAP_TOPIC, UNISWAP_V3_SWAP_TOPIC]],
+                    "fromBlock": hex(current_block - block_range),
+                    "toBlock": hex(current_block),
+                }
+            )
+
+            if len(swap_logs) > OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE:
+                logger.warning(
+                    f"[SWAP] Swap logs capped: {len(swap_logs)} -> {OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE}"
+                )
+                swap_logs = swap_logs[: OnChainConfig.MAX_SWAP_LOGS_PER_CYCLE]
+
+            logger.info(f"[SWAP] Found {len(swap_logs)} candidate swap logs")
+
+            swap_published = 0
+            for swap_log in swap_logs:
+                if process_dex_swap_log_event(swap_log):
+                    swap_published += 1
+
+            if swap_published > 0:
+                logger.info(
+                    f"[SWAP] Published {swap_published} swap events to RabbitMQ"
+                )
+            events_found_total += swap_published
+
+        except Exception as e:
+            logger.error(f"[SWAP] ERROR querying swap logs: {e}")
+            logger.debug(f"[SWAP] Traceback: {traceback.format_exc()}")
+
         # ==== STRATEGY 2: Query ETH Transfers (Check exchange addresses) ====
         logger.info("[MONITOR] Checking exchange addresses for ETH transfers...")
 
@@ -717,7 +1056,7 @@ def monitor_large_transfers():
 
         try:
             blocks_to_scan = 10  # Scan last 10 blocks for transactions
-            eth_price = eth_price_cache.get("price", 3000)
+            eth_price = get_eth_price_sync()
 
             for block_offset in range(1, blocks_to_scan + 1):
                 block_num = current_block - block_offset
