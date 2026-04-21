@@ -617,8 +617,8 @@ def normalize_dex_swap_event(
             "log_index": log_index,
             "token_in": token_in,
             "token_out": token_out,
-            "amount_in": str(amount_in),
-            "amount_out": str(amount_out),
+            "amount_in": amount_in,
+            "amount_out": amount_out,
             "usd_value": usd_value,
             "blockchain": "ethereum",
             # Alert metadata
@@ -793,6 +793,8 @@ def process_dex_swap_log_event(
             published = publish_event(event)
             if published:
                 stats["published"] = stats.get("published", 0) + 1
+            else:
+                stats["rejected_publish"] = stats.get("rejected_publish", 0) + 1
             return published
 
         stats["rejected_normalize"] = stats.get("rejected_normalize", 0) + 1
