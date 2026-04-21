@@ -187,10 +187,8 @@ def _topic_hex(topic: Any) -> str:
     """Normalize a log topic into lowercase hex string."""
     if topic is None:
         return ""
-    if isinstance(topic, bytes):
-        return "0x" + topic.hex()
-    text = str(topic)
-    return text.lower()
+    # Topics are 32-byte hex values; reuse robust normalization used for tx hashes.
+    return _normalize_tx_hash(topic)
 
 
 def _decode_hex_words(data_hex: str) -> list[int]:
@@ -640,6 +638,9 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any], stats: Dict[str, int])
     """Decode and publish DEX swap log as trade-eligible event."""
     try:
         topic0 = _topic_hex((log_entry.get("topics") or [None])[0])
+        logger.debug(
+            f"[SWAP-DEBUG] topic0={topic0!r} | V2={UNISWAP_V2_SWAP_TOPIC!r} | V3={UNISWAP_V3_SWAP_TOPIC!r}"
+        )
         if topic0 not in {UNISWAP_V2_SWAP_TOPIC, UNISWAP_V3_SWAP_TOPIC}:
             stats["rejected_topic"] = stats.get("rejected_topic", 0) + 1
             return False
