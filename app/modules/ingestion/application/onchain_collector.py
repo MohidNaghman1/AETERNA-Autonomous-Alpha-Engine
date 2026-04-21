@@ -1089,8 +1089,13 @@ def monitor_large_transfers():
                 if process_dex_swap_log_event(swap_log, swap_stats):
                     swap_published += 1
 
-            summary_parts = [f"candidates={len(swap_logs)}"]
-            summary_parts.extend(f"{k}={v}" for k, v in sorted(swap_stats.items()))
+            summary_parts = [
+                f"candidates={len(swap_logs)}",
+                f"published={swap_published}",
+            ]
+            summary_parts.extend(
+                f"{k}={v}" for k, v in sorted(swap_stats.items()) if k != "published"
+            )
             logger.info(f"[SWAP] Cycle summary — {' | '.join(summary_parts)}")
 
             if swap_published > 0:
