@@ -191,18 +191,35 @@ def _topic_hex(topic: Any) -> str:
     return _normalize_tx_hash(topic)
 
 
-def _decode_hex_words(data_hex: str) -> list[int]:
+def _decode_hex_words(data_hex: Any) -> list[int]:
     """Decode ABI-encoded 32-byte words into integers."""
     if not data_hex:
         return []
-    if data_hex.startswith("0x"):
+
+    if isinstance(data_hex, bytes):
+        data_hex = data_hex.hex()
+    elif hasattr(data_hex, "hex") and callable(getattr(data_hex, "hex")):
+        data_hex = str(data_hex.hex())
+    else:
+        data_hex = str(data_hex)
+
+    data_hex = data_hex.strip().lower()
+    if data_hex.startswith("hexbytes("):
+        data_hex = data_hex.replace("hexbytes('", "").replace("')", "")
+
+    # Handle both canonical 0x... and malformed 0x0x... cases robustly.
+    while data_hex.startswith("0x"):
         data_hex = data_hex[2:]
+
     if not data_hex or len(data_hex) % 64 != 0:
         return []
 
     words = []
-    for i in range(0, len(data_hex), 64):
-        words.append(int(data_hex[i : i + 64], 16))
+    try:
+        for i in range(0, len(data_hex), 64):
+            words.append(int(data_hex[i : i + 64], 16))
+    except ValueError:
+        return []
     return words
 
 
@@ -634,7 +651,9 @@ def normalize_dex_swap_event(
         return None
 
 
-def process_dex_swap_log_event(log_entry: Dict[str, Any], stats: Dict[str, int]) -> bool:
+def process_dex_swap_log_event(
+    log_entry: Dict[str, Any], stats: Dict[str, int]
+) -> bool:
     """Decode and publish DEX swap log as trade-eligible event."""
     try:
         topic0 = _topic_hex((log_entry.get("topics") or [None])[0])
@@ -656,10 +675,7 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any], stats: Dict[str, int])
             return False
         token0_addr, token1_addr = pool_tokens
 
-        data_hex = log_entry.get("data", "0x")
-        if isinstance(data_hex, bytes):
-            data_hex = "0x" + data_hex.hex()
-        words = _decode_hex_words(data_hex)
+        words = _decode_hex_words(log_entry.get("data", "0x"))
         if not words:
             stats["rejected_decode"] = stats.get("rejected_decode", 0) + 1
             return False
@@ -719,9 +735,9 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any], stats: Dict[str, int])
             return False
 
         if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
-            stats["rejected_below_threshold"] = stats.get(
-                "rejected_below_threshold", 0
-            ) + 1
+            stats["rejected_below_threshold"] = (
+                stats.get("rejected_below_threshold", 0) + 1
+            )
             return False
 
         tx_hash_raw = log_entry.get("transactionHash", "")
@@ -1074,9 +1090,7 @@ def monitor_large_transfers():
                     swap_published += 1
 
             summary_parts = [f"candidates={len(swap_logs)}"]
-            summary_parts.extend(
-                f"{k}={v}" for k, v in sorted(swap_stats.items())
-            )
+            summary_parts.extend(f"{k}={v}" for k, v in sorted(swap_stats.items()))
             logger.info(f"[SWAP] Cycle summary — {' | '.join(summary_parts)}")
 
             if swap_published > 0:
