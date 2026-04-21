@@ -215,6 +215,31 @@ def _signed_256(value: int) -> int:
     return value
 
 
+def _normalize_tx_hash(tx_hash_raw: Any) -> str:
+    """Normalize transaction hash from bytes/HexBytes/string into lowercase 0x-hex."""
+    if tx_hash_raw is None:
+        return ""
+
+    tx_hash_text = ""
+    if isinstance(tx_hash_raw, bytes):
+        tx_hash_text = tx_hash_raw.hex()
+    elif hasattr(tx_hash_raw, "hex") and callable(getattr(tx_hash_raw, "hex")):
+        # Handles HexBytes and similar types
+        tx_hash_text = str(tx_hash_raw.hex())
+    else:
+        tx_hash_text = str(tx_hash_raw)
+
+    tx_hash_text = tx_hash_text.strip().lower()
+    if tx_hash_text.startswith("hexbytes("):
+        # Defensive fallback for odd stringified HexBytes representations
+        tx_hash_text = tx_hash_text.replace("hexbytes('", "").replace("')", "")
+    if tx_hash_text.startswith("0x"):
+        return tx_hash_text
+    if tx_hash_text:
+        return f"0x{tx_hash_text}"
+    return ""
+
+
 def _get_token_metadata(token_address: str) -> Tuple[str, int]:
     """Fetch token symbol/decimals with caching and safe fallbacks."""
     token_addr = (token_address or "").lower()
@@ -262,17 +287,28 @@ def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
     if pool_addr in pool_tokens_cache:
         return pool_tokens_cache[pool_addr]
 
-    try:
-        pool_contract = w3.eth.contract(
-            address=Web3.to_checksum_address(pool_addr), abi=POOL_TOKEN_ABI
-        )
-        token0 = pool_contract.functions.token0().call().lower()
-        token1 = pool_contract.functions.token1().call().lower()
-        pool_tokens_cache[pool_addr] = (token0, token1)
-        return token0, token1
-    except Exception as e:
-        logger.debug(f"[SWAP] Could not resolve pool tokens for {pool_addr}: {e}")
-        return None
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            pool_contract = w3.eth.contract(
+                address=Web3.to_checksum_address(pool_addr), abi=POOL_TOKEN_ABI
+            )
+            token0 = pool_contract.functions.token0().call().lower()
+            token1 = pool_contract.functions.token1().call().lower()
+            pool_tokens_cache[pool_addr] = (token0, token1)
+            return token0, token1
+        except Exception as e:
+            if attempt < max_attempts:
+                backoff = 0.1 * attempt
+                logger.info(
+                    f"[SWAP] Pool token lookup retry {attempt}/{max_attempts - 1} for {pool_addr} after error: {e}"
+                )
+                time.sleep(backoff)
+                continue
+            logger.info(
+                f"[SWAP] Could not resolve pool tokens for {pool_addr} after {max_attempts} attempts: {e}"
+            )
+            return None
 
 
 def is_dex_pool_address(address: str) -> bool:
@@ -787,14 +823,8 @@ def process_erc20_transfer_event(
     """
     try:
         # Extract data from log entry
-        tx_hash = (
-            log_entry.get("transactionHash", "").hex()
-            if isinstance(log_entry.get("transactionHash"), bytes)
-            else log_entry.get("transactionHash", "0x")
-        )
-        tx_hash = str(tx_hash or "").lower()
-        if tx_hash and not tx_hash.startswith("0x"):
-            tx_hash = f"0x{tx_hash}"
+        tx_hash_raw = log_entry.get("transactionHash")
+        tx_hash = _normalize_tx_hash(tx_hash_raw)
         from_address = (
             ("0x" + log_entry["topics"][1].hex()[-40:]).lower()
             if len(log_entry.get("topics", [])) > 1
@@ -813,6 +843,10 @@ def process_erc20_transfer_event(
                 f"[ERC20] Skipping transfer {tx_hash[:10]}... (swap tx detected this cycle)"
             )
             return False
+
+        logger.debug(
+            f"[ERC20-DEDUP] tx_hash={tx_hash} | raw_type={type(tx_hash_raw).__name__} | in_published_set={bool(published_transfer_tx_hashes and tx_hash in published_transfer_tx_hashes)}"
+        )
 
         # EARLY EXIT: if a transfer event for this tx was already published in this cycle,
         # skip additional transfer logs from the same transaction.
@@ -1004,15 +1038,8 @@ def monitor_large_transfers():
 
             # Build tx-hash suppression set for later transfer-leg filtering.
             for swap_log in swap_logs:
-                tx_hash_raw = swap_log.get("transactionHash")
-                tx_hash = (
-                    tx_hash_raw.hex()
-                    if isinstance(tx_hash_raw, bytes)
-                    else str(tx_hash_raw or "")
-                ).lower()
+                tx_hash = _normalize_tx_hash(swap_log.get("transactionHash"))
                 if tx_hash:
-                    if not tx_hash.startswith("0x"):
-                        tx_hash = f"0x{tx_hash}"
                     swap_tx_hashes.add(tx_hash)
 
             swap_published = 0
