@@ -33,15 +33,12 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 
 def get_url():
-    return (
-        os.getenv("SYNC_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or (
-            f"postgresql+psycopg2://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}"
-            f"@{os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')}/{os.getenv('POSTGRES_DB')}"
-            "?sslmode=disable"
-        )
-    )
+    url = os.getenv("DATABASE_URL") or os.getenv("SYNC_DATABASE_URL")
+
+    if not url:
+        raise Exception("DATABASE_URL not set")
+
+    return url
 
 
 def run_migrations_offline() -> None:
