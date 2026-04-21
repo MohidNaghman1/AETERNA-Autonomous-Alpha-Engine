@@ -98,6 +98,14 @@ class OnChainConfig:
         os.getenv("SWAP_PROCESS_DELAY_SECONDS", "0.05")
     )
 
+    # Web3 Init Backoff (protect provider from reconnect storms)
+    WEB3_INIT_COOLDOWN_SECONDS = float(
+        os.getenv("WEB3_INIT_COOLDOWN_SECONDS", "5")
+    )
+    WEB3_INIT_MAX_BACKOFF_SECONDS = float(
+        os.getenv("WEB3_INIT_MAX_BACKOFF_SECONDS", "60")
+    )
+
 
 # Token Addresses (Ethereum Mainnet) - Lowercase for consistent lookups
 STABLECOIN_ADDRESSES = {
@@ -129,6 +137,8 @@ token_meta_cache: Dict[str, Tuple[str, int]] = {}
 tx_from_cache: Dict[str, str] = {}
 block_timestamp_cache: Dict[int, int] = {}
 pool_lookup_failure_cache: Dict[str, float] = {}
+web3_init_fail_streak = 0
+web3_init_retry_not_before = 0.0
 
 # Swap signatures (mainnet-compatible)
 UNISWAP_V2_SWAP_TOPIC = (
@@ -326,6 +336,8 @@ def _get_tx_from_address(tx_hash: str) -> str:
 
     tx = w3.eth.get_transaction(tx_hash)
     from_address = str(tx.get("from", "") or "").lower()
+    if len(tx_from_cache) > 5000:
+        tx_from_cache.clear()
     tx_from_cache[tx_hash] = from_address
     return from_address
 
@@ -337,6 +349,8 @@ def _get_block_timestamp(block_number: int) -> int:
 
     block = w3.eth.get_block(block_number)
     block_ts = int(block.get("timestamp", int(time.time())))
+    if len(block_timestamp_cache) > 1000:
+        block_timestamp_cache.clear()
     block_timestamp_cache[block_number] = block_ts
     return block_ts
 
@@ -506,19 +520,70 @@ def determine_priority_by_threshold(
 
 def initialize_web3():
     """Initialize Web3 connection to Ethereum node."""
-    global w3
+    global w3, web3_init_fail_streak, web3_init_retry_not_before
+
+    # If current client is healthy, reuse it.
+    if w3:
+        try:
+            if w3.is_connected():
+                return w3
+            logger.info("[INIT] Web3 object exists but is disconnected. Resetting...")
+            w3 = None
+        except Exception:
+            logger.debug("[INIT] Web3 health check failed. Resetting connection object")
+            w3 = None
+
+    now = time.time()
+    if now < web3_init_retry_not_before:
+        wait_seconds = max(0.0, web3_init_retry_not_before - now)
+        logger.warning(
+            f"[INIT] Skipping Web3 reconnect for {wait_seconds:.1f}s due to prior init failures"
+        )
+        return None
+
     try:
         web3_client = Web3(WebsocketProvider(OnChainConfig.QUICKNODE_URL))
         if web3_client.is_connected():
             w3 = web3_client
+            web3_init_fail_streak = 0
+            web3_init_retry_not_before = 0.0
             logger.info("[OK] Connected to Ethereum node")
             return w3
         else:
+            web3_init_fail_streak += 1
+            cooldown = min(
+                OnChainConfig.WEB3_INIT_MAX_BACKOFF_SECONDS,
+                OnChainConfig.WEB3_INIT_COOLDOWN_SECONDS
+                * (2 ** max(0, web3_init_fail_streak - 1)),
+            )
+            web3_init_retry_not_before = time.time() + cooldown
             logger.error("[ERROR] Failed to connect to Ethereum node")
             return None
     except Exception as e:
-        logger.error(f"[ERROR] Error initializing Web3: {e}")
-        traceback.print_exc()
+        web3_init_fail_streak += 1
+        rate_limited = _is_rate_limited_error(e)
+        base_cooldown = (
+            OnChainConfig.WEB3_INIT_COOLDOWN_SECONDS
+            if rate_limited
+            else max(1.0, OnChainConfig.WEB3_INIT_COOLDOWN_SECONDS / 2)
+        )
+        cooldown = min(
+            OnChainConfig.WEB3_INIT_MAX_BACKOFF_SECONDS,
+            base_cooldown * (2 ** max(0, web3_init_fail_streak - 1)),
+        )
+        web3_init_retry_not_before = time.time() + cooldown
+
+        # Additional immediate cool-down for the current cycle on provider 429.
+        if rate_limited:
+            sleep_seconds = min(10.0, cooldown)
+            logger.warning(
+                f"[WARN] Rate limited by provider (HTTP 429-like). Sleeping {sleep_seconds:.1f}s to cool down..."
+            )
+            time.sleep(sleep_seconds)
+
+        logger.error(
+            f"[ERROR] Error initializing Web3: {e} | cooldown={cooldown:.1f}s | rate_limited={rate_limited}"
+        )
         return None
 
 
@@ -1291,8 +1356,12 @@ def monitor_large_transfers():
 
                             # Check if it's a large ETH transfer
                             value_wei = tx.get("value", 0)
-                            from_addr = _get_tx_from_address(normalized_tx_hash)
-                            to_addr = tx.get("to", "").lower()
+                            if value_wei == 0:
+                                continue
+
+                            # Use already-fetched tx to avoid a redundant RPC call
+                            from_addr = str(tx.get("from", "") or "").lower()
+                            to_addr = str(tx.get("to", "") or "").lower()
 
                             # Check if from or to is a known exchange
                             exchange_from = get_exchange_name(from_addr)
@@ -1307,6 +1376,11 @@ def monitor_large_transfers():
                                         f"[ETH] Found large ETH transfer: {eth_amount:.2f} ETH (~${usd_value:,.0f})"
                                     )
 
+                                    try:
+                                        block_ts = _get_block_timestamp(block_num)
+                                    except Exception:
+                                        block_ts = int(time.time())
+
                                     # Process this transaction
                                     event = normalize_transfer_event(
                                         tx_hash=normalized_tx_hash,
@@ -1316,7 +1390,7 @@ def monitor_large_transfers():
                                         token="ETH",
                                         token_decimals=18,
                                         usd_value=usd_value,
-                                        block_timestamp=int(time.time()),
+                                        block_timestamp=block_ts,
                                     )
 
                                     if event:
@@ -1362,12 +1436,10 @@ async def run_collector_async():
     global publisher
     start_time = time.time()
 
-    # Initialize Web3 connection
-    if not w3:
-        logger.info("[INIT] Initializing Web3 connection...")
-        initialize_web3()
-
-    if not w3 or not w3.is_connected():
+    # Initialize Web3 connection (initialize_web3 handles reuse + cooldown internally)
+    logger.info("[INIT] Checking Web3 connection...")
+    result = initialize_web3()
+    if not result:
         logger.error("Failed to initialize Web3 connection")
         return
 
