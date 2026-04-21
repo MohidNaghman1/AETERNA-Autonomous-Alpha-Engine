@@ -451,7 +451,7 @@ def normalize_transfer_event(
 
         content = {
             "transaction_hash": tx_hash,
-            "event_type": "erc20_transfer",
+            "event_type": "transfer",
             "from_address": from_address,
             "to_address": to_address,
             "amount": str(amount),
@@ -559,7 +559,7 @@ def normalize_dex_swap_event(
             "transaction_hash": tx_hash,
             "wallet_address": wallet_address,
             "trader_address": wallet_address,
-            "event_type": "dex_swap",
+            "event_type": "swap",
             "transaction_type": "swap",
             "dex": dex_name,
             "pool_address": pool_address,
