@@ -35,6 +35,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/debug/agent-b", tags=["agent-b-debug"])
 
 
+def _normalize_processed_event_payload(payload: Any) -> Optional[Dict[str, Any]]:
+    """Normalize ProcessedEvent.event_data into a canonical event dict shape."""
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    # Defensive fallback for envelope-shaped rows: {"event_data": {...}}
+    nested = payload.get("event_data")
+    if isinstance(nested, dict) and "content" not in payload:
+        payload = nested
+
+    # Ensure content is always a dict for downstream logic.
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        payload = dict(payload)
+        payload["content"] = {}
+
+    return payload
+
+
 # ============================================================================
 # WALLET PROFILES ENDPOINTS
 # ============================================================================
@@ -554,28 +579,23 @@ async def get_agent_b_statistics(
                 # UUID-like or any other legacy format.
                 legacy_trade_id_count += 1
 
-        for payload in event_payloads:
-            if isinstance(payload, str):
-                try:
-                    payload = json.loads(payload)
-                except Exception:
-                    payload_parse_failures += 1
-                    continue
-
-            if not isinstance(payload, dict):
+        for raw_payload in event_payloads:
+            payload = _normalize_processed_event_payload(raw_payload)
+            if payload is None:
+                payload_parse_failures += 1
                 continue
 
             source = str(payload.get("source", "")).lower()
             content = payload.get("content", {})
-            if not isinstance(content, dict):
-                content = {}
 
             event_type = str(content.get("event_type", "")).lower()
             tx_type = str(content.get("transaction_type", "")).lower()
 
             if source == "ethereum" and tx_type == "transfer":
                 onchain_transfer_events += 1
-            if source == "ethereum" and (event_type == "dex_swap" or tx_type == "swap"):
+            if source == "ethereum" and (
+                event_type in ("dex_swap", "swap") or tx_type == "swap"
+            ):
                 onchain_swap_events += 1
 
             if extract_trade_record_payload(payload) is not None:

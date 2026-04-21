@@ -64,12 +64,16 @@ def is_trade_like_event(event: Dict[str, Any]) -> bool:
         and content.get("amount_out") is not None
     )
 
-    return event_type == "dex_swap" or tx_type == "swap" or has_swap_shape
+    return event_type in ("dex_swap", "swap") or tx_type == "swap" or has_swap_shape
 
 
 def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Extract normalized trade payload from an event; return None if insufficient."""
     if not is_trade_like_event(event):
+        logger.debug(
+            "[TRADE] Skipped: non trade-like event | event_id=%s",
+            event.get("id") if isinstance(event, dict) else None,
+        )
         return None
 
     content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
@@ -82,6 +86,11 @@ def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, An
         or event.get("address")
     )
     if not isinstance(wallet_address, str) or not wallet_address.strip():
+        logger.debug(
+            "[TRADE] Skipped: missing wallet address | event_id=%s tx=%s",
+            event.get("id"),
+            content.get("transaction_hash"),
+        )
         return None
 
     token_in = content.get("token_in") or content.get("token")
@@ -92,9 +101,24 @@ def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, An
     usd_value = _to_float(content.get("usd_value"), 0.0)
 
     if not token_in or not token_out:
+        logger.debug(
+            "[TRADE] Skipped: missing token fields | event_id=%s tx=%s token_in=%s token_out=%s",
+            event.get("id"),
+            content.get("transaction_hash"),
+            token_in,
+            token_out,
+        )
         return None
 
     if amount_in <= 0 or amount_out <= 0 or usd_value <= 0:
+        logger.debug(
+            "[TRADE] Skipped: invalid amounts/usd | event_id=%s tx=%s amount_in=%s amount_out=%s usd_value=%s",
+            event.get("id"),
+            content.get("transaction_hash"),
+            amount_in,
+            amount_out,
+            usd_value,
+        )
         return None
 
     timestamp = _parse_timestamp(event.get("timestamp") or content.get("timestamp"))
@@ -152,8 +176,27 @@ def upsert_trade_record_from_event(db, event: Dict[str, Any]) -> str:
 
     Returns one of: created, updated, skipped
     """
+    content = event.get("content", {}) if isinstance(event.get("content"), dict) else {}
+    event_type = str(content.get("event_type", "")).lower()
+    tx_type = str(content.get("transaction_type", "")).lower()
+    tx_hash = str(content.get("transaction_hash") or "")
+    usd_value = _to_float(content.get("usd_value"), 0.0)
+
+    if event_type in ("dex_swap", "swap") or tx_type == "swap":
+        logger.debug(
+            "[TRADE] Processing swap tx=%s usd=%s event_id=%s",
+            tx_hash,
+            usd_value,
+            event.get("id"),
+        )
+
     payload = extract_trade_record_payload(event)
     if payload is None:
+        logger.debug(
+            "[TRADE] Upsert skipped after extraction | event_id=%s tx=%s",
+            event.get("id"),
+            tx_hash,
+        )
         return "skipped"
 
     trade_id = build_deterministic_trade_id(payload)
