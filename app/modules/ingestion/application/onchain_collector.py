@@ -651,7 +651,9 @@ def normalize_dex_swap_event(
         return None
 
 
-def process_dex_swap_log_event(log_entry: Dict[str, Any], stats: Dict[str, int]) -> bool:
+def process_dex_swap_log_event(
+    log_entry: Dict[str, Any], stats: Dict[str, int]
+) -> bool:
     """Decode and publish DEX swap log as trade-eligible event."""
     try:
         topic0 = _topic_hex((log_entry.get("topics") or [None])[0])
@@ -733,9 +735,9 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any], stats: Dict[str, int])
             return False
 
         if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
-            stats["rejected_below_threshold"] = stats.get(
-                "rejected_below_threshold", 0
-            ) + 1
+            stats["rejected_below_threshold"] = (
+                stats.get("rejected_below_threshold", 0) + 1
+            )
             return False
 
         tx_hash_raw = log_entry.get("transactionHash", "")
@@ -1088,9 +1090,7 @@ def monitor_large_transfers():
                     swap_published += 1
 
             summary_parts = [f"candidates={len(swap_logs)}"]
-            summary_parts.extend(
-                f"{k}={v}" for k, v in sorted(swap_stats.items())
-            )
+            summary_parts.extend(f"{k}={v}" for k, v in sorted(swap_stats.items()))
             logger.info(f"[SWAP] Cycle summary — {' | '.join(summary_parts)}")
 
             if swap_published > 0:
