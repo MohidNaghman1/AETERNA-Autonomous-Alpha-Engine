@@ -94,6 +94,9 @@ class OnChainConfig:
 
     # Swap Monitoring
     MAX_SWAP_LOGS_PER_CYCLE = int(os.getenv("MAX_SWAP_LOGS_PER_CYCLE", "500"))
+    SWAP_PROCESS_DELAY_SECONDS = float(
+        os.getenv("SWAP_PROCESS_DELAY_SECONDS", "0.05")
+    )
 
 
 # Token Addresses (Ethereum Mainnet) - Lowercase for consistent lookups
@@ -123,6 +126,9 @@ eth_price_cache: Dict[str, Any] = {"price": 3000, "timestamp": time.time()}
 graceful_shutdown = False
 pool_tokens_cache: Dict[str, Tuple[str, str]] = {}
 token_meta_cache: Dict[str, Tuple[str, int]] = {}
+tx_from_cache: Dict[str, str] = {}
+block_timestamp_cache: Dict[int, int] = {}
+pool_lookup_failure_cache: Dict[str, float] = {}
 
 # Swap signatures (mainnet-compatible)
 UNISWAP_V2_SWAP_TOPIC = (
@@ -293,6 +299,48 @@ def _get_token_metadata(token_address: str) -> Tuple[str, int]:
     return symbol, decimals
 
 
+def _is_rate_limited_error(error: Exception) -> bool:
+    """Return True when provider error indicates rate-limit / CU exhaustion."""
+    text = str(error).lower()
+    return (
+        "429" in text
+        or "rate limit" in text
+        or "compute units" in text
+        or "too many requests" in text
+    )
+
+
+def _rpc_backoff_seconds(attempt: int, rate_limited: bool) -> float:
+    """Backoff schedule tuned for provider throttling protection."""
+    if rate_limited:
+        # Slower exponential backoff for explicit provider throttles.
+        return min(3.0, 0.5 * (2 ** (attempt - 1)))
+    # Lightweight linear backoff for transient non-rate errors.
+    return min(1.0, 0.1 * attempt)
+
+
+def _get_tx_from_address(tx_hash: str) -> str:
+    """Resolve tx sender with memoization to avoid repeated RPC calls."""
+    if tx_hash in tx_from_cache:
+        return tx_from_cache[tx_hash]
+
+    tx = w3.eth.get_transaction(tx_hash)
+    from_address = str(tx.get("from", "") or "").lower()
+    tx_from_cache[tx_hash] = from_address
+    return from_address
+
+
+def _get_block_timestamp(block_number: int) -> int:
+    """Resolve block timestamp with memoization to avoid repeated RPC calls."""
+    if block_number in block_timestamp_cache:
+        return block_timestamp_cache[block_number]
+
+    block = w3.eth.get_block(block_number)
+    block_ts = int(block.get("timestamp", int(time.time())))
+    block_timestamp_cache[block_number] = block_ts
+    return block_ts
+
+
 def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
     """Read token0/token1 for a swap pool/pair contract."""
     pool_addr = (pool_address or "").lower()
@@ -301,6 +349,12 @@ def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
 
     if pool_addr in pool_tokens_cache:
         return pool_tokens_cache[pool_addr]
+
+    # Negative cache to avoid hammering the same failing pool repeatedly.
+    cooldown_until = pool_lookup_failure_cache.get(pool_addr)
+    now = time.time()
+    if cooldown_until and now < cooldown_until:
+        return None
 
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
@@ -311,15 +365,20 @@ def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
             token0 = pool_contract.functions.token0().call().lower()
             token1 = pool_contract.functions.token1().call().lower()
             pool_tokens_cache[pool_addr] = (token0, token1)
+            # Clear negative-cache marker on recovery.
+            pool_lookup_failure_cache.pop(pool_addr, None)
             return token0, token1
         except Exception as e:
+            rate_limited = _is_rate_limited_error(e)
             if attempt < max_attempts:
-                backoff = 0.1 * attempt
+                backoff = _rpc_backoff_seconds(attempt, rate_limited)
                 logger.info(
                     f"[SWAP] Pool token lookup retry {attempt}/{max_attempts - 1} for {pool_addr} after error: {e}"
                 )
                 time.sleep(backoff)
                 continue
+            # Negative-cache failed pool for a short window to reduce repeated 429 storms.
+            pool_lookup_failure_cache[pool_addr] = time.time() + (20 if rate_limited else 10)
             logger.info(
                 f"[SWAP] Could not resolve pool tokens for {pool_addr} after {max_attempts} attempts: {e}"
             )
@@ -747,8 +806,7 @@ def process_dex_swap_log_event(
             return False
 
         try:
-            tx = w3.eth.get_transaction(tx_hash)
-            wallet_address = str(tx.get("from", "") or "").lower()
+            wallet_address = _get_tx_from_address(tx_hash)
         except Exception as e:
             stats["rejected_rpc_tx"] = stats.get("rejected_rpc_tx", 0) + 1
             logger.debug(f"[SWAP] get_transaction failed for {tx_hash[:10]}: {e}")
@@ -761,8 +819,7 @@ def process_dex_swap_log_event(
         block_timestamp = int(time.time())
         if block_number > 0:
             try:
-                block = w3.eth.get_block(block_number)
-                block_timestamp = int(block.get("timestamp", block_timestamp))
+                block_timestamp = _get_block_timestamp(block_number)
             except Exception as e:
                 logger.debug(f"[SWAP] Could not resolve block timestamp: {e}")
 
@@ -940,8 +997,7 @@ def process_erc20_transfer_event(
 
         try:
             if block_number > 0:
-                block = w3.eth.get_block(block_number)
-                block_timestamp = block.get("timestamp", int(time.time()))
+                block_timestamp = _get_block_timestamp(int(block_number))
         except Exception as e:
             logger.debug(f"Could not get block timestamp: {e}")
 
@@ -1005,8 +1061,7 @@ def process_exchange_transaction(tx_hash: str) -> bool:
 
         try:
             if block_number > 0:
-                block = w3.eth.get_block(block_number)
-                block_timestamp = block.get("timestamp", int(time.time()))
+                block_timestamp = _get_block_timestamp(int(block_number))
         except Exception as e:
             logger.debug(f"Could not get block timestamp: {e}")
 
@@ -1090,6 +1145,8 @@ def monitor_large_transfers():
             for swap_log in swap_logs:
                 if process_dex_swap_log_event(swap_log, swap_stats):
                     swap_published += 1
+                if OnChainConfig.SWAP_PROCESS_DELAY_SECONDS > 0:
+                    time.sleep(OnChainConfig.SWAP_PROCESS_DELAY_SECONDS)
 
             summary_parts = [
                 f"candidates={len(swap_logs)}",
@@ -1222,14 +1279,19 @@ def monitor_large_transfers():
                     ]:  # Limit to first 10 txs per block
                         try:
                             # Get transaction details
-                            tx = w3.eth.get_transaction(tx_hash)
+                            normalized_tx_hash = (
+                                tx_hash.hex()
+                                if isinstance(tx_hash, bytes)
+                                else str(tx_hash)
+                            )
+                            tx = w3.eth.get_transaction(normalized_tx_hash)
 
                             if not tx:
                                 continue
 
                             # Check if it's a large ETH transfer
                             value_wei = tx.get("value", 0)
-                            from_addr = tx.get("from", "").lower()
+                            from_addr = _get_tx_from_address(normalized_tx_hash)
                             to_addr = tx.get("to", "").lower()
 
                             # Check if from or to is a known exchange
@@ -1247,11 +1309,7 @@ def monitor_large_transfers():
 
                                     # Process this transaction
                                     event = normalize_transfer_event(
-                                        tx_hash=(
-                                            tx_hash.hex()
-                                            if isinstance(tx_hash, bytes)
-                                            else tx_hash
-                                        ),
+                                        tx_hash=normalized_tx_hash,
                                         from_address=from_addr,
                                         to_address=to_addr or "0x",
                                         amount=value_wei,
