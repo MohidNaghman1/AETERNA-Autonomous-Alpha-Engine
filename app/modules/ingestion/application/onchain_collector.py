@@ -636,19 +636,22 @@ def normalize_dex_swap_event(
         return None
 
 
-def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
+def process_dex_swap_log_event(log_entry: Dict[str, Any], stats: Dict[str, int]) -> bool:
     """Decode and publish DEX swap log as trade-eligible event."""
     try:
         topic0 = _topic_hex((log_entry.get("topics") or [None])[0])
         if topic0 not in {UNISWAP_V2_SWAP_TOPIC, UNISWAP_V3_SWAP_TOPIC}:
+            stats["rejected_topic"] = stats.get("rejected_topic", 0) + 1
             return False
 
         pool_address = str(log_entry.get("address", "")).lower()
         if not pool_address:
+            stats["rejected_no_pool"] = stats.get("rejected_no_pool", 0) + 1
             return False
 
         pool_tokens = _get_pool_tokens(pool_address)
         if not pool_tokens:
+            stats["rejected_pool_lookup"] = stats.get("rejected_pool_lookup", 0) + 1
             return False
         token0_addr, token1_addr = pool_tokens
 
@@ -657,6 +660,7 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
             data_hex = "0x" + data_hex.hex()
         words = _decode_hex_words(data_hex)
         if not words:
+            stats["rejected_decode"] = stats.get("rejected_decode", 0) + 1
             return False
 
         token_in_addr = None
@@ -673,6 +677,7 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
                 token_in_addr, token_out_addr = token1_addr, token0_addr
                 amount_in_raw, amount_out_raw = amount1_in, amount0_out
             else:
+                stats["rejected_amounts"] = stats.get("rejected_amounts", 0) + 1
                 return False
 
         elif topic0 == UNISWAP_V3_SWAP_TOPIC and len(words) >= 2:
@@ -685,8 +690,10 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
                 token_in_addr, token_out_addr = token1_addr, token0_addr
                 amount_in_raw, amount_out_raw = amount1, abs(amount0)
             else:
+                stats["rejected_amounts"] = stats.get("rejected_amounts", 0) + 1
                 return False
         else:
+            stats["rejected_decode"] = stats.get("rejected_decode", 0) + 1
             return False
 
         token_in_symbol, token_in_decimals = _get_token_metadata(token_in_addr)
@@ -706,18 +713,30 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
         elif token_out_addr == WETH_MAINNET:
             usd_value = amount_out * float(eth_price_cache.get("price", 3000))
 
+        if usd_value == 0.0:
+            stats["rejected_no_valuation"] = stats.get("rejected_no_valuation", 0) + 1
+            return False
+
         if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+            stats["rejected_below_threshold"] = stats.get(
+                "rejected_below_threshold", 0
+            ) + 1
             return False
 
         tx_hash_raw = log_entry.get("transactionHash", "")
-        tx_hash = (
-            tx_hash_raw.hex() if isinstance(tx_hash_raw, bytes) else str(tx_hash_raw)
-        )
+        tx_hash = _normalize_tx_hash(tx_hash_raw)
         if not tx_hash:
+            stats["rejected_no_txhash"] = stats.get("rejected_no_txhash", 0) + 1
             return False
 
-        tx = w3.eth.get_transaction(tx_hash)
-        wallet_address = str(tx.get("from", "") or "").lower()
+        try:
+            tx = w3.eth.get_transaction(tx_hash)
+            wallet_address = str(tx.get("from", "") or "").lower()
+        except Exception as e:
+            stats["rejected_rpc_tx"] = stats.get("rejected_rpc_tx", 0) + 1
+            logger.debug(f"[SWAP] get_transaction failed for {tx_hash[:10]}: {e}")
+            return False
+
         if not wallet_address:
             wallet_address = "0x"
 
@@ -754,11 +773,16 @@ def process_dex_swap_log_event(log_entry: Dict[str, Any]) -> bool:
                 f"[SWAP] {dex_name}: {token_in_symbol}->{token_out_symbol} "
                 f"~${usd_value:,.0f} | TX: {tx_hash[:10]}..."
             )
-            return publish_event(event)
+            published = publish_event(event)
+            if published:
+                stats["published"] = stats.get("published", 0) + 1
+            return published
 
+        stats["rejected_normalize"] = stats.get("rejected_normalize", 0) + 1
         return False
 
     except Exception as e:
+        stats["rejected_exception"] = stats.get("rejected_exception", 0) + 1
         logger.debug(f"[SWAP] Failed to process swap log: {e}")
         return False
 
@@ -1043,9 +1067,16 @@ def monitor_large_transfers():
                     swap_tx_hashes.add(tx_hash)
 
             swap_published = 0
+            swap_stats: Dict[str, int] = {}
             for swap_log in swap_logs:
-                if process_dex_swap_log_event(swap_log):
+                if process_dex_swap_log_event(swap_log, swap_stats):
                     swap_published += 1
+
+            summary_parts = [f"candidates={len(swap_logs)}"]
+            summary_parts.extend(
+                f"{k}={v}" for k, v in sorted(swap_stats.items())
+            )
+            logger.info(f"[SWAP] Cycle summary — {' | '.join(summary_parts)}")
 
             if swap_published > 0:
                 logger.info(
