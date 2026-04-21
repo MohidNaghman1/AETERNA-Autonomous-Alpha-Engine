@@ -779,6 +779,7 @@ def publish_event(event: Event) -> bool:
 def process_erc20_transfer_event(
     log_entry: Dict[str, Any],
     swap_tx_hashes: Optional[set[str]] = None,
+    published_transfer_tx_hashes: Optional[set[str]] = None,
 ) -> bool:
     """
     Process ERC20 Transfer event log from blockchain.
@@ -810,6 +811,14 @@ def process_erc20_transfer_event(
         if swap_tx_hashes and tx_hash in swap_tx_hashes:
             logger.debug(
                 f"[ERC20] Skipping transfer {tx_hash[:10]}... (swap tx detected this cycle)"
+            )
+            return False
+
+        # EARLY EXIT: if a transfer event for this tx was already published in this cycle,
+        # skip additional transfer logs from the same transaction.
+        if published_transfer_tx_hashes and tx_hash in published_transfer_tx_hashes:
+            logger.debug(
+                f"[ERC20] Skipping transfer {tx_hash[:10]}... (already published for tx this cycle)"
             )
             return False
 
@@ -872,7 +881,10 @@ def process_erc20_transfer_event(
         )
 
         if event:
-            return publish_event(event)
+            published = publish_event(event)
+            if published and published_transfer_tx_hashes is not None:
+                published_transfer_tx_hashes.add(tx_hash)
+            return published
         return False
 
     except Exception as e:
@@ -954,6 +966,7 @@ def monitor_large_transfers():
     events_found_total = 0
 
     try:
+        logger.info("[MONITOR] === monitor_large_transfers() entered ===")
         current_block = w3.eth.block_number
         logger.info(f"[MONITOR] Current block: {current_block}")
 
@@ -969,6 +982,7 @@ def monitor_large_transfers():
         logger.info(f"[MONITOR] EXCHANGE_ADDRESSES: {list(EXCHANGE_ADDRESSES.keys())}")
 
         # ==== STRATEGY 1: Query DEX Swap Logs (trade-eligible events) ====
+        logger.info("[MONITOR] === STARTING SWAP PASS ===")
         logger.info("[MONITOR] Querying DEX swap logs (V2/V3 signatures)...")
         swap_tx_hashes: set[str] = set()
         try:
@@ -1023,6 +1037,7 @@ def monitor_large_transfers():
             f"[MONITOR] Creating ERC20 Transfer filter for {len(STABLECOIN_ADDRESSES)} stablecoins..."
         )
         logger.info(f"[MONITOR] Transfer signature: {transfer_signature.hex()}")
+        published_transfer_tx_hashes: set[str] = set()
 
         # Query each stablecoin separately to avoid timeout errors
         for token_addr, token_symbol in STABLECOIN_ADDRESSES.items():
@@ -1043,17 +1058,26 @@ def monitor_large_transfers():
                 logger.info(
                     f"[ERC20] {token_symbol}: Found {len(erc20_logs)} transfer events"
                 )
-                events_found_total += len(erc20_logs)
 
                 if len(erc20_logs) > 0:
                     logger.info(
                         f"[ERC20] Processing {len(erc20_logs)} {token_symbol} events..."
                     )
 
+                token_published = 0
                 for log_event in erc20_logs:
-                    process_erc20_transfer_event(
-                        log_event, swap_tx_hashes=swap_tx_hashes
+                    if process_erc20_transfer_event(
+                        log_event,
+                        swap_tx_hashes=swap_tx_hashes,
+                        published_transfer_tx_hashes=published_transfer_tx_hashes,
+                    ):
+                        token_published += 1
+
+                if token_published > 0:
+                    logger.info(
+                        f"[ERC20] Published {token_published} {token_symbol} transfer events"
                     )
+                events_found_total += token_published
 
             except Exception as e:
                 logger.error(f"[ERC20] ERROR querying {token_symbol}: {e}")
