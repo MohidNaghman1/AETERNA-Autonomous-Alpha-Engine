@@ -21,6 +21,7 @@ import signal
 import sys
 import time
 import logging
+import os
 from typing import Optional
 import traceback
 
@@ -37,16 +38,23 @@ logger = logging.getLogger("[WORKER]")
 class OnChainWorker:
     """Standalone worker for blockchain monitoring with production controls."""
 
-    def __init__(self, cycle_interval: int = 180, timeout: int = 120):
+    def __init__(
+        self,
+        cycle_interval: int = 180,
+        timeout: int = 120,
+        failure_retry_interval: int = 60,
+    ):
         """
         Initialize worker.
 
         Args:
             cycle_interval: Seconds between collector cycles (default 180s/3min)
             timeout: Max seconds per cycle before forced timeout (default 120s)
+            failure_retry_interval: Seconds to wait after failed cycles
         """
-        self.cycle_interval = cycle_interval
+        self.cycle_interval = max(1, int(cycle_interval))
         self.timeout = timeout
+        self.failure_retry_interval = max(1, int(failure_retry_interval))
         self.running = False
         self.current_task: Optional[asyncio.Task] = None
         self.cycle_count = 0
@@ -60,10 +68,18 @@ class OnChainWorker:
 
             # Run with timeout (kills if takes too long)
             try:
-                await asyncio.wait_for(onchain_main(), timeout=self.timeout)
+                cycle_ok = await asyncio.wait_for(onchain_main(), timeout=self.timeout)
             except asyncio.TimeoutError:
                 logger.error(
                     f"[TIMEOUT] Collector exceeded {self.timeout}s timeout - force killed"
+                )
+                self.error_count += 1
+                return False
+
+            if cycle_ok is False:
+                elapsed = time.time() - start_time
+                logger.error(
+                    f"[CYCLE] Collector reported failed run in {elapsed:.2f}s"
                 )
                 self.error_count += 1
                 return False
@@ -105,8 +121,10 @@ class OnChainWorker:
 
                     if not success:
                         # On error, retry sooner
-                        logger.info(f"[WAIT] Retrying in 60s...")
-                        await asyncio.sleep(60)
+                        logger.info(
+                            f"[WAIT] Retrying in {self.failure_retry_interval}s..."
+                        )
+                        await asyncio.sleep(self.failure_retry_interval)
                     else:
                         # On success, wait normal interval
                         logger.info(f"[WAIT] Next cycle in {self.cycle_interval}s...")
@@ -156,10 +174,22 @@ def main():
     logger.info("Starting AETERNA On-Chain Worker...")
 
     try:
+        cycle_interval = int(os.getenv("ONCHAIN_WORKER_CYCLE_INTERVAL", "180"))
+        timeout = int(os.getenv("ONCHAIN_WORKER_TIMEOUT", "120"))
+        failure_retry_interval = int(
+            os.getenv("ONCHAIN_WORKER_FAILURE_RETRY_INTERVAL", "60")
+        )
+
         # Create worker (180s interval, 120s timeout per cycle)
         worker = OnChainWorker(
-            cycle_interval=int(time.time() % 1 or 180),  # Default 180s between cycles
-            timeout=120,  # Max 120s per cycle
+            cycle_interval=cycle_interval,
+            timeout=timeout,
+            failure_retry_interval=failure_retry_interval,
+        )
+
+        logger.info(
+            f"Worker config: cycle_interval={worker.cycle_interval}s, "
+            f"timeout={worker.timeout}s, failure_retry_interval={worker.failure_retry_interval}s"
         )
 
         # Run worker

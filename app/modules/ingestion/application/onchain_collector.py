@@ -16,6 +16,7 @@ import traceback
 import asyncio
 import aiohttp
 import requests
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 from decimal import Decimal
@@ -329,6 +330,21 @@ def _rpc_backoff_seconds(attempt: int, rate_limited: bool) -> float:
     return min(1.0, 0.1 * attempt)
 
 
+def _provider_hint(provider_url: str) -> str:
+    """Return a safe, non-secret hint for the configured RPC provider."""
+    url = (provider_url or "").strip()
+    if not url:
+        return "<empty>"
+
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc or "<unknown-host>"
+        scheme = parsed.scheme or "<unknown-scheme>"
+        return f"{scheme}://{host}"
+    except Exception:
+        return "<unparseable-url>"
+
+
 def _get_tx_from_address(tx_hash: str) -> str:
     """Resolve tx sender with memoization to avoid repeated RPC calls."""
     if tx_hash in tx_from_cache:
@@ -541,13 +557,30 @@ def initialize_web3():
         )
         return None
 
+    provider_url = (OnChainConfig.QUICKNODE_URL or "").strip()
+    if not provider_url:
+        web3_init_fail_streak += 1
+        cooldown = min(
+            OnChainConfig.WEB3_INIT_MAX_BACKOFF_SECONDS,
+            OnChainConfig.WEB3_INIT_COOLDOWN_SECONDS
+            * (2 ** max(0, web3_init_fail_streak - 1)),
+        )
+        web3_init_retry_not_before = time.time() + cooldown
+        logger.error(
+            "[ERROR] QUICKNODE_URL is empty/missing. "
+            f"Set QUICKNODE_URL in environment (.env) and retry. cooldown={cooldown:.1f}s"
+        )
+        return None
+
+    provider_hint = _provider_hint(provider_url)
+
     try:
-        web3_client = Web3(WebsocketProvider(OnChainConfig.QUICKNODE_URL))
+        web3_client = Web3(WebsocketProvider(provider_url))
         if web3_client.is_connected():
             w3 = web3_client
             web3_init_fail_streak = 0
             web3_init_retry_not_before = 0.0
-            logger.info("[OK] Connected to Ethereum node")
+            logger.info(f"[OK] Connected to Ethereum node via {provider_hint}")
             return w3
         else:
             web3_init_fail_streak += 1
@@ -557,7 +590,10 @@ def initialize_web3():
                 * (2 ** max(0, web3_init_fail_streak - 1)),
             )
             web3_init_retry_not_before = time.time() + cooldown
-            logger.error("[ERROR] Failed to connect to Ethereum node")
+            logger.error(
+                f"[ERROR] Failed to connect to Ethereum node via {provider_hint}. "
+                f"cooldown={cooldown:.1f}s"
+            )
             return None
     except Exception as e:
         web3_init_fail_streak += 1
@@ -582,7 +618,8 @@ def initialize_web3():
             time.sleep(sleep_seconds)
 
         logger.error(
-            f"[ERROR] Error initializing Web3: {e} | cooldown={cooldown:.1f}s | rate_limited={rate_limited}"
+            f"[ERROR] Error initializing Web3 via {provider_hint}: {e} "
+            f"| cooldown={cooldown:.1f}s | rate_limited={rate_limited}"
         )
         return None
 
@@ -719,11 +756,15 @@ def normalize_dex_swap_event(
 
         # Determine priority using threshold-based technique
         # DEX swaps are typically lower priority than exchange movements
+        is_stablecoin = (
+            token_in in STABLECOIN_ADDRESSES.values()
+            or token_out in STABLECOIN_ADDRESSES.values()
+        )
         priority_marker, priority_reason = determine_priority_by_threshold(
             usd_value=usd_value,
             exchange_name=None,  # DEX, not centralized exchange
             token=token_in,
-            is_stablecoin=False,
+            is_stablecoin=is_stablecoin,
         )
 
         # Create human-readable alert details
@@ -1427,7 +1468,7 @@ def monitor_large_transfers():
         traceback.print_exc()
 
 
-async def run_collector_async():
+async def run_collector_async() -> bool:
     """Main async collector function - uses real blockchain monitoring."""
     logger.info("=" * 60)
     logger.info("Starting On-Chain Collector (REAL MONITORING)")
@@ -1441,7 +1482,7 @@ async def run_collector_async():
     result = initialize_web3()
     if not result:
         logger.error("Failed to initialize Web3 connection")
-        return
+        return False
 
     try:
         # Initialize publisher
@@ -1461,21 +1502,24 @@ async def run_collector_async():
         elapsed = time.time() - start_time
         logger.info(f"[COMPLETE] Collector cycle completed in {elapsed:.2f} seconds")
         logger.info("=" * 60)
+        return True
 
     except Exception as e:
         logger.error(f"[ERROR] Collector error: {e}")
         traceback.print_exc()
+        return False
 
 
-async def main():
+async def main() -> bool:
     """Main entry point with async event loop and HTTP session."""
     global http_session
 
     # Create HTTP session for price fetching
     async with aiohttp.ClientSession() as session:
         http_session = session
-        await run_collector_async()
+        success = await run_collector_async()
         http_session = None
+        return success
 
 
 def run_collector():
@@ -1486,8 +1530,11 @@ def run_collector():
     """
     try:
         logger.info("[CELERY] Starting on-chain collector via Celery Beat")
-        asyncio.run(main())
-        logger.info("[CELERY] On-chain collector completed successfully")
+        success = asyncio.run(main())
+        if success:
+            logger.info("[CELERY] On-chain collector completed successfully")
+        else:
+            logger.error("[CELERY] On-chain collector completed with failures")
     except Exception as e:
         logger.error(f"[CELERY] Error in on-chain collector: {e}")
         traceback.print_exc()

@@ -56,6 +56,11 @@ def run_backfill(limit: int = 10000, commit_every: int = 500) -> Dict[str, int]:
                 event_dict = _to_event_dict(processed)
                 # Guard: process only ethereum-origin events for trade extraction.
                 if str(event_dict.get("source", "")).lower() != "ethereum":
+                    logger.debug(
+                        "Skipping non-ethereum event %s source=%r",
+                        processed.id,
+                        event_dict.get("source"),
+                    )
                     skipped += 1
                     continue
 

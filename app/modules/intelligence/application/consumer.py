@@ -48,6 +48,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("intelligence-consumer")
 
+RABBITMQ_URL = os.environ.get("RABBITMQ_URL")
 RABBITMQ_HOST = os.environ.get("RABBITMQ_HOST", "localhost")
 QUEUE_NAME = os.environ.get("RABBITMQ_QUEUE", "events")
 
@@ -244,19 +245,6 @@ def enrich_event_with_agent_b(event: dict) -> dict:
         config = ProfilerConfig()
         profiled_wallets = {}
 
-        # Persist trade records (idempotent) when event is a swap/trade payload.
-        # This runs in the same DB transaction scope as profile persistence.
-        try:
-            trade_record_action = upsert_trade_record_from_event(db, event)
-            if trade_record_action != "skipped":
-                logger.info(
-                    f"[TRADE-RECORD] {trade_record_action.upper()} for event {event.get('id')}"
-                )
-        except Exception as trade_err:
-            logger.error(
-                f"[TRADE-RECORD] Failed to upsert trade record for {event.get('id')}: {trade_err}"
-            )
-
         # ====================================================================
         # FIX #4 (CONSOLIDATED): Persist wallet profile to database
         # This is the PRIMARY path for profile creation (not agent_b_polling)
@@ -291,6 +279,22 @@ def enrich_event_with_agent_b(event: dict) -> dict:
             logger.error(f"[DB PERSIST] Failed to save wallet profiles: {db_err}")
             db.rollback()
             # Don't raise - allow event processing to continue
+
+        # Persist trade records (idempotent) when event is a swap/trade payload.
+        # Keep this in its own commit boundary so wallet-profile rollback cannot
+        # silently discard a newly upserted trade record.
+        try:
+            trade_record_action = upsert_trade_record_from_event(db, event)
+            if trade_record_action != "skipped":
+                db.commit()
+                logger.info(
+                    f"[TRADE-RECORD] {trade_record_action.upper()} for event {event.get('id')}"
+                )
+        except Exception as trade_err:
+            db.rollback()
+            logger.error(
+                f"[TRADE-RECORD] Failed to upsert trade record for {event.get('id')}: {trade_err}"
+            )
 
         # Attach profiling to event JSON for alert generation
         sender_profile = profiled_wallets.get("sender")
@@ -486,7 +490,12 @@ def process_event(ch, method, properties, body):
 
 
 def start_consumer():
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+    if RABBITMQ_URL:
+        params = pika.URLParameters(RABBITMQ_URL)
+    else:
+        params = pika.ConnectionParameters(host=RABBITMQ_HOST)
+
+    connection = pika.BlockingConnection(params)
     channel = connection.channel()
     channel.queue_declare(queue=QUEUE_NAME, durable=True)
     print(f"[*] Waiting for messages in '{QUEUE_NAME}'. To exit press CTRL+C")
