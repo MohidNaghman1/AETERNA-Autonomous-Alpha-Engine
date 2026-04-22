@@ -76,7 +76,12 @@ class OnChainWorker:
                 self.error_count += 1
                 return False
 
-            if cycle_ok is False:
+            # FIX: use `not cycle_ok` instead of `cycle_ok is False`.
+            # onchain_main() returns None (falsy) on Web3/init failure, not
+            # the literal False — so `is False` silently treated every failure
+            # as a success, reset error_count, and used the long cycle_interval
+            # instead of the shorter failure_retry_interval.
+            if not cycle_ok:
                 elapsed = time.time() - start_time
                 logger.error(
                     f"[CYCLE] Collector reported failed run in {elapsed:.2f}s"
@@ -142,23 +147,31 @@ class OnChainWorker:
             self.running = False
             logger.info("[SHUTDOWN] Worker cleanup complete")
 
-    def shutdown(self, signum, frame):
-        """Handle shutdown signals gracefully."""
+    async def _async_shutdown(self, signum: int):
+        """Async shutdown handler — safe to call from the event loop."""
+        # FIX: The original shutdown() was a sync method with (signum, frame)
+        # parameters registered via loop.add_signal_handler(sig, self.shutdown, sig, None).
+        # add_signal_handler() only accepts a zero-argument callable, so the extra
+        # arguments caused a TypeError and the handler never actually fired.
+        # SIGTERM therefore never cleanly cancelled the running task, leaving the
+        # collector mid-cycle when Fly.io killed the VM.
         logger.info(f"[SHUTDOWN] Received signal {signum}")
         self.running = False
-
-        # Cancel current task if running
         if self.current_task and not self.current_task.done():
             logger.info("[SHUTDOWN] Cancelling current collector task...")
             self.current_task.cancel()
 
     async def start(self):
         """Start the worker with signal handling."""
-        # Register signal handlers
+        # FIX: register a zero-argument lambda that schedules the async shutdown
+        # coroutine on the running event loop — the only safe pattern for
+        # loop.add_signal_handler() with async cleanup work.
         loop = asyncio.get_event_loop()
-
         for sig in [signal.SIGTERM, signal.SIGINT]:
-            loop.add_signal_handler(sig, self.shutdown, sig, None)
+            loop.add_signal_handler(
+                sig,
+                lambda s=sig: asyncio.ensure_future(self._async_shutdown(s)),
+            )
 
         # Run main loop
         try:

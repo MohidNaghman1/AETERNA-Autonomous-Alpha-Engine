@@ -2,20 +2,18 @@ app = "aeterna-autonomous-alpha-engine"
 primary_region = "iad"
 
 [build]
-dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
-SERVICE_TYPE = "onchain-worker"
-PYTHONUNBUFFERED = "1"
+  PYTHONUNBUFFERED = "1"
 
 [processes]
-worker = "python onchain_worker.py"
+  worker = "python onchain_worker.py"
 
 [deploy]
-strategy = "immediate"
-release_command = "alembic upgrade head"
+  strategy = "immediate"
 
 [[vm]]
-cpu_kind = "shared"
-cpus = 1
-memory_mb = 256
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
