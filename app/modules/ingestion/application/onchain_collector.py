@@ -95,14 +95,10 @@ class OnChainConfig:
 
     # Swap Monitoring
     MAX_SWAP_LOGS_PER_CYCLE = int(os.getenv("MAX_SWAP_LOGS_PER_CYCLE", "500"))
-    SWAP_PROCESS_DELAY_SECONDS = float(
-        os.getenv("SWAP_PROCESS_DELAY_SECONDS", "0.05")
-    )
+    SWAP_PROCESS_DELAY_SECONDS = float(os.getenv("SWAP_PROCESS_DELAY_SECONDS", "0.05"))
 
     # Web3 Init Backoff (protect provider from reconnect storms)
-    WEB3_INIT_COOLDOWN_SECONDS = float(
-        os.getenv("WEB3_INIT_COOLDOWN_SECONDS", "5")
-    )
+    WEB3_INIT_COOLDOWN_SECONDS = float(os.getenv("WEB3_INIT_COOLDOWN_SECONDS", "5"))
     WEB3_INIT_MAX_BACKOFF_SECONDS = float(
         os.getenv("WEB3_INIT_MAX_BACKOFF_SECONDS", "60")
     )
@@ -408,7 +404,9 @@ def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
                 time.sleep(backoff)
                 continue
             # Negative-cache failed pool for a short window to reduce repeated 429 storms.
-            pool_lookup_failure_cache[pool_addr] = time.time() + (20 if rate_limited else 10)
+            pool_lookup_failure_cache[pool_addr] = time.time() + (
+                20 if rate_limited else 10
+            )
             logger.info(
                 f"[SWAP] Could not resolve pool tokens for {pool_addr} after {max_attempts} attempts: {e}"
             )

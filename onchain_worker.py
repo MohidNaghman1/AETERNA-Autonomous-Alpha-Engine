@@ -83,9 +83,7 @@ class OnChainWorker:
             # instead of the shorter failure_retry_interval.
             if not cycle_ok:
                 elapsed = time.time() - start_time
-                logger.error(
-                    f"[CYCLE] Collector reported failed run in {elapsed:.2f}s"
-                )
+                logger.error(f"[CYCLE] Collector reported failed run in {elapsed:.2f}s")
                 self.error_count += 1
                 return False
 
