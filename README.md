@@ -23,18 +23,18 @@ AETERNA is a **modular, production-ready** data ingestion, intelligence, and eve
 
 ## ✨ Key Features
 
-| Category | Capabilities |
-|---|---|
-| **Data Ingestion** | RSS feeds, price APIs, on-chain blockchain monitoring (Ethereum via WebSocket) |
-| **Intelligence** | Agent A — AI-powered event scoring, filtering, noise reduction, bot/spam detection |
-| **Alerting** | Real-time alert generation, consumer pipelines, user preference–aware delivery |
-| **Delivery** | Email (HTML templates, Resend API), Telegram bot, WebSocket (Socket.IO) push |
-| **Identity & Auth** | JWT authentication, user registration/login, user preferences, email preferences |
-| **Admin** | Dashboard with system metrics, user management, role management (RBAC), admin bootstrap |
-| **Security** | Rate limiting middleware, input sanitization, password hashing, admin-only endpoints |
-| **Analytics** | Crypto entity extraction, event analytics domain models |
-| **Monitoring** | Prometheus metrics, structured logging, `/health/system` diagnostics |
-| **Infrastructure** | PostgreSQL, Redis (dedup + cache), RabbitMQ (event broker), Celery, APScheduler |
+| Category            | Capabilities                                                                                                                                                          |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Data Ingestion**  | RSS feeds, price APIs, on-chain blockchain monitoring (Ethereum via WebSocket), ERC20 transfer + DEX swap collection                                                  |
+| **Intelligence**    | Agent A — AI-powered event scoring, filtering, noise reduction, bot/spam detection; Agent B — wallet/entity profiling, behavior inference, and priority boost signals |
+| **Alerting**        | Real-time alert generation, consumer pipelines, user preference–aware delivery                                                                                        |
+| **Delivery**        | Email (HTML templates, Resend API), Telegram bot, WebSocket (Socket.IO) push                                                                                          |
+| **Identity & Auth** | JWT authentication, user registration/login, user preferences, email preferences                                                                                      |
+| **Admin**           | Dashboard with system metrics, user management, role management (RBAC), admin bootstrap                                                                               |
+| **Security**        | Rate limiting middleware, input sanitization, password hashing, admin-only endpoints                                                                                  |
+| **Analytics**       | Crypto entity extraction, event analytics domain models                                                                                                               |
+| **Monitoring**      | Prometheus metrics, structured logging, `/health/system` diagnostics                                                                                                  |
+| **Infrastructure**  | PostgreSQL, Redis (dedup + cache), RabbitMQ (event broker), Celery, APScheduler                                                                                       |
 
 ---
 
@@ -52,28 +52,28 @@ app/modules/<module>/
 
 ### Modules
 
-| Module | Purpose | Key Files |
-|---|---|---|
-| **Ingestion** | Collects events from external sources and publishes to RabbitMQ | `rss_collector.py`, `price_collector.py`, `onchain_collector.py`, `consumer.py` |
-| **Intelligence** | AI scoring, filtering, and prioritization of events | `agent_a.py`, `consumer.py` |
-| **Alerting** | Generates alerts from scored events and manages alert lifecycle | `alert_generator.py`, `alert_consumer.py`, `alerts.py` |
-| **Delivery** | Multi-channel alert delivery (Email, Telegram, Digest) | `delivery.py`, `telegram_bot.py`, `email_utils.py`, `digest_tasks.py` |
-| **Identity** | User authentication, registration, and preferences | `services.py`, `auth.py`, `models.py` |
-| **Analytics** | Event analytics and crypto entity tracking | `models.py` |
-| **Admin** | Dashboard, user/role management, security middleware | `dashboard.py`, `user_management.py`, `role_management.py`, `security.py` |
+| Module           | Purpose                                                                                                      | Key Files                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| **Ingestion**    | Collects events from external sources and publishes to RabbitMQ (including on-chain transfers and DEX swaps) | `rss_collector.py`, `price_collector.py`, `onchain_collector.py`, `consumer.py`     |
+| **Intelligence** | Event scoring + wallet intelligence enrichment (Agent A + Agent B)                                           | `agent_a.py`, `agent_b.py`, `consumer.py`, `trade_records.py`, `agent_b_polling.py` |
+| **Alerting**     | Generates alerts from scored events and manages alert lifecycle                                              | `alert_generator.py`, `alert_consumer.py`, `alerts.py`                              |
+| **Delivery**     | Multi-channel alert delivery (Email, Telegram, Digest)                                                       | `delivery.py`, `telegram_bot.py`, `email_utils.py`, `digest_tasks.py`               |
+| **Identity**     | User authentication, registration, and preferences                                                           | `services.py`, `auth.py`, `models.py`                                               |
+| **Analytics**    | Event analytics and crypto entity tracking                                                                   | `models.py`                                                                         |
+| **Admin**        | Dashboard, user/role management, security middleware                                                         | `dashboard.py`, `user_management.py`, `role_management.py`, `security.py`           |
 
 ### Shared Utilities
 
-| Utility | Description |
-|---|---|
-| `auth_utils.py` | Password hashing, JWT creation & verification |
-| `deduplication.py` | Redis-based event deduplication |
-| `entity_extraction.py` | Crypto ticker/entity extraction from text |
-| `monitoring.py` | Prometheus metrics and structured logging |
-| `rabbitmq_publisher.py` | Robust, pooled RabbitMQ publisher |
-| `email_utils.py` | Secure, templated email sending |
-| `data_extractors.py` | Data extraction and transformation utilities |
-| `validators.py` | Input validation helpers |
+| Utility                 | Description                                   |
+| ----------------------- | --------------------------------------------- |
+| `auth_utils.py`         | Password hashing, JWT creation & verification |
+| `deduplication.py`      | Redis-based event deduplication               |
+| `entity_extraction.py`  | Crypto ticker/entity extraction from text     |
+| `monitoring.py`         | Prometheus metrics and structured logging     |
+| `rabbitmq_publisher.py` | Robust, pooled RabbitMQ publisher             |
+| `email_utils.py`        | Secure, templated email sending               |
+| `data_extractors.py`    | Data extraction and transformation utilities  |
+| `validators.py`         | Input validation helpers                      |
 
 ---
 
@@ -92,7 +92,7 @@ flowchart TD
     B --> C["📨 RabbitMQ Event Queue"]
     C --> D["Ingestion Consumer"]
     D --> E["💾 PostgreSQL Storage"]
-    E --> F["🧠 Intelligence Consumer (Agent A)"]
+    E --> F["🧠 Intelligence Consumer (Agent A + Agent B)"]
     F --> G["Alert Generator"]
 
     G --> H["📧 Email Delivery"]
@@ -116,11 +116,11 @@ flowchart TD
 
 ### Pipeline Flow
 
-1. **Collection** — RSS (60s), Price (120s), and On-Chain (180s) collectors run on scheduled intervals
+1. **Collection** — RSS (60s), Price (120s), and On-Chain (180s) collectors run on scheduled intervals; on-chain ingestion captures large ERC20 transfers and DEX swap activity
 2. **Normalization** — Raw data is cleaned, standardized, and deduplicated via Redis
 3. **Queueing** — Deduplicated events are published to RabbitMQ
 4. **Ingestion** — Consumer polls RabbitMQ (5000 msgs/0.5s, up to 20 parallel instances) and persists to PostgreSQL
-5. **Intelligence** — Agent A scores, filters, and prioritizes events (50 events/5s cycles)
+5. **Intelligence** — Agent A scores/prioritizes events; Agent B enriches wallet-aware events with profiling, inferred entity context, and trade-record persistence for downstream analytics
 6. **Alert Generation** — High-priority events trigger alerts based on user preferences
 7. **Delivery** — Alerts are pushed via Email, Telegram, and real-time WebSocket
 8. **Monitoring** — Prometheus metrics and logs track system health and throughput
@@ -158,14 +158,14 @@ make health
 
 All services will be available at:
 
-| Service | URL |
-|---|---|
-| API | http://localhost:8000 |
-| API Docs (Swagger) | http://localhost:8000/docs |
-| API Docs (ReDoc) | http://localhost:8000/redoc |
-| RabbitMQ Management | http://localhost:15672 |
-| Prometheus Metrics | http://localhost:8000/metrics |
-| System Health | http://localhost:8000/health/system |
+| Service             | URL                                 |
+| ------------------- | ----------------------------------- |
+| API                 | http://localhost:8000               |
+| API Docs (Swagger)  | http://localhost:8000/docs          |
+| API Docs (ReDoc)    | http://localhost:8000/redoc         |
+| RabbitMQ Management | http://localhost:15672              |
+| Prometheus Metrics  | http://localhost:8000/metrics       |
+| System Health       | http://localhost:8000/health/system |
 
 ### Option 2: Local Development
 
@@ -226,6 +226,7 @@ pytest tests/ -v
 ```
 
 **Test Coverage:**
+
 - Alert pipeline integration
 - Authentication & authorization
 - Email preferences & utilities
@@ -239,17 +240,17 @@ pytest tests/ -v
 
 Copy `.env.example` to `.env` and configure the following:
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` / `REDIS_PASSWORD` | Redis connection and password |
-| `RABBITMQ_URL` | RabbitMQ AMQP connection string |
-| `SECRET_KEY` | JWT signing secret |
-| `SMTP_*` | Email SMTP configuration |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token for alert delivery |
-| `QUICKNODE_URL` | Ethereum WebSocket endpoint (QuickNode/Alchemy/Infura) |
-| `CELERY_BROKER_URL` | Celery broker URL |
-| `CORS_ORIGINS` | Allowed CORS origins |
+| Variable                       | Description                                            |
+| ------------------------------ | ------------------------------------------------------ |
+| `DATABASE_URL`                 | PostgreSQL connection string                           |
+| `REDIS_URL` / `REDIS_PASSWORD` | Redis connection and password                          |
+| `RABBITMQ_URL`                 | RabbitMQ AMQP connection string                        |
+| `SECRET_KEY`                   | JWT signing secret                                     |
+| `SMTP_*`                       | Email SMTP configuration                               |
+| `TELEGRAM_BOT_TOKEN`           | Telegram bot token for alert delivery                  |
+| `QUICKNODE_URL`                | Ethereum WebSocket endpoint (QuickNode/Alchemy/Infura) |
+| `CELERY_BROKER_URL`            | Celery broker URL                                      |
+| `CORS_ORIGINS`                 | Allowed CORS origins                                   |
 
 ---
 
@@ -257,14 +258,14 @@ Copy `.env.example` to `.env` and configure the following:
 
 The `docker-compose.yml` defines the following services:
 
-| Service | Image | Purpose |
-|---|---|---|
-| `app` | Custom (Dockerfile) | FastAPI application server |
-| `celery_worker` | Custom (Dockerfile) | Celery worker for async tasks |
-| `celery_beat` | Custom (Dockerfile) | Celery beat for scheduled tasks |
-| `postgres` | postgres:15-alpine | Primary database |
-| `redis` | redis:7-alpine | Caching & deduplication |
-| `rabbitmq` | rabbitmq:3.12-management-alpine | Message broker |
+| Service         | Image                           | Purpose                         |
+| --------------- | ------------------------------- | ------------------------------- |
+| `app`           | Custom (Dockerfile)             | FastAPI application server      |
+| `celery_worker` | Custom (Dockerfile)             | Celery worker for async tasks   |
+| `celery_beat`   | Custom (Dockerfile)             | Celery beat for scheduled tasks |
+| `postgres`      | postgres:15-alpine              | Primary database                |
+| `redis`         | redis:7-alpine                  | Caching & deduplication         |
+| `rabbitmq`      | rabbitmq:3.12-management-alpine | Message broker                  |
 
 ---
 
@@ -278,7 +279,7 @@ AETERNA-Autonomous-Alpha-Engine/
 │   ├── config/                    # Database and app configuration
 │   ├── modules/
 │   │   ├── ingestion/             # Data collection & event ingestion
-│   │   ├── intelligence/          # AI scoring & filtering (Agent A)
+│   │   ├── intelligence/          # AI scoring + wallet profiling (Agent A + Agent B)
 │   │   ├── alerting/              # Alert generation & consumption
 │   │   ├── delivery/              # Multi-channel delivery (Email, Telegram)
 │   │   ├── identity/              # Auth, users, preferences
