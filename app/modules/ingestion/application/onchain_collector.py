@@ -833,6 +833,7 @@ def normalize_dex_swap_event(
         logger.error(f"Error normalizing DEX swap event: {e}")
         return None
 
+
 def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
     """
     Estimate token price in ETH using Uniswap V3 WETH pools.
@@ -905,16 +906,17 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
                 if weth_is_token0:
                     # price_raw is token1/token0 (token per WETH)
                     price_in_eth = (
-                        (1.0 / price_raw) / decimal_adjustment
-                        if price_raw > 0
-                        else 0.0
+                        (1.0 / price_raw) / decimal_adjustment if price_raw > 0 else 0.0
                     )
                 else:
                     # price_raw is token0/token1 (token per WETH)
                     price_in_eth = price_raw * decimal_adjustment
 
                 if price_in_eth > 0:
-                    token_weth_price_cache[token_addr] = (price_in_eth, time.time() + 60)
+                    token_weth_price_cache[token_addr] = (
+                        price_in_eth,
+                        time.time() + 60,
+                    )
                     return price_in_eth
 
             except Exception:
