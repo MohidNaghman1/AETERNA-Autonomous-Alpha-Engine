@@ -14,7 +14,8 @@ import requests
 import traceback
 import logging
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from app.modules.ingestion.domain.models import Event
 from app.shared.utils.deduplication import is_duplicate, mark_as_seen
 from app.shared.utils.entity_extraction import extract_crypto_mentions
@@ -91,7 +92,16 @@ def normalize_entry(entry, source):
     # Extract detailed content
     content = extract_rss_entry_detailed(entry, source)
 
-    ts = datetime.utcnow()
+    # Use article publish/update date as event timestamp; fallback to current UTC.
+    published_str = entry.get("published") or entry.get("updated") or ""
+    try:
+        parsed = parsedate_to_datetime(published_str)
+        if parsed.tzinfo is not None:
+            ts = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            ts = parsed
+    except Exception:
+        ts = datetime.utcnow()
 
     # Entity extraction from title and summary
     text = (entry.get("title") or "") + " " + (entry.get("summary") or "")
