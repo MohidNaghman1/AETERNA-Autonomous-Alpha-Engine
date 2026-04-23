@@ -131,11 +131,31 @@ eth_price_cache: Dict[str, Any] = {"price": 3000, "timestamp": time.time()}
 graceful_shutdown = False
 pool_tokens_cache: Dict[str, Tuple[str, str]] = {}
 token_meta_cache: Dict[str, Tuple[str, int]] = {}
+# Cache: token_address -> (price_in_eth, expires_at)
+token_weth_price_cache: Dict[str, Tuple[float, float]] = {}
 tx_from_cache: Dict[str, str] = {}
 block_timestamp_cache: Dict[int, int] = {}
 pool_lookup_failure_cache: Dict[str, float] = {}
 web3_init_fail_streak = 0
 web3_init_retry_not_before = 0.0
+
+POOL_SLOT0_ABI = [
+    {
+        "name": "slot0",
+        "outputs": [
+            {"type": "uint160", "name": "sqrtPriceX96"},
+            {"type": "int24", "name": "tick"},
+            {"type": "uint16", "name": "observationIndex"},
+            {"type": "uint16", "name": "observationCardinality"},
+            {"type": "uint16", "name": "observationCardinalityNext"},
+            {"type": "uint8", "name": "feeProtocol"},
+            {"type": "bool", "name": "unlocked"},
+        ],
+        "inputs": [],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
 
 # Swap signatures (mainnet-compatible)
 UNISWAP_V2_SWAP_TOPIC = (
@@ -813,6 +833,100 @@ def normalize_dex_swap_event(
         logger.error(f"Error normalizing DEX swap event: {e}")
         return None
 
+def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
+    """
+    Estimate token price in ETH using Uniswap V3 WETH pools.
+    Returns price in ETH (multiply by ETH/USD to get USD).
+    Returns 0.0 when not priceable.
+    """
+    if not token_addr or not w3:
+        return 0.0
+
+    token_addr = token_addr.lower()
+    if token_addr == WETH_MAINNET:
+        return 1.0
+
+    # Check cache (60s TTL for positive/valid results)
+    cached = token_weth_price_cache.get(token_addr)
+    if cached:
+        price_eth, expires_at = cached
+        if time.time() < expires_at:
+            return price_eth
+
+    factory_v3 = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+    factory_v3_abi = [
+        {
+            "name": "getPool",
+            "outputs": [{"type": "address", "name": ""}],
+            "inputs": [
+                {"type": "address", "name": "tokenA"},
+                {"type": "address", "name": "tokenB"},
+                {"type": "uint24", "name": "fee"},
+            ],
+            "stateMutability": "view",
+            "type": "function",
+        }
+    ]
+    fee_tiers = [3000, 500, 10000]  # 0.3%, 0.05%, 1%
+
+    try:
+        factory = w3.eth.contract(
+            address=Web3.to_checksum_address(factory_v3), abi=factory_v3_abi
+        )
+        weth = Web3.to_checksum_address(WETH_MAINNET)
+        token_cs = Web3.to_checksum_address(token_addr)
+
+        for fee in fee_tiers:
+            try:
+                pool_addr = factory.functions.getPool(token_cs, weth, fee).call()
+                if pool_addr == "0x0000000000000000000000000000000000000000":
+                    continue
+
+                pool = w3.eth.contract(
+                    address=Web3.to_checksum_address(pool_addr), abi=POOL_SLOT0_ABI
+                )
+                slot0 = pool.functions.slot0().call()
+                sqrt_price_x96 = slot0[0]
+                if sqrt_price_x96 == 0:
+                    continue
+
+                # Decode sqrtPriceX96 -> price ratio
+                price_raw = (sqrt_price_x96 / (2**96)) ** 2
+
+                pool_tokens = _get_pool_tokens(pool_addr)
+                if not pool_tokens:
+                    continue
+                token0, _token1 = pool_tokens
+                weth_is_token0 = token0 == WETH_MAINNET
+
+                # Adjust for decimal difference (token_decimals vs WETH 18)
+                decimal_adjustment = 10 ** (18 - token_decimals)
+
+                if weth_is_token0:
+                    # price_raw is token1/token0 (token per WETH)
+                    price_in_eth = (
+                        (1.0 / price_raw) / decimal_adjustment
+                        if price_raw > 0
+                        else 0.0
+                    )
+                else:
+                    # price_raw is token0/token1 (token per WETH)
+                    price_in_eth = price_raw * decimal_adjustment
+
+                if price_in_eth > 0:
+                    token_weth_price_cache[token_addr] = (price_in_eth, time.time() + 60)
+                    return price_in_eth
+
+            except Exception:
+                continue
+
+    except Exception as e:
+        logger.debug(f"[SWAP] WETH price lookup failed for {token_addr}: {e}")
+
+    # Negative cache (shorter)
+    token_weth_price_cache[token_addr] = (0.0, time.time() + 30)
+    return 0.0
+
 
 def process_dex_swap_log_event(
     log_entry: Dict[str, Any], stats: Dict[str, int]
@@ -892,6 +1006,23 @@ def process_dex_swap_log_event(
             usd_value = amount_in * float(eth_price_cache.get("price", 3000))
         elif token_out_addr == WETH_MAINNET:
             usd_value = amount_out * float(eth_price_cache.get("price", 3000))
+
+        # Two-hop fallback: price token via WETH pool, then convert ETH -> USD.
+        if usd_value == 0.0:
+            eth_price = float(eth_price_cache.get("price", 3000))
+
+            # Try pricing token_in via WETH first.
+            weth_price_in = _get_token_price_via_weth(token_in_addr, token_in_decimals)
+            if weth_price_in > 0:
+                usd_value = amount_in * weth_price_in * eth_price
+
+            # Fallback: price token_out via WETH.
+            if usd_value == 0.0:
+                weth_price_out = _get_token_price_via_weth(
+                    token_out_addr, token_out_decimals
+                )
+                if weth_price_out > 0:
+                    usd_value = amount_out * weth_price_out * eth_price
 
         if usd_value == 0.0:
             stats["rejected_no_valuation"] = stats.get("rejected_no_valuation", 0) + 1
