@@ -4,7 +4,6 @@ Extracts detailed metadata and enriches event data.
 """
 
 import re
-from datetime import datetime
 from typing import Dict, List, Any, Optional
 from html.parser import HTMLParser
 
@@ -551,7 +550,7 @@ def identify_significant_changes(
 
     change_1h = changes.get("change_1h_pct") or 0
     change_24h = changes.get("change_24h_pct") or 0
-    change_7d = changes.get("change_7d_pct") or 0
+    changes.get("change_7d_pct") or 0
 
     # Check for significant 1-hour movement
     if abs(change_1h) >= significance_threshold_pct:
@@ -575,12 +574,12 @@ def identify_significant_changes(
     if ath and current_price:
         distance_to_ath = abs(current_price - ath) / ath * 100
         if distance_to_ath < 5:
-            alerts.append(f"Near ATH (5% away)")
+            alerts.append("Near ATH (5% away)")
 
     if atl and current_price:
         distance_to_atl = abs(current_price - atl) / atl * 100
         if distance_to_atl < 5:
-            alerts.append(f"Near ATL (5% away)")
+            alerts.append("Near ATL (5% away)")
 
     return {
         "significant_moves": alerts,

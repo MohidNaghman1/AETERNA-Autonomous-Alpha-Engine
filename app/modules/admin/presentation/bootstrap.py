@@ -48,7 +48,7 @@ def create_first_admin(data: CreateFirstAdminRequest):
     # Check if bootstrap token is valid
     valid_token = os.getenv("BOOTSTRAP_TOKEN", "")
     if not valid_token or data.bootstrap_token != valid_token:
-        logger.warning(f"Invalid bootstrap token attempt")
+        logger.warning("Invalid bootstrap token attempt")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bootstrap token"
         )

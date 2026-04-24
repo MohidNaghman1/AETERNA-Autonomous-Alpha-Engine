@@ -204,7 +204,7 @@ async def get_entities(
         query = select(EntityORM)
 
         if verified_only:
-            query = query.where(EntityORM.verified == True)
+            query = query.where(EntityORM.verified)
 
         query = query.order_by(desc(EntityORM.updated_at)).limit(limit)
 
@@ -270,7 +270,7 @@ async def get_trade_records(
             query = query.where(TradeRecordORM.wallet_address.ilike(wallet_address))
 
         if profitable_only:
-            query = query.where(TradeRecordORM.is_profitable == True)
+            query = query.where(TradeRecordORM.is_profitable)
 
         if unresolved_only:
             query = query.where(TradeRecordORM.is_profitable.is_(None))

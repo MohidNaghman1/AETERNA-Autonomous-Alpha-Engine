@@ -10,7 +10,6 @@ import redis
 import os
 import logging
 from datetime import datetime, timedelta
-from typing import Set, Tuple
 
 logger = logging.getLogger(__name__)
 

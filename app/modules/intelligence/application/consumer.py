@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from copy import deepcopy
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_, cast, String
+from sqlalchemy import cast, String
 from app.modules.intelligence.application.agent_a import score_event
 from app.modules.intelligence.application.agent_b import (
     profile_wallet_from_event,
@@ -621,7 +621,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 _generate_alert_for_scored_event(event_orm, event_dict, priority, score)
                 processed_count += 1
 
-            except IntegrityError as e:
+            except IntegrityError:
                 # Another concurrent poll inserted this event between our check and commit
                 logger.warning(
                     f"[INTELLIGENCE] ⚠️ Concurrent insert detected for event {event_orm.id} "

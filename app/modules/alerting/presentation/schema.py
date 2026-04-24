@@ -4,8 +4,7 @@ Defines request/response models for alert-related API operations.
 """
 
 from pydantic import BaseModel
-from typing import Optional, Any, List
-from datetime import datetime
+from typing import Optional
 
 
 class Alert(BaseModel):

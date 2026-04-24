@@ -7,7 +7,8 @@ Provides functions for:
 """
 
 from passlib.context import CryptContext
-import jwt, uuid
+import jwt
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 import os

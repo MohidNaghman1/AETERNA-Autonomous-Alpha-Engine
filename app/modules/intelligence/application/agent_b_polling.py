@@ -22,7 +22,7 @@ import time
 import logging
 from copy import deepcopy
 from datetime import datetime
-from sqlalchemy import and_, desc
+from sqlalchemy import desc
 from sqlalchemy.orm.attributes import flag_modified
 from app.config.db import SessionLocal
 from app.modules.intelligence.application.agent_b import (
@@ -174,7 +174,7 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         )
         try:
             db.rollback()
-        except:
+        except Exception:
             pass
         return False
 

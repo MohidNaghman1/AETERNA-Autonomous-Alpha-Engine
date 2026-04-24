@@ -7,7 +7,6 @@ including quiet hours, rate limiting, and channel preferences.
 from typing import Dict, Any, Optional, List
 from datetime import datetime, time
 import collections
-from app.shared.utils.email_utils import send_email_alert
 from app.modules.delivery.application.delivery import deliver_email_alert
 from app.modules.alerting.infrastructure.models import Alert
 from app.config.db import SessionLocal

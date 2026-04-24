@@ -21,7 +21,6 @@ import json
 import logging
 from sqlalchemy import and_, cast, String, or_
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import ARRAY
 
 from app.modules.intelligence.domain.agent_b_models import (
     WalletProfile,
@@ -29,9 +28,7 @@ from app.modules.intelligence.domain.agent_b_models import (
     EntityType,
     BehaviorCluster,
     Entity,
-    EntityProfile,
     AgentBOutput,
-    TradeRecord,
 )
 from app.modules.intelligence.infrastructure.models import (
     ProcessedEvent,

@@ -17,7 +17,6 @@ from app.shared.utils.auth_utils import (
     verify_password,
     create_access_token,
     create_refresh_token,
-    decode_token,
 )
 from datetime import datetime, timedelta
 import hashlib
@@ -161,7 +160,7 @@ async def rotate_refresh_token(refresh_token, db: AsyncSession) -> tuple:
     token_hash_val = hash_token(refresh_token)
     result = await db.execute(
         select(RefreshToken).where(
-            RefreshToken.token_hash == token_hash_val, RefreshToken.revoked == False
+            RefreshToken.token_hash == token_hash_val, not RefreshToken.revoked
         )
     )
     db_token = result.scalar_one_or_none()
@@ -221,7 +220,7 @@ async def reset_password_with_token(
     result = await db.execute(
         select(PasswordResetToken).where(
             PasswordResetToken.token_hash == token_hash_val,
-            PasswordResetToken.used == False,
+            not PasswordResetToken.used,
         )
     )
     db_token = result.scalar_one_or_none()

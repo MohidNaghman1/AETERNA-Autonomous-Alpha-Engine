@@ -1,13 +1,11 @@
 from fastapi.responses import HTMLResponse
 from app.modules.identity.application.services import get_user_by_email
-from fastapi import APIRouter, HTTPException, Depends, status, Body
+from fastapi import APIRouter, HTTPException, Depends, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.config.db import AsyncSessionLocal
 from app.modules.identity.application import services
 from app.modules.identity.presentation.schemas import (
     RegisterRequest,
-    LoginRequest,
     TokenResponse,
     PasswordResetRequest,
     PasswordResetTokenResponse,

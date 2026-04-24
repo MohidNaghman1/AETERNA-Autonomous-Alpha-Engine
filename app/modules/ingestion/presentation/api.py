@@ -2,18 +2,19 @@
 Ingestion module API router with enhanced filtering.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import desc, and_, func, or_
 from app.shared.application.dependencies import get_db
 from app.modules.ingestion.infrastructure.models import EventORM
-from app.modules.ingestion.presentation.schemas import EventIn, EventOut
+from app.modules.ingestion.presentation.schemas import EventOut
 from typing import List, Optional
 from datetime import datetime
 import logging
 import time
-import os, pika
+import os
+import pika
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -445,14 +446,14 @@ async def debug_rabbitmq_queue_depth():
             "message_count": message_count,
             "connection_status": "connected",
             "next_steps": (
-                f"✅ Queue is empty"
+                "✅ Queue is empty"
                 if message_count == 0
                 else f"⚠️ {message_count} messages in queue - messages may not be consumed"
             ),
             "diagnostic_tips": {
                 "no_messages_in_queue": "Messages may not be published - check on-chain collector logs",
                 "messages_stuck_in_queue": "Messages are published but not consumed - check consumer logs",
-                "check_consumer": f"Run: python -m app.modules.ingestion.application.consumer",
+                "check_consumer": "Run: python -m app.modules.ingestion.application.consumer",
             },
         }
 
@@ -479,7 +480,7 @@ async def debug_rabbitmq_queue_depth():
             "queue_name": RABBITMQ_QUEUE,
             "message_count": None,
             "diagnostic_tips": {
-                "create_queue": f"Queue will be created automatically when first event is published"
+                "create_queue": "Queue will be created automatically when first event is published"
             },
         }
     except Exception as e:

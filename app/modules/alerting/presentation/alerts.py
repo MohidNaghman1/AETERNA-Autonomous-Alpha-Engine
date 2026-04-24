@@ -497,7 +497,7 @@ async def convert_alert_with_event(db: AsyncSession, alert: AlertORM) -> Alert:
                                     )
                             else:
                                 logger.debug(
-                                    f"[Agent B] ProcessedEvent has no valid event_data"
+                                    "[Agent B] ProcessedEvent has no valid event_data"
                                 )
                         else:
                             logger.debug(

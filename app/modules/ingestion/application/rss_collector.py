@@ -8,7 +8,6 @@ RSS News Collector for crypto news sources.
 
 import time
 import feedparser
-import pika
 import os
 import requests
 import traceback
@@ -177,7 +176,6 @@ def run_collector():
 
                 entries_added = 0
                 duplicates_skipped = 0
-                validation_failed = 0
                 publish_failed = 0
                 normalization_errors = 0
 

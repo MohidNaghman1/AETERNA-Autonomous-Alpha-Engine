@@ -13,7 +13,6 @@ from sqlalchemy import (
     JSON,
     Index,
     Boolean,
-    UUID,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY
 from app.config.db import Base

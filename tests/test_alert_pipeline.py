@@ -4,8 +4,6 @@ Tests alert creation, filtering, update, and user interaction flows.
 """
 
 import pytest
-from datetime import datetime
-from sqlalchemy.future import select
 
 
 @pytest.mark.asyncio

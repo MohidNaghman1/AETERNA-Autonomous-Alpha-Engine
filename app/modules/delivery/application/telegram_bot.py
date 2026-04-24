@@ -9,7 +9,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram.ext import MessageHandler, filters
 import re
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.db import AsyncSessionLocal
 from app.modules.identity.infrastructure.models import User
 

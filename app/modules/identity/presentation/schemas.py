@@ -128,7 +128,3 @@ class UserProfileResponse(BaseModel):
 class UserProfileUpdateRequest(BaseModel):
     telegram_id: str = None
     preferences: dict = None
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str

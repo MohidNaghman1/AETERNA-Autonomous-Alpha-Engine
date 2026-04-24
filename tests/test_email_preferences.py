@@ -4,7 +4,6 @@ Tests that user email preferences are correctly stored and retrievable.
 """
 
 import pytest
-from httpx import AsyncClient
 
 # Test data
 USERS = [

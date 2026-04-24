@@ -3,9 +3,8 @@
 Tests email sending, template rendering, and unsubscribe link generation.
 """
 
-import os
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock
 from app.shared.utils.email_utils import send_email_alert, generate_unsubscribe_link
 
 

@@ -17,8 +17,6 @@ from app.shared.utils.deduplication import is_duplicate, mark_as_seen
 from app.shared.utils.entity_extraction import extract_crypto_mentions
 from app.shared.utils.rabbitmq_publisher import RabbitMQPublisher
 from app.shared.utils.monitoring import (
-    EVENTS_PROCESSED,
-    EVENT_PROCESSING_TIME,
     start_metrics_server,
 )
 from app.shared.utils.data_extractors import (

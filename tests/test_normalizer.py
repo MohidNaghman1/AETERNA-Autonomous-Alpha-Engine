@@ -3,7 +3,6 @@
 Tests Event model creation, validation, and quality scoring.
 """
 
-import pytest
 from datetime import datetime
 from app.modules.ingestion.domain.models import Event
 
@@ -35,7 +34,7 @@ def test_event_validation_invalid_source():
 
     try:
         # Should validate source - needs to be known source
-        e = Event.create("invalid_source", "news", ts, content)
+        Event.create("invalid_source", "news", ts, content)
         # If it doesn't validate, that's OK for now
     except ValueError:
         # Expected - unknown source

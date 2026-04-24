@@ -78,7 +78,7 @@ def create_user(request: CreateUserRequest):
             created_at=new_user.created_at.isoformat() if new_user.created_at else None,
         )
 
-    except IntegrityError as e:
+    except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=400, detail="Failed to create user - constraint violation"

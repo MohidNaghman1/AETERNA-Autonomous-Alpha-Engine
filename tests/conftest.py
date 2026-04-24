@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-import pytest
 import pytest_asyncio
 from alembic.config import Config
 from alembic import command

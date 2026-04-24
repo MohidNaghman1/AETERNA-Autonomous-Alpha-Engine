@@ -5,8 +5,7 @@ Tests the full flow from data collection through storage and processing.
 
 import pytest
 import os
-from unittest.mock import AsyncMock, patch, MagicMock
-from sqlalchemy.future import select
+from unittest.mock import MagicMock
 from app.modules.ingestion.application.rss_collector import collect_and_publish
 
 
@@ -33,7 +32,7 @@ async def test_end_to_end_ingestion_with_mocked_collectors(db_session, mocker):
     try:
         # Run collector directly
         await collect_and_publish()
-    except Exception as e:
+    except Exception:
         # Some functions may not be async, that's OK
         pass
 

@@ -10,7 +10,7 @@ Enhanced with:
 - Type safety
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 import re
 import numpy as np
 from functools import lru_cache

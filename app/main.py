@@ -18,7 +18,7 @@ from sqlalchemy import text
 from app.shared.utils.auth_utils import decode_token
 from app.modules.alerting.infrastructure.alert_consumer import AlertConsumer
 from app.modules.identity.infrastructure.models import User, UserPreference
-from app.config.db import AsyncSessionLocal, SessionLocal, sync_engine
+from app.config.db import SessionLocal, sync_engine
 from app.shared.presentation.health import router as health_router
 from app.modules.identity.presentation.auth import router as auth_router
 from app.modules.ingestion.presentation.api import router as ingestion_router
@@ -133,7 +133,7 @@ async def lifespan(app: FastAPI):
                         )
                         logger.error(f"[CONSUMER-THREAD] RabbitMQ consumer error: {e}")
                         traceback.print_exc()
-                        print(f"[CONSUMER-THREAD] Restarting in 5 seconds...")
+                        print("[CONSUMER-THREAD] Restarting in 5 seconds...")
                         time.sleep(5)
                         # Restart consumer on crash
 

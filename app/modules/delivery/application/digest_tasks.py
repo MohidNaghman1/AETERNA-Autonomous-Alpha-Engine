@@ -5,10 +5,8 @@ Uses in-memory storage (User-Digests dict) in development - use persistent stora
 """
 
 from celery import Celery
-from datetime import datetime, timedelta
 from app.shared.utils.email_utils import send_email_alert
 import os
-import json
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
