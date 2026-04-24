@@ -1259,7 +1259,7 @@ def profile_wallet_from_event(
             observed_activity=observed_activity,
             wallet_profile=wallet_profile,
         )
-        if inferred_entity:
+        if inferred_entity and not entity:
             output.inferred_entity_type = inferred_entity["entity_type"]
             output.inferred_entity_name = inferred_entity["entity_name"]
             output.inferred_entity_reason = inferred_entity["reason"]
@@ -1336,20 +1336,26 @@ def profile_wallet_from_event(
             )
 
         # Determine profiling signal
-        if wallet_profile.total_trades == 0 and wallet_profile.entity_type != "unknown":
+        wallet_entity_type = wallet_profile.entity_type
+        if isinstance(wallet_entity_type, EntityType):
+            wallet_entity_type = wallet_entity_type.value
+        wallet_entity_type = str(wallet_entity_type or EntityType.UNKNOWN.value).lower()
+
+        if (
+            wallet_profile.total_trades == 0
+            and wallet_entity_type != EntityType.UNKNOWN.value
+        ):
             # Use entity_type if wallet has been identified but has no trades yet
             entity_type_map = {
-                "whale": "whale_like",
-                "exchange": "exchange_like",
-                "market_maker": "market_maker_like",
-                "trading_bot": "bot_like",
+                EntityType.WHALE.value: "whale_like",
+                EntityType.EXCHANGE.value: "exchange_like",
+                EntityType.MARKET_MAKER.value: "market_maker_like",
+                EntityType.TRADING_BOT.value: "bot_like",
                 "system_contract": "mint_burn_wallet",
             }
-            output.profiling_signal = entity_type_map.get(
-                wallet_profile.entity_type, "unverified"
-            )
+            output.profiling_signal = entity_type_map.get(wallet_entity_type, "unverified")
             logger.debug(
-                f"Using entity type '{wallet_profile.entity_type}' as profiling signal for {wallet_address}"
+                f"Using entity type '{wallet_entity_type}' as profiling signal for {wallet_address}"
             )
         elif tier == WalletTier.HIGH_PERFORMER:
             output.profiling_signal = "high_performer"

@@ -65,6 +65,15 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
     wallet_profile = profiling_output.wallet_profile
     now = datetime.utcnow()
 
+    def _is_generic_entity_type(value: str) -> bool:
+        return not value or value in {"unknown", "none", "null", "n/a"}
+
+    def _is_generic_entity_name(value: str) -> bool:
+        if not value:
+            return True
+        normalized = value.strip().lower()
+        return normalized in {"new wallet", "unknown", "unlabeled wallet", "n/a"}
+
     entity_type = (
         profiling_output.entity_type.value
         if profiling_output.entity_type
@@ -141,12 +150,20 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
         return
 
     existing_profile.last_activity = now
-    existing_profile.entity_type = entity_type or existing_profile.entity_type
-    existing_profile.entity_name = entity_name or existing_profile.entity_name
+
+    # Cold-start safety: avoid downgrading known entity labels with generic fallbacks.
+    if not _is_generic_entity_type(str(entity_type).strip().lower()):
+        existing_profile.entity_type = entity_type
+    elif not existing_profile.entity_type:
+        existing_profile.entity_type = entity_type
+
+    if not _is_generic_entity_name(str(entity_name).strip()):
+        existing_profile.entity_name = entity_name
+    elif not existing_profile.entity_name:
+        existing_profile.entity_name = entity_name
+
     existing_profile.confidence_score = confidence_score
-    existing_profile.first_seen = (
-        existing_profile.first_seen or existing_profile.created_at or now
-    )
+    existing_profile.first_seen = existing_profile.first_seen or existing_profile.created_at or now
 
     if wallet_profile:
         existing_profile.total_trades = wallet_profile.total_trades
@@ -159,9 +176,8 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
         existing_profile.behavior_cluster = wallet_profile.behavior_cluster.value
         existing_profile.tier = wallet_profile.tier.value
         existing_profile.activity_frequency = wallet_profile.activity_frequency
-        existing_profile.first_seen = (
-            existing_profile.first_seen or wallet_profile.first_seen or now
-        )
+        if existing_profile.first_seen is None and wallet_profile.first_seen:
+            existing_profile.first_seen = wallet_profile.first_seen
         existing_profile.preferred_tokens = wallet_profile.preferred_tokens
         existing_profile.favorite_exchanges = wallet_profile.favorite_exchanges
         existing_profile.favorite_dexes = wallet_profile.favorite_dexes
@@ -169,7 +185,7 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
     db.add(existing_profile)
 
 
-def enrich_event_with_agent_b(event: dict) -> dict:
+def enrich_event_with_agent_b(event: dict, db=None) -> dict:
     """
     FIX #1 + #4: Enrich event with Agent B profiling AND persist wallet profile to DB.
 
@@ -188,7 +204,9 @@ def enrich_event_with_agent_b(event: dict) -> dict:
     Returns:
         Modified event dict with agent_b profiling added (or original if error/no profiling needed)
     """
-    db = SessionLocal()
+    _owns_session = db is None
+    if _owns_session:
+        db = SessionLocal()
     try:
         event_source = event.get("source", "").lower()
 
@@ -342,10 +360,11 @@ def enrich_event_with_agent_b(event: dict) -> dict:
                 "confidence_score": 0.0,
             }
     finally:
-        try:
-            db.close()
-        except:
-            pass
+        if _owns_session:
+            try:
+                db.close()
+            except Exception:
+                pass
 
     return event
 
@@ -561,7 +580,7 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
                 # =====================================================================
                 # AGENT B ENRICHMENT: Persist wallet profiles + attach profiling data
                 # =====================================================================
-                event_dict = enrich_event_with_agent_b(event_dict)
+                event_dict = enrich_event_with_agent_b(event_dict, db=db)
                 # =====================================================================
 
                 # Save ProcessedEvent and update EventORM content in a single commit
