@@ -1034,6 +1034,9 @@ def process_dex_swap_log_event(
                 if weth_price_out > 0:
                     usd_value = amount_out * weth_price_out * eth_price
 
+        tx_hash_raw = log_entry.get("transactionHash", "")
+        tx_hash = _normalize_tx_hash(tx_hash_raw)
+
         if usd_value == 0.0:
             logger.debug(
                 "[SWAP] No USD valuation for %s->%s tx=%s — publishing with usd_value=0",
@@ -1048,9 +1051,6 @@ def process_dex_swap_log_event(
                 stats.get("rejected_below_threshold", 0) + 1
             )
             return False
-
-        tx_hash_raw = log_entry.get("transactionHash", "")
-        tx_hash = _normalize_tx_hash(tx_hash_raw)
         if not tx_hash:
             stats["rejected_no_txhash"] = stats.get("rejected_no_txhash", 0) + 1
             return False
