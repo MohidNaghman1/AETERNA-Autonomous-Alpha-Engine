@@ -20,7 +20,9 @@ from app.shared.utils.monitoring import (
     start_metrics_server,
 )
 from app.modules.intelligence.application.consumer import run_intelligence_poll
-from app.modules.intelligence.application.trade_records import upsert_trade_record_from_event
+from app.modules.intelligence.application.trade_records import (
+    upsert_trade_record_from_event,
+)
 from app.modules.ingestion.infrastructure.models import EventORM
 from app.config.db import SessionLocal
 from app.shared.utils.validators import validate_event as validate_event_schema
@@ -193,7 +195,8 @@ def flush_batch(channel):
                     for orm in _batch_orms:
                         content = orm.content if isinstance(orm.content, dict) else {}
                         event_dict = {
-                            "id": content.get("event_hash") or content.get("transaction_hash", ""),
+                            "id": content.get("event_hash")
+                            or content.get("transaction_hash", ""),
                             "source": orm.source or "",
                             "timestamp": orm.timestamp,
                             "content": content,

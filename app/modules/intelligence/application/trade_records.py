@@ -68,9 +68,9 @@ def is_trade_like_event(event: Dict[str, Any]) -> bool:
     )
 
     return (
-        event_type in ("dex_swap", "swap") or
-        tx_type in ("swap", "transfer") or
-        has_swap_shape
+        event_type in ("dex_swap", "swap")
+        or tx_type in ("swap", "transfer")
+        or has_swap_shape
     )
 
 
