@@ -116,6 +116,25 @@ STABLECOIN_ADDRESSES = {
     "0x056fd409e1d7a124bd7017459dfea2f387b6d5cd": "GUSD",
 }
 
+KNOWN_TOKENS = frozenset(STABLECOIN_ADDRESSES.values()) | {
+    "WETH",
+    "ETH",
+    "WBTC",
+    "cbETH",
+    "stETH",
+    "rETH",
+    "wstETH",
+    "LINK",
+    "UNI",
+    "AAVE",
+    "MKR",
+    "CRV",
+    "LDO",
+    "SNX",
+    "COMP",
+    "Unknown",  # allow unknown until symbol resolution fails
+}
+
 EXCHANGE_ADDRESSES = {
     "0x3f5ce5fbfe3e9af3971dd833d97da793a8eb06f7": "Binance",
     "0x1688a1c8f3b10b2cfbbf9b1cccc09d8c7ba8d79e": "Binance",
@@ -774,6 +793,10 @@ def normalize_dex_swap_event(
     """Normalize a DEX swap event to unified schema."""
 
     try:
+        if usd_value == 0.0:
+            if token_in not in KNOWN_TOKENS and token_out not in KNOWN_TOKENS:
+                return None  # meme coin, no price signal — not useful
+
         if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
 

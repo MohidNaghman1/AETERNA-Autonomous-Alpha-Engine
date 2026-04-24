@@ -9,6 +9,8 @@ primary_region = "iad"
 
 [processes]
   worker = "python onchain_worker.py"
+  consumer = "python -m app.modules.ingestion.application.consumer"
+  resolver = "python -m app.modules.intelligence.application.trade_records"
 
 [deploy]
   strategy = "immediate"

@@ -7,8 +7,11 @@ This module adds two capabilities:
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import logging
+import os
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -426,3 +429,53 @@ def get_trade_resolution_snapshot(db) -> Dict[str, Any]:
             else None
         ),
     }
+
+
+def run_trade_resolver_loop(batch_size: int = 200, interval_seconds: int = 120) -> None:
+    """Continuously resolve pending trade outcomes with fixed polling interval."""
+    interval_seconds = max(1, int(interval_seconds))
+    batch_size = max(1, int(batch_size))
+
+    logger.info(
+        "[TRADE-RESOLVER] Starting loop | batch_size=%s interval=%ss",
+        batch_size,
+        interval_seconds,
+    )
+
+    while True:
+        try:
+            resolved = run_trade_outcome_resolution(batch_size=batch_size)
+            logger.info("[TRADE-RESOLVER] Cycle complete | resolved=%s", resolved)
+        except Exception as e:
+            logger.error("[TRADE-RESOLVER] Loop error: %s", e, exc_info=True)
+
+        time.sleep(interval_seconds)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    parser = argparse.ArgumentParser(
+        description="Trade record profitability resolver worker"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=int(os.getenv("TRADE_RESOLVER_BATCH_SIZE", "200")),
+        help="Max unresolved-wallet candidates processed per cycle",
+    )
+    parser.add_argument(
+        "--interval-seconds",
+        type=int,
+        default=int(os.getenv("TRADE_RESOLVER_INTERVAL_SECONDS", "120")),
+        help="Sleep interval between resolver cycles",
+    )
+    args = parser.parse_args()
+
+    run_trade_resolver_loop(
+        batch_size=max(1, args.batch_size),
+        interval_seconds=max(1, args.interval_seconds),
+    )

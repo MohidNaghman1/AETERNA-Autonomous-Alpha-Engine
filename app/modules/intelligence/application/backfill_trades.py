@@ -26,7 +26,7 @@ def _to_event_dict(processed: ProcessedEvent) -> Dict[str, Any]:
         if isinstance(event_data.get("content"), dict)
         else {}
     )
-    source = event_data.get("source") or "ethereum"
+    source = event_data.get("source") or ""
 
     return {
         "id": str(processed.id),
