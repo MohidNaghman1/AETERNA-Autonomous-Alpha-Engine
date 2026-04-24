@@ -1353,7 +1353,9 @@ def profile_wallet_from_event(
                 EntityType.TRADING_BOT.value: "bot_like",
                 "system_contract": "mint_burn_wallet",
             }
-            output.profiling_signal = entity_type_map.get(wallet_entity_type, "unverified")
+            output.profiling_signal = entity_type_map.get(
+                wallet_entity_type, "unverified"
+            )
             logger.debug(
                 f"Using entity type '{wallet_entity_type}' as profiling signal for {wallet_address}"
             )

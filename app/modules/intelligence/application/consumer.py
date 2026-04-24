@@ -163,7 +163,9 @@ def _persist_wallet_profile(db, wallet_address: str, profiling_output) -> None:
         existing_profile.entity_name = entity_name
 
     existing_profile.confidence_score = confidence_score
-    existing_profile.first_seen = existing_profile.first_seen or existing_profile.created_at or now
+    existing_profile.first_seen = (
+        existing_profile.first_seen or existing_profile.created_at or now
+    )
 
     if wallet_profile:
         existing_profile.total_trades = wallet_profile.total_trades

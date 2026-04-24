@@ -6,7 +6,9 @@ from app.modules.ingestion.application import onchain_collector
 
 
 def test_normalize_dex_swap_event_allows_zero_usd_passthrough(monkeypatch):
-    monkeypatch.setattr(onchain_collector.OnChainConfig, "MIN_TRANSACTION_VALUE_USD", 10000)
+    monkeypatch.setattr(
+        onchain_collector.OnChainConfig, "MIN_TRANSACTION_VALUE_USD", 10000
+    )
 
     event = onchain_collector.normalize_dex_swap_event(
         tx_hash="0xtxhash",
@@ -28,7 +30,9 @@ def test_normalize_dex_swap_event_allows_zero_usd_passthrough(monkeypatch):
 
 
 def test_normalize_dex_swap_event_rejects_priced_below_threshold(monkeypatch):
-    monkeypatch.setattr(onchain_collector.OnChainConfig, "MIN_TRANSACTION_VALUE_USD", 10000)
+    monkeypatch.setattr(
+        onchain_collector.OnChainConfig, "MIN_TRANSACTION_VALUE_USD", 10000
+    )
 
     event = onchain_collector.normalize_dex_swap_event(
         tx_hash="0xtxhash2",
