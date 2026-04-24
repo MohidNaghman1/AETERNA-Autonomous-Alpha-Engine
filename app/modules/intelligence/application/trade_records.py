@@ -99,6 +99,7 @@ def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, An
     amount_in = _to_float(content.get("amount_in"), 0.0)
     amount_out = _to_float(content.get("amount_out"), 0.0)
     usd_value = _to_float(content.get("usd_value"), 0.0)
+    has_swap_shape = amount_in > 0 and amount_out > 0
 
     if not token_in or not token_out:
         logger.debug(
@@ -110,13 +111,22 @@ def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, An
         )
         return None
 
-    if amount_in <= 0 or amount_out <= 0 or usd_value <= 0:
+    if not has_swap_shape:
         logger.debug(
-            "[TRADE] Skipped: invalid amounts/usd | event_id=%s tx=%s amount_in=%s amount_out=%s usd_value=%s",
+            "[TRADE] Skipped: invalid swap amounts | event_id=%s tx=%s amount_in=%s amount_out=%s usd_value=%s",
             event.get("id"),
             content.get("transaction_hash"),
             amount_in,
             amount_out,
+            usd_value,
+        )
+        return None
+
+    if usd_value < 0:
+        logger.debug(
+            "[TRADE] Skipped: negative usd_value | event_id=%s tx=%s usd_value=%s",
+            event.get("id"),
+            content.get("transaction_hash"),
             usd_value,
         )
         return None
@@ -254,6 +264,7 @@ def resolve_pending_trade_outcomes(db, batch_size: int = 200) -> int:
         ordered_wallets.append(address)
 
     resolved_count = 0
+    skipped_buy_lot_zero_usd = 0
 
     for wallet_address in ordered_wallets:
         trades = (
@@ -332,6 +343,18 @@ def resolve_pending_trade_outcomes(db, batch_size: int = 200) -> int:
                         "unit_cost": trade_value_usd / amount_out,
                     }
                 )
+            elif token_out and amount_out > EPSILON and trade_value_usd <= EPSILON:
+                skipped_buy_lot_zero_usd += 1
+                logger.debug(
+                    "[TRADE-RESOLVER] Skipping buy lot — usd_value=0 (price oracle failed) | trade_id=%s",
+                    trade.trade_id,
+                )
+
+    if skipped_buy_lot_zero_usd > 0:
+        logger.info(
+            "[TRADE-RESOLVER] Zero-USD buy legs skipped: %s",
+            skipped_buy_lot_zero_usd,
+        )
 
     return resolved_count
 

@@ -145,3 +145,49 @@ def test_is_trade_like_event_rejects_non_ethereum_source():
     }
 
     assert is_trade_like_event(event) is False
+
+
+def test_extract_trade_record_payload_keeps_swap_with_zero_usd_value():
+    """Confirmed swap-shaped payloads should still be captured when pricing fails."""
+    event = {
+        "id": "evt-7",
+        "source": "ethereum",
+        "timestamp": "2026-04-18T10:06:00Z",
+        "content": {
+            "event_type": "swap",
+            "wallet_address": "0xABCDEF",
+            "transaction_hash": "0xtxhash7",
+            "dex": "uniswap",
+            "token_in": "USDC",
+            "token_out": "ETH",
+            "amount_in": "1000",
+            "amount_out": "0.32",
+            "usd_value": 0,
+        },
+    }
+
+    payload = extract_trade_record_payload(event)
+
+    assert payload is not None
+    assert payload["usd_value"] == 0.0
+    assert payload["amount_in"] == 1000.0
+    assert payload["amount_out"] == 0.32
+
+
+def test_extract_trade_record_payload_still_rejects_non_swap_zero_usd():
+    event = {
+        "id": "evt-8",
+        "source": "ethereum",
+        "timestamp": "2026-04-18T10:07:00Z",
+        "content": {
+            "event_type": "transfer",
+            "wallet_address": "0xABCDEF",
+            "transaction_hash": "0xtxhash8",
+            "token": "USDC",
+            "amount_in": "1000",
+            "amount_out": "0",
+            "usd_value": 0,
+        },
+    }
+
+    assert extract_trade_record_payload(event) is None

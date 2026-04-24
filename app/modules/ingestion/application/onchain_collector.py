@@ -22,8 +22,12 @@ from typing import Optional, Dict, Any, Tuple
 from decimal import Decimal
 from dotenv import load_dotenv
 
-from web3 import Web3
-from web3.providers import WebsocketProvider
+try:
+    from web3 import Web3  # type: ignore[import-not-found]
+    from web3.providers import WebsocketProvider  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - fallback for test environments without web3
+    Web3 = None  # type: ignore[assignment]
+    WebsocketProvider = None  # type: ignore[assignment]
 
 from app.modules.ingestion.domain.models import Event
 from app.shared.utils.deduplication import is_duplicate, mark_as_seen
@@ -124,7 +128,7 @@ EXCHANGE_ADDRESSES = {
 # GLOBAL STATE
 # ============================================================================
 
-w3: Optional[Web3] = None
+w3: Any = None
 publisher: Optional[RabbitMQPublisher] = None
 http_session: Optional[aiohttp.ClientSession] = None
 eth_price_cache: Dict[str, Any] = {"price": 3000, "timestamp": time.time()}
@@ -556,6 +560,10 @@ def initialize_web3():
     """Initialize Web3 connection to Ethereum node."""
     global w3, web3_init_fail_streak, web3_init_retry_not_before
 
+    if Web3 is None or WebsocketProvider is None:
+        logger.error("[ERROR] web3 dependency is unavailable in this environment")
+        return None
+
     # If current client is healthy, reuse it.
     if w3:
         try:
@@ -655,7 +663,7 @@ def normalize_transfer_event(
     """Normalize a blockchain transfer event to unified schema."""
 
     try:
-        if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+        if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
 
         # Detect exchange involvement (addresses must be lowercased for lookup)
@@ -766,7 +774,7 @@ def normalize_dex_swap_event(
     """Normalize a DEX swap event to unified schema."""
 
     try:
-        if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+        if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
 
         # BUG FIX: Use UTC timezone for timestamp to match validator expectations
@@ -1026,18 +1034,23 @@ def process_dex_swap_log_event(
                 if weth_price_out > 0:
                     usd_value = amount_out * weth_price_out * eth_price
 
-        if usd_value == 0.0:
-            stats["rejected_no_valuation"] = stats.get("rejected_no_valuation", 0) + 1
-            return False
+        tx_hash_raw = log_entry.get("transactionHash", "")
+        tx_hash = _normalize_tx_hash(tx_hash_raw)
 
-        if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
+        if usd_value == 0.0:
+            logger.debug(
+                "[SWAP] No USD valuation for %s->%s tx=%s — publishing with usd_value=0",
+                token_in_symbol,
+                token_out_symbol,
+                tx_hash[:10],
+            )
+            stats["published_zero_usd"] = stats.get("published_zero_usd", 0) + 1
+
+        if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             stats["rejected_below_threshold"] = (
                 stats.get("rejected_below_threshold", 0) + 1
             )
             return False
-
-        tx_hash_raw = log_entry.get("transactionHash", "")
-        tx_hash = _normalize_tx_hash(tx_hash_raw)
         if not tx_hash:
             stats["rejected_no_txhash"] = stats.get("rejected_no_txhash", 0) + 1
             return False
