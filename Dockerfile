@@ -43,7 +43,7 @@ COPY --from=builder /root/.local /home/appuser/.local
 ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000
+    PORT=8080
 
 # Copy application code
 COPY --chown=appuser:appuser . .
@@ -53,14 +53,6 @@ RUN chmod +x /app/start.sh
 
 # Switch to non-root user
 USER appuser
-
-# Health check
-# Increased start-period to 120s to allow time for:
-# - Database migrations (alembic upgrade head)
-# - Service initialization (Redis, RabbitMQ, PostgreSQL connections)
-# - Scheduler startup (RSS, Price, Consumer, Intelligence, AgentB)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Expose port
 EXPOSE ${PORT}
