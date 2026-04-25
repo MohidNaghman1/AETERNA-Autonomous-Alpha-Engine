@@ -802,7 +802,13 @@ def normalize_dex_swap_event(
     try:
         if usd_value == 0.0:
             if token_in not in KNOWN_TOKENS and token_out not in KNOWN_TOKENS:
-                return None  # meme coin, no price signal â€” not useful
+                logger.debug(
+                    "[SWAP] Zero-USD meme swap %s->%s tx=%s — skipping (no price oracle)",
+                    token_in,
+                    token_out,
+                    tx_hash if "tx_hash" in dir() else "?",
+                )
+                return None
 
         if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
@@ -1063,6 +1069,16 @@ def process_dex_swap_log_event(
                 )
                 if weth_price_out > 0:
                     usd_value = amount_out * weth_price_out * eth_price
+
+        # Final fallback: if one leg is WETH, use raw ETH amount × ETH price.
+        # This handles pools where slot0/sqrtPriceX96 is unavailable.
+        if usd_value == 0.0:
+            eth_price = float(eth_price_cache.get("price", 3000))
+            if token_in_addr == WETH_MAINNET and amount_in > 0:
+                usd_value = amount_in * eth_price
+            elif token_out_addr == WETH_MAINNET and amount_out > 0:
+                usd_value = amount_out * eth_price
+
 
         tx_hash_raw = log_entry.get("transactionHash", "")
         tx_hash = _normalize_tx_hash(tx_hash_raw)

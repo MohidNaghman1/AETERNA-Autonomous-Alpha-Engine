@@ -10,7 +10,7 @@ import argparse
 import json
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from app.config.db import SessionLocal
 from app.modules.intelligence.infrastructure.models import TradeRecordORM
@@ -46,6 +46,21 @@ def build_backlog_report(limit: int = 20) -> dict:
             .limit(limit)
             .all()
         )
+        token_pairs = (
+            db.query(
+                TradeRecordORM.token_in.label("token_in"),
+                TradeRecordORM.token_out.label("token_out"),
+                func.count(TradeRecordORM.trade_id).label("total"),
+                func.sum(
+                    case((TradeRecordORM.is_profitable.is_(None), 1), else_=0)
+                ).label("unresolved"),
+                func.avg(TradeRecordORM.usd_value).label("avg_usd"),
+            )
+            .group_by(TradeRecordORM.token_in, TradeRecordORM.token_out)
+            .order_by(func.count(TradeRecordORM.trade_id).desc())
+            .limit(20)
+            .all()
+        )
 
         rows = [
             {
@@ -65,6 +80,16 @@ def build_backlog_report(limit: int = 20) -> dict:
                 round((total_unresolved / total_trades), 4) if total_trades else 0.0
             ),
             "wallets": rows,
+            "token_pairs": [
+                {
+                    "token_in": row.token_in,
+                    "token_out": row.token_out,
+                    "total": int(row.total or 0),
+                    "unresolved": int(row.unresolved or 0),
+                    "avg_usd": round(float(row.avg_usd or 0), 4),
+                }
+                for row in token_pairs
+            ],
         }
     finally:
         db.close()
@@ -112,6 +137,14 @@ def main() -> None:
             f"pending={row['unresolved_count']} | "
             f"oldest={row['oldest_unresolved']} | "
             f"latest={row['latest_unresolved']}"
+        )
+
+    print("-" * 72)
+    print("Top Token Pairs (by trade count):")
+    for row in report.get("token_pairs", []):
+        print(
+            f"  {row['token_in']:<12} -> {row['token_out']:<12} | "
+            f"total={row['total']} unresolved={row['unresolved']} avg_usd=${row['avg_usd']}"
         )
 
 

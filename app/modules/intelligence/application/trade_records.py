@@ -67,9 +67,14 @@ def is_trade_like_event(event: Dict[str, Any]) -> bool:
         and content.get("amount_out") is not None
     )
 
+    # Explicitly reject transfer events — they are not round-trip trades and
+    # can never be resolved by the FIFO resolver (token_out is synthetic "USD").
+    if tx_type == "transfer" or event_type == "transfer":
+        return False
+
     return (
         event_type in ("dex_swap", "swap")
-        or tx_type in ("swap", "transfer")
+        or tx_type == "swap"
         or has_swap_shape
     )
 
@@ -80,6 +85,18 @@ def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, An
         logger.debug(
             "[TRADE] Skipped: non trade-like event | event_id=%s",
             event.get("id") if isinstance(event, dict) else None,
+        )
+        return None
+
+    payload_token_out = (
+        event.get("content", {}).get("token_out")
+        if isinstance(event.get("content"), dict)
+        else None
+    )
+    if payload_token_out and str(payload_token_out).upper() == "USD":
+        logger.debug(
+            "[TRADE] Skipped: synthetic token_out='USD' (transfer-derived record) | event_id=%s",
+            event.get("id"),
         )
         return None
 

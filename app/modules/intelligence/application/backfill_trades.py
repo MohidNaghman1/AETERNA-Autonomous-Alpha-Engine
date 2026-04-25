@@ -41,6 +41,7 @@ def run_backfill(limit: int = 10000, commit_every: int = 500) -> Dict[str, int]:
     created = 0
     updated = 0
     skipped = 0
+    skipped_transfer = 0
     failed = 0
 
     try:
@@ -64,6 +65,18 @@ def run_backfill(limit: int = 10000, commit_every: int = 500) -> Dict[str, int]:
                     skipped += 1
                     continue
 
+                content = event_dict.get("content", {})
+                event_type = str(content.get("event_type", "")).lower()
+                tx_type = str(content.get("transaction_type", "")).lower()
+                if event_type == "transfer" or tx_type == "transfer":
+                    logger.debug(
+                        "Skipping transfer event %s — not a round-trip trade",
+                        processed.id,
+                    )
+                    skipped += 1
+                    skipped_transfer += 1
+                    continue
+
                 result = upsert_trade_record_from_event(db, event_dict)
                 if result == "created":
                     created += 1
@@ -84,6 +97,7 @@ def run_backfill(limit: int = 10000, commit_every: int = 500) -> Dict[str, int]:
             "created": created,
             "updated": updated,
             "skipped": skipped,
+            "skipped_transfer": skipped_transfer,
             "failed": failed,
         }
     except Exception:
@@ -102,7 +116,8 @@ def main() -> None:
     summary = run_backfill(
         limit=max(1, args.limit), commit_every=max(1, args.commit_every)
     )
-    print("[BACKFILL COMPLETE]", summary)
+    skipped_transfer = summary.get("skipped_transfer", 0)
+    print("[BACKFILL COMPLETE]", {**summary, "skipped_transfer": skipped_transfer})
 
 
 if __name__ == "__main__":

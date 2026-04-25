@@ -84,7 +84,13 @@ def add_agent_b_to_event(processed_event: ProcessedEvent, db) -> bool:
         addresses_to_profile = []
 
         # Top-level addresses (for non-transfer events)
-        wallet_addr = event_data.get("wallet_address") or event_data.get("address")
+        wallet_addr = (
+            event_data.get("wallet_address")
+            or event_data.get("address")
+            or content.get("wallet_address")
+            or content.get("trader_address")
+            or content.get("from_address")
+        )
         if wallet_addr:
             addresses_to_profile.append(wallet_addr.lower())
 

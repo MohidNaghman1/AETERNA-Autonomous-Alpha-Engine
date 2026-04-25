@@ -142,6 +142,9 @@ def parse_event(body: bytes):
     content = event.content or {}
     if isinstance(content, str):
         content = json_module.loads(content)
+    # Preserve swap/transfer sub-type so intelligence pipeline can filter correctly.
+    if isinstance(content, dict) and content.get("event_type"):
+        content["sub_type"] = str(content["event_type"]).lower()
     content["event_hash"] = event.id
 
     return EventORM(
