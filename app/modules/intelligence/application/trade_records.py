@@ -72,11 +72,7 @@ def is_trade_like_event(event: Dict[str, Any]) -> bool:
     if tx_type == "transfer" or event_type == "transfer":
         return False
 
-    return (
-        event_type in ("dex_swap", "swap")
-        or tx_type == "swap"
-        or has_swap_shape
-    )
+    return event_type in ("dex_swap", "swap") or tx_type == "swap" or has_swap_shape
 
 
 def extract_trade_record_payload(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
