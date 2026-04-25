@@ -7,41 +7,13 @@ primary_region = "iad"
 [env]
   PYTHONUNBUFFERED = "1"
 
-# Every process runs through start.sh so alembic migrations only fire for the
-# api process. Worker/consumer/resolver set their own SERVICE_TYPE and skip it.
 [processes]
-  api = "SERVICE_TYPE=api bash start.sh"
   worker = "SERVICE_TYPE=worker bash start.sh"
   consumer = "SERVICE_TYPE=consumer bash start.sh"
   resolver = "SERVICE_TYPE=resolver bash start.sh"
 
 [deploy]
   strategy = "immediate"
-
-[[vm]]
-  processes = ["api"]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 512
-
-[[http_service]]
-  processes = ["api"]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = false
-  auto_start_machines = true
-
-  [http_service.concurrency]
-    type = "connections"
-    hard_limit = 100
-    soft_limit = 80
-
-[[http_service.checks]]
-  interval = "15s"
-  timeout = "5s"
-  grace_period = "20s"
-  method = "GET"
-  path = "/health"
 
 [[vm]]
   processes = ["worker"]
