@@ -16,8 +16,7 @@ case $SERVICE_TYPE in
     ;;
   resolver)
     echo "Starting trade outcome resolver..."
-    exec python -m app.modules.intelligence.application.trade_records \
-      --interval-seconds ${TRADE_RESOLVER_INTERVAL_SECONDS:-120}
+    exec python -m app.modules.intelligence.application.trade_records 
     ;;
   *)
     echo "ERROR: Unknown SERVICE_TYPE='$SERVICE_TYPE'"
