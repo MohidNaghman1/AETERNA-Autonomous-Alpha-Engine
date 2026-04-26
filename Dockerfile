@@ -45,8 +45,15 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
+# Copy startup script explicitly so it is always present in the image,
+# regardless of broader context-copy changes.
+COPY --chown=appuser:appuser start.sh /app/start.sh
+
 # Copy application code
 COPY --chown=appuser:appuser . .
+
+# Normalize line endings and verify the script exists for older process configs
+RUN sed -i 's/\r//g' /app/start.sh && chmod +x /app/start.sh && test -f /app/start.sh
 
 # Switch to non-root user
 USER appuser
