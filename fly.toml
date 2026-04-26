@@ -8,9 +8,9 @@ primary_region = "iad"
   PYTHONUNBUFFERED = "1"
 
 [processes]
-  worker = "SERVICE_TYPE=worker /app/start.sh"
-  consumer = "SERVICE_TYPE=consumer /app/start.sh"
-  resolver = "SERVICE_TYPE=resolver /app/start.sh"
+  worker = "python onchain_worker.py"
+  consumer = "python -m app.modules.ingestion.application.consumer"
+  resolver = "python -m app.modules.intelligence.application.trade_records"
 
 [deploy]
   strategy = "immediate"
