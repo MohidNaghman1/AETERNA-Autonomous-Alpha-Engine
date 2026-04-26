@@ -48,14 +48,12 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Make startup script executable
-RUN sed -i 's/\r//g' /app/start.sh && chmod +x /app/start.sh
-
 # Switch to non-root user
 USER appuser
 
 # Expose port
 EXPOSE ${PORT}
 
-# Run application with migrations
-CMD ["/app/start.sh"]
+# Default container command for local/docker runs.
+# Fly process groups override this with their own direct Python commands.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
