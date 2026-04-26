@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 SERVICE_TYPE=${SERVICE_TYPE:-worker}
