@@ -49,7 +49,7 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 COPY --chown=appuser:appuser . .
 
 # Make startup script executable
-RUN chmod +x /app/start.sh
+RUN sed -i 's/\r//g' /app/start.sh && chmod +x /app/start.sh
 
 # Switch to non-root user
 USER appuser
