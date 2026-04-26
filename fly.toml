@@ -8,9 +8,9 @@ primary_region = "iad"
   PYTHONUNBUFFERED = "1"
 
 [processes]
-  worker = "SERVICE_TYPE=worker bash start.sh"
-  consumer = "SERVICE_TYPE=consumer bash start.sh"
-  resolver = "SERVICE_TYPE=resolver bash start.sh"
+  worker = "SERVICE_TYPE=worker /app/start.sh"
+  consumer = "SERVICE_TYPE=consumer /app/start.sh"
+  resolver = "SERVICE_TYPE=resolver /app/start.sh"
 
 [deploy]
   strategy = "immediate"
