@@ -71,10 +71,10 @@ class OnChainConfig:
     # Transaction value thresholds for automatic priority marking
     HIGH_PRIORITY_THRESHOLD_USD = int(
         os.getenv("HIGH_PRIORITY_THRESHOLD_USD", "100000")
-    )  # $100k âœ… FIXED
+    )  # $100k ï¿½. FIXED
     MEDIUM_PRIORITY_THRESHOLD_USD = int(
         os.getenv("MEDIUM_PRIORITY_THRESHOLD_USD", "10000")
-    )  # $10k âœ… FIXED
+    )  # $10k ï¿½. FIXED
     LOW_PRIORITY_THRESHOLD_USD = int(
         os.getenv("LOW_PRIORITY_THRESHOLD_USD", "5000")
     )  # $5k
@@ -803,7 +803,7 @@ def normalize_dex_swap_event(
         if usd_value == 0.0:
             if token_in not in KNOWN_TOKENS and token_out not in KNOWN_TOKENS:
                 logger.debug(
-                    "[SWAP] Zero-USD meme swap %s->%s tx=%s — skipping (no price oracle)",
+                    "[SWAP] Zero-USD meme swap %s->%s tx=%s - skipping (no price oracle)",
                     token_in,
                     token_out,
                     tx_hash if "tx_hash" in dir() else "?",
@@ -1042,7 +1042,7 @@ def process_dex_swap_log_event(
         amount_in = float(Decimal(amount_in_raw) / Decimal(10**token_in_decimals))
         amount_out = float(Decimal(amount_out_raw) / Decimal(10**token_out_decimals))
 
-        # Prefer stablecoin leg for USD valuation; fallback to WETH leg Ã— ETH price.
+        # Prefer stablecoin leg for USD valuation; fallback to WETH leg ï¿½- ETH price.
         usd_value = 0.0
         if token_in_addr in STABLECOIN_ADDRESSES:
             usd_value = amount_in
@@ -1070,7 +1070,7 @@ def process_dex_swap_log_event(
                 if weth_price_out > 0:
                     usd_value = amount_out * weth_price_out * eth_price
 
-        # Final fallback: if one leg is WETH, use raw ETH amount × ETH price.
+        # Final fallback: if one leg is WETH, use raw ETH amount ï¿½ ETH price.
         # This handles pools where slot0/sqrtPriceX96 is unavailable.
         if usd_value == 0.0:
             eth_price = float(eth_price_cache.get("price", 3000))
@@ -1078,7 +1078,6 @@ def process_dex_swap_log_event(
                 usd_value = amount_in * eth_price
             elif token_out_addr == WETH_MAINNET and amount_out > 0:
                 usd_value = amount_out * eth_price
-
 
         tx_hash_raw = log_entry.get("transactionHash", "")
         tx_hash = _normalize_tx_hash(tx_hash_raw)

@@ -508,13 +508,9 @@ def summarize_wallet_observations(
             db.query(ProcessedEvent)
             .filter(
                 or_(
-                    cast(
-                        ProcessedEvent.event_data["content"]["from_address"], String
-                    )
+                    cast(ProcessedEvent.event_data["content"]["from_address"], String)
                     == wallet_lower,
-                    cast(
-                        ProcessedEvent.event_data["content"]["to_address"], String
-                    )
+                    cast(ProcessedEvent.event_data["content"]["to_address"], String)
                     == wallet_lower,
                 )
             )
