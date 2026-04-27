@@ -31,9 +31,6 @@ from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
 from app.modules.ingestion.application.consumer import run_consumer
-from app.modules.intelligence.application.trade_records import (
-    run_trade_outcome_resolution,
-)
 from app.modules.admin.presentation.security import RateLimitMiddleware
 from app.modules.ingestion.application.price_collector import run_collector as price_run
 from app.modules.ingestion.application.rss_collector import run_collector
@@ -44,12 +41,6 @@ RSS_COLLECTOR_INTERVAL_SECONDS = int(os.getenv("RSS_COLLECTOR_INTERVAL_SECONDS",
 PRICE_COLLECTOR_INTERVAL_SECONDS = int(
     os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "120")
 )
-TRADE_RESOLVER_INTERVAL_SECONDS = int(
-    os.getenv("TRADE_RESOLVER_INTERVAL_SECONDS", "120")
-)
-TRADE_RESOLVER_BATCH_SIZE = int(os.getenv("TRADE_RESOLVER_BATCH_SIZE", "50"))
-
-
 # Global scheduler and alert consumer
 background_scheduler = None
 alert_consumer = None
@@ -175,16 +166,6 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
 
-        def run_trade_resolver():
-            try:
-                count = run_trade_outcome_resolution(
-                    batch_size=TRADE_RESOLVER_BATCH_SIZE
-                )
-                if count > 0:
-                    print(f"[TRADE RESOLVER] Resolved {count} trade outcomes")
-            except Exception as e:
-                print(f"[TRADE RESOLVER] Error: {e}")
-
         background_scheduler.add_job(
             run_rss_collector,
             "interval",
@@ -218,18 +199,11 @@ async def lifespan(app: FastAPI):
         #     seconds=10,
         #     id="agent_b_profiler",
         # )
-        background_scheduler.add_job(
-            run_trade_resolver,
-            "interval",
-            seconds=TRADE_RESOLVER_INTERVAL_SECONDS,
-            id="trade_outcome_resolver",
-        )
         background_scheduler.start()
         print(
             "[STARTUP] Scheduler started: "
             f"RSS({RSS_COLLECTOR_INTERVAL_SECONDS}s), "
-            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s), "
-            f"TradeResolver({TRADE_RESOLVER_INTERVAL_SECONDS}s, batch={TRADE_RESOLVER_BATCH_SIZE})"
+            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s)"
         )
         print(
             "[STARTUP] ✅ PRIMARY: Using blocking RabbitMQ consumer (run_consumer) in background thread"

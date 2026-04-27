@@ -14,10 +14,6 @@ case $SERVICE_TYPE in
     echo "Starting RabbitMQ event consumer..."
     exec python -m app.modules.ingestion.application.consumer
     ;;
-  resolver)
-    echo "Starting trade outcome resolver..."
-    exec python -m app.modules.intelligence.application.trade_records 
-    ;;
   *)
     echo "ERROR: Unknown SERVICE_TYPE='$SERVICE_TYPE'"
     exit 1
