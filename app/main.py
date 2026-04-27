@@ -41,6 +41,11 @@ RSS_COLLECTOR_INTERVAL_SECONDS = int(os.getenv("RSS_COLLECTOR_INTERVAL_SECONDS",
 PRICE_COLLECTOR_INTERVAL_SECONDS = int(
     os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "120")
 )
+
+# Render web dyno should run the API only; background jobs live in dedicated workers.
+SERVICE_TYPE = os.getenv("SERVICE_TYPE", "api").strip().lower()
+ENABLE_BACKGROUND_TASKS = SERVICE_TYPE != "api"
+
 # Global scheduler and alert consumer
 background_scheduler = None
 alert_consumer = None
@@ -86,6 +91,14 @@ async def lifespan(app: FastAPI):
                     pass
 
     logger = logging.getLogger("startup")
+
+    if not ENABLE_BACKGROUND_TASKS:
+        logger.info(
+            "[STARTUP] SERVICE_TYPE=api: background workers disabled in this process"
+        )
+        print("[STARTUP] SERVICE_TYPE=api: skipping consumer and collectors")
+        yield
+        return
 
     # Start Alert Consumer with detailed error logging
     try:
