@@ -63,4 +63,4 @@ EXPOSE ${PORT}
 
 # Default container command for local/docker runs.
 # Fly process groups override this with their own direct Python commands.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["sh", "-c", "uvicorn app.main:sio_app --host 0.0.0.0 --port ${PORT:-10000}"]
