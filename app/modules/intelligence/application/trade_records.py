@@ -20,6 +20,7 @@ from app.modules.intelligence.infrastructure.models import TradeRecordORM
 
 logger = logging.getLogger("trade-records")
 EPSILON = 1e-12
+MAX_ZERO_USD_SKIP_DEBUG_LOGS = 10
 
 
 def _parse_timestamp(raw_timestamp: Any) -> datetime:
@@ -285,6 +286,7 @@ def resolve_pending_trade_outcomes(db, batch_size: int = 200) -> int:
 
     resolved_count = 0
     skipped_buy_lot_zero_usd = 0
+    skipped_buy_lot_zero_usd_logged = 0
 
     for wallet_address in ordered_wallets:
         trades = (
@@ -365,16 +367,23 @@ def resolve_pending_trade_outcomes(db, batch_size: int = 200) -> int:
                 )
             elif token_out and amount_out > EPSILON and trade_value_usd <= EPSILON:
                 skipped_buy_lot_zero_usd += 1
-                logger.debug(
-                    "[TRADE-RESOLVER] Skipping buy lot — usd_value=0 (price oracle failed) | trade_id=%s",
-                    trade.trade_id,
-                )
+                if skipped_buy_lot_zero_usd_logged < MAX_ZERO_USD_SKIP_DEBUG_LOGS:
+                    logger.debug(
+                        "[TRADE-RESOLVER] Skipping buy lot — usd_value=0 (price oracle failed) | trade_id=%s",
+                        trade.trade_id,
+                    )
+                    skipped_buy_lot_zero_usd_logged += 1
 
     if skipped_buy_lot_zero_usd > 0:
         logger.info(
             "[TRADE-RESOLVER] Zero-USD buy legs skipped: %s",
             skipped_buy_lot_zero_usd,
         )
+        if skipped_buy_lot_zero_usd > skipped_buy_lot_zero_usd_logged:
+            logger.debug(
+                "[TRADE-RESOLVER] Suppressed %s additional zero-USD skip debug lines",
+                skipped_buy_lot_zero_usd - skipped_buy_lot_zero_usd_logged,
+            )
 
     return resolved_count
 

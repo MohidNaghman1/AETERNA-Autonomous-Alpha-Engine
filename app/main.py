@@ -30,9 +30,6 @@ from app.modules.admin.presentation.bootstrap import router as bootstrap_router
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
-from app.modules.intelligence.presentation.agent_b_debug import (
-    router as agent_b_debug_router,
-)
 from app.modules.ingestion.application.consumer import run_consumer
 from app.modules.intelligence.application.trade_records import (
     run_trade_outcome_resolution,
@@ -50,6 +47,7 @@ PRICE_COLLECTOR_INTERVAL_SECONDS = int(
 TRADE_RESOLVER_INTERVAL_SECONDS = int(
     os.getenv("TRADE_RESOLVER_INTERVAL_SECONDS", "120")
 )
+TRADE_RESOLVER_BATCH_SIZE = int(os.getenv("TRADE_RESOLVER_BATCH_SIZE", "50"))
 
 
 # Global scheduler and alert consumer
@@ -179,7 +177,9 @@ async def lifespan(app: FastAPI):
 
         def run_trade_resolver():
             try:
-                count = run_trade_outcome_resolution(batch_size=200)
+                count = run_trade_outcome_resolution(
+                    batch_size=TRADE_RESOLVER_BATCH_SIZE
+                )
                 if count > 0:
                     print(f"[TRADE RESOLVER] Resolved {count} trade outcomes")
             except Exception as e:
@@ -229,7 +229,7 @@ async def lifespan(app: FastAPI):
             "[STARTUP] Scheduler started: "
             f"RSS({RSS_COLLECTOR_INTERVAL_SECONDS}s), "
             f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s), "
-            f"TradeResolver({TRADE_RESOLVER_INTERVAL_SECONDS}s)"
+            f"TradeResolver({TRADE_RESOLVER_INTERVAL_SECONDS}s, batch={TRADE_RESOLVER_BATCH_SIZE})"
         )
         print(
             "[STARTUP] ✅ PRIMARY: Using blocking RabbitMQ consumer (run_consumer) in background thread"
@@ -289,7 +289,17 @@ app.include_router(admin_dashboard_router)
 app.include_router(admin_user_router)
 app.include_router(admin_role_router)
 app.include_router(admin_protected_router)
-app.include_router(agent_b_debug_router)
+
+try:
+    from app.modules.intelligence.presentation.agent_b_debug import (
+        router as agent_b_debug_router,
+    )
+
+    app.include_router(agent_b_debug_router)
+except Exception as e:
+    logging.getLogger("startup").exception(
+        "[STARTUP] agent_b_debug router failed to load: %s", e
+    )
 
 
 @app.get("/")
