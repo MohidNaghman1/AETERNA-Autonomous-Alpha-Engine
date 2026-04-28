@@ -293,9 +293,14 @@ except Exception as e:
     )
 
 
-@app.api_route("/", methods=["GET", "HEAD"])
+@app.get("/")
 def read_root():
     return {"message": "Welcome to AETERNA Autonomous Alpha Engine API"}
+
+
+@app.head("/", include_in_schema=False)
+def read_root_head():
+    return Response(status_code=200)
 
 
 # --- DIAGNOSTIC ENDPOINTS ---
