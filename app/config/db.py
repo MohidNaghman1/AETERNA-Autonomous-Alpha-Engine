@@ -16,6 +16,7 @@ def _env_bool(name: str, default: bool) -> bool:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
+
 # 1. Get SYNC and ASYNC URLs if present
 SYNC_DATABASE_URL = os.getenv("SYNC_DATABASE_URL")
 ASYNC_DATABASE_URL = os.getenv("ASYNC_DATABASE_URL")
