@@ -278,8 +278,8 @@ async def get_alerts_query(
         # This is a simplified filter - assumes mentions field exists in JSON content
         filters.append(
             or_(
-                EventORM.content.astext().contains(f'"{entity}"'),
-                EventORM.content.astext().contains(f"'{entity}'"),
+                EventORM.content.as_string().contains(f'"{entity}"'),
+                EventORM.content.as_string().contains(f"'{entity}'"),
             )
         )
 
@@ -319,7 +319,7 @@ async def get_alerts_query(
 
     # Filter by alert delivery channels (stored as JSON array)
     if channels:
-        filters.append(AlertORM.channels.astext().contains(channels))
+        filters.append(AlertORM.channels.as_string().contains(channels))
 
     if filters:
         query = query.where(and_(*filters))

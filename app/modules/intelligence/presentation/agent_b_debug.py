@@ -11,7 +11,7 @@ Provides endpoints to inspect all Agent B related data:
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, case, and_, or_, cast, Float
 from app.shared.application.dependencies import get_db
 from app.modules.intelligence.infrastructure.models import (
     WalletProfileORM,
@@ -521,85 +521,131 @@ async def get_agent_b_statistics(
     - Average metrics
     """
     try:
-        # Count wallet profiles
+        # Basic counts stay as database aggregates.
         wallet_count = (
             await db.execute(select(func.count(WalletProfileORM.wallet_id)))
         ).scalar() or 0
 
-        # Count entities
         entity_count = (
             await db.execute(select(func.count(EntityORM.entity_id)))
         ).scalar() or 0
 
-        # Count trade records
         trade_count = (
             await db.execute(select(func.count(TradeRecordORM.trade_id)))
         ).scalar() or 0
 
-        # Count entity profiles
         profile_count = (
             await db.execute(select(func.count(EntityProfileORM.entity_id)))
         ).scalar() or 0
 
-        # Count processed events with agent_b
         events_with_agent_b = (
             await db.execute(select(func.count(ProcessedEvent.id)))
         ).scalar() or 0
 
-        # Diagnose trade-record pipeline capture coverage.
-        # NOTE: The live on-chain collector mainly emits transfer events; only
-        # swap-shaped payloads are eligible for trade record persistence.
-        event_payloads = (
-            (await db.execute(select(ProcessedEvent.event_data))).scalars().all()
+        # Fast-path event diagnostics via SQL instead of scanning every row in Python.
+        # This avoids Render request timeouts on large datasets.
+        event_data = ProcessedEvent.event_data
+        content = event_data["content"]
+
+        source_expr = func.lower(func.coalesce(event_data["source"].astext, ""))
+        event_type_expr = func.lower(func.coalesce(content["event_type"].astext, ""))
+        tx_type_expr = func.lower(
+            func.coalesce(content["transaction_type"].astext, "")
+        )
+        token_in_expr = func.coalesce(content["token_in"].astext, "")
+        token_out_expr = func.coalesce(content["token_out"].astext, "")
+        wallet_expr = func.coalesce(
+            content["wallet_address"].astext,
+            content["trader_address"].astext,
+            content["from_address"].astext,
+            event_data["wallet_address"].astext,
+            event_data["address"].astext,
+            "",
+        )
+        amount_in_expr = cast(content["amount_in"].astext, Float)
+        amount_out_expr = cast(content["amount_out"].astext, Float)
+        usd_value_expr = cast(content["usd_value"].astext, Float)
+
+        transfer_condition = and_(source_expr == "ethereum", tx_type_expr == "transfer")
+        swap_condition = and_(
+            source_expr == "ethereum",
+            or_(event_type_expr.in_(["dex_swap", "swap"]), tx_type_expr == "swap"),
+        )
+        trade_eligible_condition = and_(
+            source_expr == "ethereum",
+            event_type_expr != "transfer",
+            tx_type_expr != "transfer",
+            token_in_expr.isnot(None),
+            token_out_expr.isnot(None),
+            token_out_expr != "USD",
+            wallet_expr.isnot(None),
+            wallet_expr != "",
+            amount_in_expr > 0,
+            amount_out_expr > 0,
+            usd_value_expr >= 0,
+            or_(event_type_expr.in_(["dex_swap", "swap"]), tx_type_expr == "swap"),
         )
 
-        trade_ids = (await db.execute(select(TradeRecordORM.trade_id))).scalars().all()
+        event_stats = await db.execute(
+            select(
+                func.coalesce(func.sum(case((transfer_condition, 1), else_=0)), 0),
+                func.coalesce(func.sum(case((swap_condition, 1), else_=0)), 0),
+                func.coalesce(func.sum(case((trade_eligible_condition, 1), else_=0)), 0),
+            ).select_from(ProcessedEvent)
+        )
+        onchain_transfer_events, onchain_swap_events, trade_eligible_events = (
+            event_stats.one()
+        )
 
-        onchain_transfer_events = 0
-        onchain_swap_events = 0
-        trade_eligible_events = 0
+        # JSON columns are already parsed by SQLAlchemy/PostgreSQL, so explicit
+        # payload parse failures are no longer a meaningful all-table scan metric.
+        # Keep the field for backward compatibility.
         payload_parse_failures = 0
 
         # Distinguish legacy/manual UUID-like IDs from current deterministic IDs.
         # Current deterministic format is usually: "<tx_hash>_<log_index>_<wallet>"
         # or a compact 40-char hash fallback (no dashes).
-        legacy_trade_id_count = 0
-        deterministic_trade_id_count = 0
-
-        for trade_id in trade_ids:
-            if not isinstance(trade_id, str):
-                continue
-            normalized = trade_id.strip()
-            if not normalized:
-                continue
-
-            if "_" in normalized or (len(normalized) == 40 and "-" not in normalized):
-                deterministic_trade_id_count += 1
-            else:
-                # UUID-like or any other legacy format.
-                legacy_trade_id_count += 1
-
-        for raw_payload in event_payloads:
-            payload = _normalize_processed_event_payload(raw_payload)
-            if payload is None:
-                payload_parse_failures += 1
-                continue
-
-            source = str(payload.get("source", "")).lower()
-            content = payload.get("content", {})
-
-            event_type = str(content.get("event_type", "")).lower()
-            tx_type = str(content.get("transaction_type", "")).lower()
-
-            if source == "ethereum" and tx_type == "transfer":
-                onchain_transfer_events += 1
-            if source == "ethereum" and (
-                event_type in ("dex_swap", "swap") or tx_type == "swap"
-            ):
-                onchain_swap_events += 1
-
-            if extract_trade_record_payload(payload) is not None:
-                trade_eligible_events += 1
+        trade_id_stats = await db.execute(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                or_(
+                                    TradeRecordORM.trade_id.contains("_"),
+                                    and_(
+                                        func.length(TradeRecordORM.trade_id) == 40,
+                                        ~TradeRecordORM.trade_id.contains("-"),
+                                    ),
+                                ),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                ~or_(
+                                    TradeRecordORM.trade_id.contains("_"),
+                                    and_(
+                                        func.length(TradeRecordORM.trade_id) == 40,
+                                        ~TradeRecordORM.trade_id.contains("-"),
+                                    ),
+                                ),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            ).select_from(TradeRecordORM)
+        )
+        deterministic_trade_id_count, legacy_trade_id_count = trade_id_stats.one()
 
         trade_record_capture_rate = (
             round((trade_count / trade_eligible_events), 4)
