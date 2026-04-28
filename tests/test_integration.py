@@ -86,6 +86,13 @@ async def test_metrics_endpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_root_head_endpoint(client):
+    """Test HEAD / succeeds for platform health checks."""
+    resp = await client.head("/")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_ingestion_stats_endpoint(client):
     """Test /ingestion/stats endpoint for event statistics."""
     resp = await client.get("/ingestion/stats")

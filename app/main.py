@@ -30,10 +30,7 @@ from app.modules.admin.presentation.bootstrap import router as bootstrap_router
 from app.modules.admin.presentation.admin_protected import (
     router as admin_protected_router,
 )
-from app.modules.ingestion.application.consumer import run_consumer
 from app.modules.admin.presentation.security import RateLimitMiddleware
-from app.modules.ingestion.application.price_collector import run_collector as price_run
-from app.modules.ingestion.application.rss_collector import run_collector
 
 load_dotenv()
 
@@ -99,6 +96,13 @@ async def lifespan(app: FastAPI):
         print("[STARTUP] SERVICE_TYPE=api: skipping consumer and collectors")
         yield
         return
+
+    # Import worker modules only when this process is allowed to run them.
+    from app.modules.ingestion.application.consumer import run_consumer
+    from app.modules.ingestion.application.price_collector import (
+        run_collector as price_run,
+    )
+    from app.modules.ingestion.application.rss_collector import run_collector
 
     # Start Alert Consumer with detailed error logging
     try:
@@ -289,7 +293,7 @@ except Exception as e:
     )
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def read_root():
     return {"message": "Welcome to AETERNA Autonomous Alpha Engine API"}
 
