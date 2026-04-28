@@ -18,6 +18,10 @@ services:
         value: 8000
       - key: SERVICE_TYPE
         value: api
+      - key: ENABLE_BACKGROUND_TASKS
+        value: true
+      - key: ENABLE_PROMETHEUS_HTTP_SERVER
+        value: false
       - key: ENVIRONMENT
         value: production
       - key: DEBUG

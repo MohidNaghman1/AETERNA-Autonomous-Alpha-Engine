@@ -6,29 +6,18 @@ primary_region = "iad"
 
 [env]
   PYTHONUNBUFFERED = "1"
+  ENABLE_BACKGROUND_TASKS = "false"
 
 [processes]
+  # On-chain worker: separate isolated process for blockchain monitoring
+  # Main API with workers runs on Render/local deployment
   worker = "python onchain_worker.py"
-  consumer = "python -m app.modules.ingestion.application.consumer"
-  resolver = "python -m app.modules.intelligence.application.trade_records"
 
 [deploy]
   strategy = "immediate"
 
 [[vm]]
   processes = ["worker"]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 256
-
-[[vm]]
-  processes = ["consumer"]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 256
-
-[[vm]]
-  processes = ["resolver"]
   cpu_kind = "shared"
   cpus = 1
   memory_mb = 256
