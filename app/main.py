@@ -34,14 +34,24 @@ from app.modules.admin.presentation.security import RateLimitMiddleware
 
 load_dotenv()
 
+
+def env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 RSS_COLLECTOR_INTERVAL_SECONDS = int(os.getenv("RSS_COLLECTOR_INTERVAL_SECONDS", "60"))
 PRICE_COLLECTOR_INTERVAL_SECONDS = int(
     os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "120")
 )
-
-# Render web dyno should run the API only; background jobs live in dedicated workers.
 SERVICE_TYPE = os.getenv("SERVICE_TYPE", "api").strip().lower()
-ENABLE_BACKGROUND_TASKS = SERVICE_TYPE != "api"
+# Enable background workers by default (RSS, Price, RabbitMQ consumer, Alert consumer)
+# Disable via ENABLE_BACKGROUND_TASKS=false if running on platform with separate worker processes
+ENABLE_BACKGROUND_TASKS = env_flag(
+    "ENABLE_BACKGROUND_TASKS", default=True
+)
 
 # Global scheduler and alert consumer
 background_scheduler = None
@@ -116,7 +126,8 @@ async def lifespan(app: FastAPI):
             print("[STARTUP] Alert consumer started")
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start AlertConsumer: {e}")
-        traceback.print_exc()
+        print(f"[STARTUP] ⚠️ Alert consumer failed to start: {e}")
+        # Don't crash the app if alert consumer fails
 
     # Start RabbitMQ Event Consumer in background thread (blocking consumer is FAST!)
     try:
@@ -124,6 +135,9 @@ async def lifespan(app: FastAPI):
 
             def blocking_consumer_loop():
                 """Run blocking consumer with restart logic on crash."""
+                retry_count = 0
+                max_initial_retries = 5
+                
                 while True:
                     try:
                         print(
@@ -133,15 +147,22 @@ async def lifespan(app: FastAPI):
                             f"RabbitMQ env: RABBITMQ_URL={os.getenv('RABBITMQ_URL')}, RABBITMQ_HOST={os.getenv('RABBITMQ_HOST')}, RABBITMQ_USER={os.getenv('RABBITMQ_USER')}, RABBITMQ_VHOST={os.getenv('RABBITMQ_VHOST')}"
                         )
                         run_consumer()  # This blocks forever until error
+                        retry_count = 0  # Reset on successful run
                     except Exception as e:
+                        retry_count += 1
                         print(
-                            f"[CONSUMER-THREAD] ❌ Consumer crashed: {type(e).__name__}: {str(e)[:100]}"
+                            f"[CONSUMER-THREAD] ❌ Consumer crashed (attempt {retry_count}): {type(e).__name__}: {str(e)[:100]}"
                         )
                         logger.error(f"[CONSUMER-THREAD] RabbitMQ consumer error: {e}")
-                        traceback.print_exc()
-                        print("[CONSUMER-THREAD] Restarting in 5 seconds...")
-                        time.sleep(5)
-                        # Restart consumer on crash
+                        
+                        # Only print full trace on first few retries to avoid spam
+                        if retry_count <= 2:
+                            traceback.print_exc()
+                        
+                        # Exponential backoff: 5s, 10s, 20s... up to 60s
+                        wait_time = min(5 * (2 ** (retry_count - 1)), 60)
+                        print(f"[CONSUMER-THREAD] Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
 
             consumer_thread = threading.Thread(
                 target=blocking_consumer_loop, daemon=True
@@ -152,7 +173,8 @@ async def lifespan(app: FastAPI):
             )
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start RabbitMQ consumer thread: {e}")
-        traceback.print_exc()
+        print(f"[STARTUP] ⚠️ Consumer thread failed to initialize, app will continue without it")
+        # Don't crash the app if thread creation fails
 
     # Start Scheduled Collectors
     print("[STARTUP] Starting automatic collectors...")
@@ -175,6 +197,7 @@ async def lifespan(app: FastAPI):
                 run_collector()
             except Exception as e:
                 print(f"[RSS] Error: {e}")
+                logger.error(f"[RSS] Collector error: {e}")
 
         def run_price_collector():
             try:
@@ -182,6 +205,7 @@ async def lifespan(app: FastAPI):
                 price_run()
             except Exception as e:
                 print(f"[PRICE] Error: {e}")
+                logger.error(f"[PRICE] Collector error: {e}")
 
         background_scheduler.add_job(
             run_rss_collector,
@@ -195,27 +219,6 @@ async def lifespan(app: FastAPI):
             seconds=PRICE_COLLECTOR_INTERVAL_SECONDS,
             id="price_collector",
         )
-        # NOTE: Event consumer runs in separate thread using blocking consumer (run_consumer)
-        # This is MUCH faster than polling and avoids dual-consumer contention
-        # The blocking consumer uses prefetch_count=500 for efficient queue draining
-        #
-        # DISABLED: Scheduling polling for intelligence_scoring and agent_b_profiling
-        # These caused race conditions with the RabbitMQ consumer writing to processed_events
-        # The RabbitMQ consumer now handles BOTH scoring and wallet profile DB persistence
-        # via enrich_event_with_agent_b() inside process_event()
-        #
-        # background_scheduler.add_job(
-        #     run_intelligence_scoring,
-        #     "interval",
-        #     seconds=10,
-        #     id="intelligence_scorer",
-        # )
-        # background_scheduler.add_job(
-        #     run_agent_b_profiling,
-        #     "interval",
-        #     seconds=10,
-        #     id="agent_b_profiler",
-        # )
         background_scheduler.start()
         print(
             "[STARTUP] Scheduler started: "
@@ -229,7 +232,10 @@ async def lifespan(app: FastAPI):
             "[STARTUP] ✅ WALLET PROFILE PERSISTENCE: Enabled via enrich_event_with_agent_b() in consumer"
         )
     except Exception as e:
-        print(f"[STARTUP] Scheduler failed: {e}")
+        logger.error(f"[STARTUP] Scheduler initialization failed: {e}")
+        print(f"[STARTUP] ⚠️ Scheduler failed to initialize: {e}")
+        traceback.print_exc()
+        # Don't crash - API can still run without collectors
 
     yield
 
@@ -293,14 +299,9 @@ except Exception as e:
     )
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"], operation_id="root_endpoint")
 def read_root():
     return {"message": "Welcome to AETERNA Autonomous Alpha Engine API"}
-
-
-@app.head("/", include_in_schema=False)
-def read_root_head():
-    return Response(status_code=200)
 
 
 # --- DIAGNOSTIC ENDPOINTS ---
