@@ -469,39 +469,6 @@ async def get_processed_events_with_agent_b(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/processed-events/{event_id}", response_model=Dict[str, Any])
-async def get_processed_event_by_id(
-    event_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get specific ProcessedEvent with full Agent B profiling."""
-    try:
-        query = select(ProcessedEvent).where(ProcessedEvent.id == event_id)
-        result = await db.execute(query)
-        event = result.scalar_one_or_none()
-
-        if not event:
-            raise HTTPException(status_code=404, detail="Event not found")
-
-        return {
-            "id": event.id,
-            "user_id": event.user_id,
-            "timestamp": event.timestamp,
-            "priority": event.priority,
-            "score": event.score,
-            "multi_source": event.multi_source,
-            "engagement": event.engagement,
-            "bot": event.bot,
-            "dedup": event.dedup,
-            "event_data": event.event_data,  # Full JSON with agent_b
-            "updated_at": event.updated_at,
-        }
-
-    except Exception as e:
-        logger.error(f"Error fetching event {event_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/processed-events/diagnostic-swaps", response_model=List[Dict[str, Any]])
 async def diagnostic_processed_swap_payloads(
     limit: int = Query(5, ge=1, le=100),
@@ -581,6 +548,39 @@ async def diagnostic_processed_swap_payloads(
 
     except Exception as e:
         logger.error(f"Error fetching diagnostic swaps: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/processed-events/{event_id}", response_model=Dict[str, Any])
+async def get_processed_event_by_id(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get specific ProcessedEvent with full Agent B profiling."""
+    try:
+        query = select(ProcessedEvent).where(ProcessedEvent.id == event_id)
+        result = await db.execute(query)
+        event = result.scalar_one_or_none()
+
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        return {
+            "id": event.id,
+            "user_id": event.user_id,
+            "timestamp": event.timestamp,
+            "priority": event.priority,
+            "score": event.score,
+            "multi_source": event.multi_source,
+            "engagement": event.engagement,
+            "bot": event.bot,
+            "dedup": event.dedup,
+            "event_data": event.event_data,  # Full JSON with agent_b
+            "updated_at": event.updated_at,
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching event {event_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
