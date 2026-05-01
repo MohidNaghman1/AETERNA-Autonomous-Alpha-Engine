@@ -547,24 +547,24 @@ async def get_agent_b_statistics(
         event_data = ProcessedEvent.event_data
         content = event_data["content"]
 
-        source_expr = func.lower(func.coalesce(event_data["source"].astext, ""))
-        event_type_expr = func.lower(func.coalesce(content["event_type"].astext, ""))
+        source_expr = func.lower(func.coalesce(event_data["source"].as_string(), ""))
+        event_type_expr = func.lower(func.coalesce(content["event_type"].as_string(), ""))
         tx_type_expr = func.lower(
-            func.coalesce(content["transaction_type"].astext, "")
+            func.coalesce(content["transaction_type"].as_string(), "")
         )
-        token_in_expr = func.coalesce(content["token_in"].astext, "")
-        token_out_expr = func.coalesce(content["token_out"].astext, "")
+        token_in_expr = func.coalesce(content["token_in"].as_string(), "")
+        token_out_expr = func.coalesce(content["token_out"].as_string(), "")
         wallet_expr = func.coalesce(
-            content["wallet_address"].astext,
-            content["trader_address"].astext,
-            content["from_address"].astext,
-            event_data["wallet_address"].astext,
-            event_data["address"].astext,
+            content["wallet_address"].as_string(),
+            content["trader_address"].as_string(),
+            content["from_address"].as_string(),
+            event_data["wallet_address"].as_string(),
+            event_data["address"].as_string(),
             "",
         )
-        amount_in_expr = cast(content["amount_in"].astext, Float)
-        amount_out_expr = cast(content["amount_out"].astext, Float)
-        usd_value_expr = cast(content["usd_value"].astext, Float)
+        amount_in_expr = cast(content["amount_in"].as_string(), Float)
+        amount_out_expr = cast(content["amount_out"].as_string(), Float)
+        usd_value_expr = cast(content["usd_value"].as_string(), Float)
 
         transfer_condition = and_(source_expr == "ethereum", tx_type_expr == "transfer")
         swap_condition = and_(
