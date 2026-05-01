@@ -524,52 +524,58 @@ async def diagnostic_processed_swap_payloads(
 
         out = []
         for event in events:
-            payload = _normalize_processed_event_payload(event.event_data)
-            if not payload:
+            try:
+                payload = _normalize_processed_event_payload(event.event_data)
+                if not payload:
+                    continue
+                content = payload.get("content", {})
+                if content.get("event_type") != "swap":
+                    continue
+
+                def _try_parse(v):
+                    # Return (raw, parsed_value_or_none, parsed_type_name)
+                    raw = v
+                    if v is None:
+                        return raw, None, "NoneType"
+                    if isinstance(v, (int, float)):
+                        return raw, float(v), type(float()).__name__
+                    try:
+                        parsed = float(str(v))
+                        return raw, parsed, type(parsed).__name__
+                    except Exception:
+                        return raw, None, type(v).__name__
+
+                amount_in_raw, amount_in_parsed, amount_in_type = _try_parse(content.get("amount_in"))
+                amount_out_raw, amount_out_parsed, amount_out_type = _try_parse(content.get("amount_out"))
+                usd_value_raw, usd_value_parsed, usd_value_type = _try_parse(content.get("usd_value"))
+
+                out.append(
+                    {
+                        "processed_event_id": event.id,
+                        "timestamp": event.timestamp,
+                        "source": payload.get("source"),
+                        "tx_hash": payload.get("tx_hash") or payload.get("transaction_hash"),
+                        "token_in": content.get("token_in"),
+                        "token_out": content.get("token_out"),
+                        "amount_in_raw": amount_in_raw,
+                        "amount_in_parsed": amount_in_parsed,
+                        "amount_in_type": amount_in_type,
+                        "amount_out_raw": amount_out_raw,
+                        "amount_out_parsed": amount_out_parsed,
+                        "amount_out_type": amount_out_type,
+                        "usd_value_raw": usd_value_raw,
+                        "usd_value_parsed": usd_value_parsed,
+                        "usd_value_type": usd_value_type,
+                    }
+                )
+
+                if len(out) >= limit:
+                    break
+
+            except Exception as inner_e:
+                logger.error(f"Error inspecting processed event {getattr(event, 'id', None)}: {inner_e}", exc_info=True)
+                out.append({"processed_event_id": getattr(event, 'id', None), "error": str(inner_e)})
                 continue
-            content = payload.get("content", {})
-            if content.get("event_type") != "swap":
-                continue
-
-            def _try_parse(v):
-                # Return (raw, parsed_value_or_none, parsed_type_name)
-                raw = v
-                if v is None:
-                    return raw, None, "NoneType"
-                if isinstance(v, (int, float)):
-                    return raw, float(v), type(float()).__name__
-                try:
-                    parsed = float(str(v))
-                    return raw, parsed, type(parsed).__name__
-                except Exception:
-                    return raw, None, type(v).__name__
-
-            amount_in_raw, amount_in_parsed, amount_in_type = _try_parse(content.get("amount_in"))
-            amount_out_raw, amount_out_parsed, amount_out_type = _try_parse(content.get("amount_out"))
-            usd_value_raw, usd_value_parsed, usd_value_type = _try_parse(content.get("usd_value"))
-
-            out.append(
-                {
-                    "processed_event_id": event.id,
-                    "timestamp": event.timestamp,
-                    "source": payload.get("source"),
-                    "tx_hash": payload.get("tx_hash") or payload.get("transaction_hash"),
-                    "token_in": content.get("token_in"),
-                    "token_out": content.get("token_out"),
-                    "amount_in_raw": amount_in_raw,
-                    "amount_in_parsed": amount_in_parsed,
-                    "amount_in_type": amount_in_type,
-                    "amount_out_raw": amount_out_raw,
-                    "amount_out_parsed": amount_out_parsed,
-                    "amount_out_type": amount_out_type,
-                    "usd_value_raw": usd_value_raw,
-                    "usd_value_parsed": usd_value_parsed,
-                    "usd_value_type": usd_value_type,
-                }
-            )
-
-            if len(out) >= limit:
-                break
 
         return out
 
