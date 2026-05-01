@@ -502,6 +502,82 @@ async def get_processed_event_by_id(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/processed-events/diagnostic-swaps", response_model=List[Dict[str, Any]])
+async def diagnostic_processed_swap_payloads(
+    limit: int = Query(5, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Diagnostic endpoint to return a small sample of processed swap events and
+    show the raw vs parsed numeric types for amount_in, amount_out, and usd_value.
+
+    This is intentionally conservative and performs filtering in Python to
+    avoid relying on SQLAlchemy JSON expression helpers in production.
+    """
+    try:
+        # Grab a short window of recent processed events and filter in Python.
+        # We request a slightly larger set to ensure we can find `limit` swaps.
+        fetch_limit = max(50, limit * 10)
+        query = select(ProcessedEvent).order_by(desc(ProcessedEvent.timestamp)).limit(fetch_limit)
+        result = await db.execute(query)
+        events = result.scalars().all()
+
+        out = []
+        for event in events:
+            payload = _normalize_processed_event_payload(event.event_data)
+            if not payload:
+                continue
+            content = payload.get("content", {})
+            if content.get("event_type") != "swap":
+                continue
+
+            def _try_parse(v):
+                # Return (raw, parsed_value_or_none, parsed_type_name)
+                raw = v
+                if v is None:
+                    return raw, None, "NoneType"
+                if isinstance(v, (int, float)):
+                    return raw, float(v), type(float()).__name__
+                try:
+                    parsed = float(str(v))
+                    return raw, parsed, type(parsed).__name__
+                except Exception:
+                    return raw, None, type(v).__name__
+
+            amount_in_raw, amount_in_parsed, amount_in_type = _try_parse(content.get("amount_in"))
+            amount_out_raw, amount_out_parsed, amount_out_type = _try_parse(content.get("amount_out"))
+            usd_value_raw, usd_value_parsed, usd_value_type = _try_parse(content.get("usd_value"))
+
+            out.append(
+                {
+                    "processed_event_id": event.id,
+                    "timestamp": event.timestamp,
+                    "source": payload.get("source"),
+                    "tx_hash": payload.get("tx_hash") or payload.get("transaction_hash"),
+                    "token_in": content.get("token_in"),
+                    "token_out": content.get("token_out"),
+                    "amount_in_raw": amount_in_raw,
+                    "amount_in_parsed": amount_in_parsed,
+                    "amount_in_type": amount_in_type,
+                    "amount_out_raw": amount_out_raw,
+                    "amount_out_parsed": amount_out_parsed,
+                    "amount_out_type": amount_out_type,
+                    "usd_value_raw": usd_value_raw,
+                    "usd_value_parsed": usd_value_parsed,
+                    "usd_value_type": usd_value_type,
+                }
+            )
+
+            if len(out) >= limit:
+                break
+
+        return out
+
+    except Exception as e:
+        logger.error(f"Error fetching diagnostic swaps: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # STATISTICS & SUMMARY ENDPOINTS
 # ============================================================================
