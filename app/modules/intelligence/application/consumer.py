@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from copy import deepcopy
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import cast, String
+from sqlalchemy import cast, String, desc
 from app.modules.intelligence.application.agent_a import score_event
 from app.modules.intelligence.application.agent_b import (
     profile_wallet_from_event,
@@ -535,9 +535,13 @@ def run_intelligence_poll(batch_size: int = 50) -> int:
         # EventORM.id is Integer, ProcessedEvent.id is String - need to cast for comparison
         already_processed_ids = db.query(ProcessedEvent.id)
 
+        # Order by timestamp (newest first) to ensure recently inserted events
+        # (including swaps) are visible to the poll. Relying on heap order
+        # produced non-deterministic results and favored older transfer rows.
         unprocessed_events = (
             db.query(EventORM)
             .filter(~cast(EventORM.id, String).in_(already_processed_ids))
+            .order_by(desc(EventORM.timestamp))
             .limit(batch_size)
             .all()
         )
