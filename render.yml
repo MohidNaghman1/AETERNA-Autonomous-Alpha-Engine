@@ -89,9 +89,9 @@ services:
         value: events
       # Backlog catch-up tuning; lower INTELLIGENCE_POLL_EVERY_N_BATCHES to 1 after queue is drained.
       - key: CONSUMER_BATCH_SIZE
-        value: 500
+        value: 1000
       - key: INTELLIGENCE_POLL_EVERY_N_BATCHES
-        value: 10
+        value: 9999
 
 databases:
   - name: Aeterna
