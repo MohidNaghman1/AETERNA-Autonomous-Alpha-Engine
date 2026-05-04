@@ -52,7 +52,15 @@ DLQ_QUEUE = os.getenv("RABBITMQ_DLQ_QUEUE", "events_dlq")
 MAX_RETRIES = int(os.getenv("RABBITMQ_MAX_RETRIES", "3"))
 
 # Batch settings - tune these for your DB throughput
-BATCH_SIZE = int(os.getenv("CONSUMER_BATCH_SIZE", "100"))
+BATCH_SIZE = int(os.getenv("CONSUMER_BATCH_SIZE", "500"))
+
+# Run the intelligence poll every N flushed batches. Set higher values to drain
+# a large backlog faster, then lower again once caught up.
+INTELLIGENCE_POLL_EVERY_N_BATCHES = max(
+    1, int(os.getenv("INTELLIGENCE_POLL_EVERY_N_BATCHES", "1"))
+)
+
+_flushed_batch_count = 0
 
 credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
@@ -165,6 +173,7 @@ _batch_dlq_tags = []  # delivery tags for DLQ messages (ACK after DLQ send)
 
 def flush_batch(channel):
     """Bulk-insert the current batch then ACK/DLQ all messages in it."""
+    global _flushed_batch_count
     # global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags  # Removed unused global statement
 
     # 1. Bulk insert valid events
@@ -177,13 +186,21 @@ def flush_batch(channel):
             EVENTS_PROCESSED.labels(collector="consumer").inc(len(_batch_orms))
             logger.info(f"[BATCH] ✅ Committed {len(_batch_orms)} events to EventORM")
 
+            _flushed_batch_count += 1
+
             # Score events and persist wallet profiles via intelligence pipeline
-            # (This processes all the database-committed EventORM records)
             try:
-                processed_count = run_intelligence_poll(batch_size=len(_batch_orms))
-                if processed_count > 0:
-                    logger.info(
-                        f"[BATCH] ✅ Intelligence pipeline: Scored {processed_count} events | Agent B enriched | Wallet profiles persisted"
+                if _flushed_batch_count % INTELLIGENCE_POLL_EVERY_N_BATCHES == 0:
+                    processed_count = run_intelligence_poll(batch_size=len(_batch_orms))
+                    if processed_count > 0:
+                        logger.info(
+                            f"[BATCH] ✅ Intelligence pipeline: Scored {processed_count} events | Agent B enriched | Wallet profiles persisted"
+                        )
+                else:
+                    logger.debug(
+                        "[BATCH] Skipping intelligence poll this flush | flush_count=%s poll_every_n=%s",
+                        _flushed_batch_count,
+                        INTELLIGENCE_POLL_EVERY_N_BATCHES,
                     )
             except Exception as e:
                 logger.error(
@@ -309,6 +326,8 @@ def run_consumer():
     # global _batch_orms, _batch_tags, _batch_dlq, _batch_dlq_tags  # Removed unused global statement
 
     # Reset batch state on each (re)start
+    global _flushed_batch_count
+    _flushed_batch_count = 0
     _batch_orms.clear()
     _batch_tags.clear()
     _batch_dlq.clear()

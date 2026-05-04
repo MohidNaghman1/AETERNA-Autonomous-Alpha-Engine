@@ -53,6 +53,11 @@ ENABLE_BACKGROUND_TASKS = env_flag(
     "ENABLE_BACKGROUND_TASKS", default=True
 )
 
+# Granular toggles so collectors and consumers can be split into dedicated processes.
+ENABLE_ALERT_CONSUMER = env_flag("ENABLE_ALERT_CONSUMER", default=True)
+ENABLE_EVENT_CONSUMER = env_flag("ENABLE_EVENT_CONSUMER", default=True)
+ENABLE_SCHEDULED_COLLECTORS = env_flag("ENABLE_SCHEDULED_COLLECTORS", default=True)
+
 # Global scheduler and alert consumer
 background_scheduler = None
 alert_consumer = None
@@ -116,7 +121,7 @@ async def lifespan(app: FastAPI):
 
     # Start Alert Consumer with detailed error logging
     try:
-        if not alert_consumer:
+        if ENABLE_ALERT_CONSUMER and not alert_consumer:
             logger.info("[STARTUP] Starting AlertConsumer...")
             logger.info(
                 f"RabbitMQ env: RABBITMQ_URL={os.getenv('RABBITMQ_URL')}, RABBITMQ_HOST={os.getenv('RABBITMQ_HOST')}, RABBITMQ_USER={os.getenv('RABBITMQ_USER')}, RABBITMQ_VHOST={os.getenv('RABBITMQ_VHOST')}"
@@ -124,6 +129,8 @@ async def lifespan(app: FastAPI):
             alert_consumer = AlertConsumer(sio, user_prefs_func=get_user_prefs)
             alert_consumer.start()
             print("[STARTUP] Alert consumer started")
+        elif not ENABLE_ALERT_CONSUMER:
+            logger.info("[STARTUP] AlertConsumer disabled by ENABLE_ALERT_CONSUMER=false")
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start AlertConsumer: {e}")
         print(f"[STARTUP] ⚠️ Alert consumer failed to start: {e}")
@@ -131,7 +138,7 @@ async def lifespan(app: FastAPI):
 
     # Start RabbitMQ Event Consumer in background thread (blocking consumer is FAST!)
     try:
-        if not consumer_thread:
+        if ENABLE_EVENT_CONSUMER and not consumer_thread:
 
             def blocking_consumer_loop():
                 """Run blocking consumer with restart logic on crash."""
@@ -171,6 +178,8 @@ async def lifespan(app: FastAPI):
             print(
                 "[STARTUP] ✅ RabbitMQ blocking consumer started in background thread with auto-restart"
             )
+        elif not ENABLE_EVENT_CONSUMER:
+            logger.info("[STARTUP] RabbitMQ event consumer disabled by ENABLE_EVENT_CONSUMER=false")
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start RabbitMQ consumer thread: {e}")
         print(f"[STARTUP] ⚠️ Consumer thread failed to initialize, app will continue without it")
@@ -179,58 +188,61 @@ async def lifespan(app: FastAPI):
     # Start Scheduled Collectors
     print("[STARTUP] Starting automatic collectors...")
     try:
-        executors = {
-            "default": ThreadPoolExecutor(max_workers=20)  # Allow 20 concurrent jobs
-        }
-        job_defaults = {
-            "coalesce": True,
-            "max_instances": 1,
-            "misfire_grace_time": 30,
-        }
-        background_scheduler = BackgroundScheduler(
-            executors=executors, job_defaults=job_defaults
-        )
+        if ENABLE_SCHEDULED_COLLECTORS:
+            executors = {
+                "default": ThreadPoolExecutor(max_workers=20)  # Allow 20 concurrent jobs
+            }
+            job_defaults = {
+                "coalesce": True,
+                "max_instances": 1,
+                "misfire_grace_time": 30,
+            }
+            background_scheduler = BackgroundScheduler(
+                executors=executors, job_defaults=job_defaults
+            )
 
-        def run_rss_collector():
-            try:
-                print(f"[RSS] Running at {time.strftime('%H:%M:%S')}")
-                run_collector()
-            except Exception as e:
-                print(f"[RSS] Error: {e}")
-                logger.error(f"[RSS] Collector error: {e}")
+            def run_rss_collector():
+                try:
+                    print(f"[RSS] Running at {time.strftime('%H:%M:%S')}")
+                    run_collector()
+                except Exception as e:
+                    print(f"[RSS] Error: {e}")
+                    logger.error(f"[RSS] Collector error: {e}")
 
-        def run_price_collector():
-            try:
-                print(f"[PRICE] Running at {time.strftime('%H:%M:%S')}")
-                price_run()
-            except Exception as e:
-                print(f"[PRICE] Error: {e}")
-                logger.error(f"[PRICE] Collector error: {e}")
+            def run_price_collector():
+                try:
+                    print(f"[PRICE] Running at {time.strftime('%H:%M:%S')}")
+                    price_run()
+                except Exception as e:
+                    print(f"[PRICE] Error: {e}")
+                    logger.error(f"[PRICE] Collector error: {e}")
 
-        background_scheduler.add_job(
-            run_rss_collector,
-            "interval",
-            seconds=RSS_COLLECTOR_INTERVAL_SECONDS,
-            id="rss_collector",
-        )
-        background_scheduler.add_job(
-            run_price_collector,
-            "interval",
-            seconds=PRICE_COLLECTOR_INTERVAL_SECONDS,
-            id="price_collector",
-        )
-        background_scheduler.start()
-        print(
-            "[STARTUP] Scheduler started: "
-            f"RSS({RSS_COLLECTOR_INTERVAL_SECONDS}s), "
-            f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s)"
-        )
-        print(
-            "[STARTUP] ✅ PRIMARY: Using blocking RabbitMQ consumer (run_consumer) in background thread"
-        )
-        print(
-            "[STARTUP] ✅ WALLET PROFILE PERSISTENCE: Enabled via enrich_event_with_agent_b() in consumer"
-        )
+            background_scheduler.add_job(
+                run_rss_collector,
+                "interval",
+                seconds=RSS_COLLECTOR_INTERVAL_SECONDS,
+                id="rss_collector",
+            )
+            background_scheduler.add_job(
+                run_price_collector,
+                "interval",
+                seconds=PRICE_COLLECTOR_INTERVAL_SECONDS,
+                id="price_collector",
+            )
+            background_scheduler.start()
+            print(
+                "[STARTUP] Scheduler started: "
+                f"RSS({RSS_COLLECTOR_INTERVAL_SECONDS}s), "
+                f"Price({PRICE_COLLECTOR_INTERVAL_SECONDS}s)"
+            )
+            print(
+                "[STARTUP] ✅ PRIMARY: Using blocking RabbitMQ consumer (run_consumer) in background thread"
+            )
+            print(
+                "[STARTUP] ✅ WALLET PROFILE PERSISTENCE: Enabled via enrich_event_with_agent_b() in consumer"
+            )
+        else:
+            logger.info("[STARTUP] Scheduled collectors disabled by ENABLE_SCHEDULED_COLLECTORS=false")
     except Exception as e:
         logger.error(f"[STARTUP] Scheduler initialization failed: {e}")
         print(f"[STARTUP] ⚠️ Scheduler failed to initialize: {e}")

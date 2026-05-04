@@ -20,6 +20,12 @@ services:
         value: api
       - key: ENABLE_BACKGROUND_TASKS
         value: true
+      - key: ENABLE_EVENT_CONSUMER
+        value: false
+      - key: ENABLE_SCHEDULED_COLLECTORS
+        value: true
+      - key: ENABLE_ALERT_CONSUMER
+        value: true
       - key: ENABLE_PROMETHEUS_HTTP_SERVER
         value: false
       - key: ENVIRONMENT
@@ -47,6 +53,45 @@ services:
         value: ${RABBITMQ_URL}
       - key: RABBITMQ_QUEUE
         value: events
+
+  # Dedicated RabbitMQ consumer worker so messages are always drained even if the API restarts.
+  - type: worker
+    name: aeterna-consumer
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    branch: main
+
+    startCommand: sh /app/start.sh consumer
+
+    envVars:
+      - key: SERVICE_TYPE
+        value: consumer
+      - key: ENABLE_BACKGROUND_TASKS
+        value: false
+      - key: ENABLE_EVENT_CONSUMER
+        value: true
+      - key: ENABLE_SCHEDULED_COLLECTORS
+        value: false
+      - key: ENABLE_ALERT_CONSUMER
+        value: false
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+      - key: REDIS_URL
+        value: ${REDIS_URL}
+      - key: CELERY_BROKER_URL
+        value: ${REDIS_URL}
+      - key: CELERY_RESULT_BACKEND
+        value: ${REDIS_URL}
+      - key: RABBITMQ_URL
+        value: ${RABBITMQ_URL}
+      - key: RABBITMQ_QUEUE
+        value: events
+      # Backlog catch-up tuning; lower INTELLIGENCE_POLL_EVERY_N_BATCHES to 1 after queue is drained.
+      - key: CONSUMER_BATCH_SIZE
+        value: 500
+      - key: INTELLIGENCE_POLL_EVERY_N_BATCHES
+        value: 10
 
 databases:
   - name: Aeterna

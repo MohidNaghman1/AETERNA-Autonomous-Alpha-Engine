@@ -41,18 +41,18 @@ AETERNA is a modular, production-ready data ingestion, intelligence, and event p
 
 ## Key Features
 
-| Category           | Capabilities                                                                                                                                                                             |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Data Ingestion** | RSS feeds, price APIs, on-chain Ethereum monitoring (WebSocket), ERC20 transfer collection, Uniswap V2/V3 DEX swap detection                                                            |
-| **Intelligence**   | Agent A — event scoring with noise reduction and bot/spam detection; Agent B — wallet profiling, entity identification, behavioral clustering, win-rate analysis, and priority boosting |
-| **Trade Analytics**| Deterministic trade-record persistence, FIFO profitability resolution, DEX swap extraction, backfill utilities, and backlog reporting                                                   |
-| **Alerting**       | Real-time alert generation, consumer pipelines, user preference-aware delivery                                                                                                          |
-| **Delivery**       | Email (HTML templates, Resend API), Telegram bot, WebSocket (Socket.IO) push                                                                                                             |
-| **Identity & Auth**| JWT authentication, user registration/login, user preferences, email preferences                                                                                                        |
-| **Admin**          | Dashboard with system metrics, user management, role-based access control (RBAC), admin bootstrap                                                                                       |
-| **Security**       | Rate limiting middleware, input sanitization, password hashing, admin-only endpoints                                                                                                     |
-| **Monitoring**     | Prometheus metrics, structured logging, `/health/system` diagnostics endpoint                                                                                                            |
-| **Infrastructure** | PostgreSQL, Redis (deduplication + cache), RabbitMQ (event broker), Celery, APScheduler                                                                                                 |
+| Category            | Capabilities                                                                                                                                                                            |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Data Ingestion**  | RSS feeds, price APIs, on-chain Ethereum monitoring (WebSocket), ERC20 transfer collection, Uniswap V2/V3 DEX swap detection                                                            |
+| **Intelligence**    | Agent A — event scoring with noise reduction and bot/spam detection; Agent B — wallet profiling, entity identification, behavioral clustering, win-rate analysis, and priority boosting |
+| **Trade Analytics** | Deterministic trade-record persistence, FIFO profitability resolution, DEX swap extraction, backfill utilities, and backlog reporting                                                   |
+| **Alerting**        | Real-time alert generation, consumer pipelines, user preference-aware delivery                                                                                                          |
+| **Delivery**        | Email (HTML templates, Resend API), Telegram bot, WebSocket (Socket.IO) push                                                                                                            |
+| **Identity & Auth** | JWT authentication, user registration/login, user preferences, email preferences                                                                                                        |
+| **Admin**           | Dashboard with system metrics, user management, role-based access control (RBAC), admin bootstrap                                                                                       |
+| **Security**        | Rate limiting middleware, input sanitization, password hashing, admin-only endpoints                                                                                                    |
+| **Monitoring**      | Prometheus metrics, structured logging, `/health/system` diagnostics endpoint                                                                                                           |
+| **Infrastructure**  | PostgreSQL, Redis (deduplication + cache), RabbitMQ (event broker), Celery, APScheduler                                                                                                 |
 
 ---
 
@@ -70,14 +70,14 @@ app/modules/<module>/
 
 ### Modules
 
-| Module           | Purpose                                                                                                       | Key Files                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **Ingestion**    | Collects events from external sources and publishes to RabbitMQ, including on-chain transfers and DEX swaps   | `rss_collector.py`, `price_collector.py`, `onchain_collector.py`, `consumer.py`      |
+| Module           | Purpose                                                                                                       | Key Files                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Ingestion**    | Collects events from external sources and publishes to RabbitMQ, including on-chain transfers and DEX swaps   | `rss_collector.py`, `price_collector.py`, `onchain_collector.py`, `consumer.py`     |
 | **Intelligence** | Event scoring (Agent A) and wallet profiling (Agent B); trade-record persistence and profitability resolution | `agent_a.py`, `agent_b.py`, `consumer.py`, `trade_records.py`, `agent_b_polling.py` |
 | **Alerting**     | Generates alerts from scored events and manages the alert lifecycle                                           | `alert_generator.py`, `alert_consumer.py`, `alerts.py`                              |
 | **Delivery**     | Multi-channel alert delivery via email, Telegram, and digest                                                  | `delivery.py`, `telegram_bot.py`, `email_utils.py`, `digest_tasks.py`               |
 | **Identity**     | User authentication, registration, and preferences                                                            | `services.py`, `auth.py`, `models.py`                                               |
-| **Analytics**    | Event analytics and crypto entity tracking                                                                    | `models.py`                                                                          |
+| **Analytics**    | Event analytics and crypto entity tracking                                                                    | `models.py`                                                                         |
 | **Admin**        | Dashboard, user and role management, security middleware                                                      | `dashboard.py`, `user_management.py`, `role_management.py`, `security.py`           |
 
 ### Shared Utilities
@@ -221,14 +221,14 @@ make health
 
 Running services:
 
-| Service             | URL                                  |
-| ------------------- | ------------------------------------ |
-| API                 | http://localhost:8000                |
-| Swagger UI          | http://localhost:8000/docs           |
-| ReDoc               | http://localhost:8000/redoc          |
-| RabbitMQ Management | http://localhost:15672               |
-| Prometheus Metrics  | http://localhost:8000/metrics        |
-| System Health       | http://localhost:8000/health/system  |
+| Service             | URL                                 |
+| ------------------- | ----------------------------------- |
+| API                 | http://localhost:8000               |
+| Swagger UI          | http://localhost:8000/docs          |
+| ReDoc               | http://localhost:8000/redoc         |
+| RabbitMQ Management | http://localhost:15672              |
+| Prometheus Metrics  | http://localhost:8000/metrics       |
+| System Health       | http://localhost:8000/health/system |
 
 ### Option 2: Local Development
 
@@ -256,49 +256,49 @@ Copy `.env.example` to `.env` and populate the following variables.
 
 ### Application
 
-| Variable                       | Description                                             |
-| ------------------------------ | ------------------------------------------------------- |
-| `DATABASE_URL`                 | PostgreSQL connection string                            |
-| `REDIS_URL`                    | Redis connection URL                                    |
-| `REDIS_PASSWORD`               | Redis password                                          |
-| `RABBITMQ_URL`                 | RabbitMQ AMQP connection string                         |
-| `SECRET_KEY`                   | JWT signing secret                                      |
-| `CORS_ORIGINS`                 | Allowed CORS origins                                    |
-| `SMTP_*`                       | Email SMTP configuration                                |
-| `TELEGRAM_BOT_TOKEN`           | Telegram bot token for alert delivery                   |
-| `CELERY_BROKER_URL`            | Celery broker URL                                       |
+| Variable             | Description                           |
+| -------------------- | ------------------------------------- |
+| `DATABASE_URL`       | PostgreSQL connection string          |
+| `REDIS_URL`          | Redis connection URL                  |
+| `REDIS_PASSWORD`     | Redis password                        |
+| `RABBITMQ_URL`       | RabbitMQ AMQP connection string       |
+| `SECRET_KEY`         | JWT signing secret                    |
+| `CORS_ORIGINS`       | Allowed CORS origins                  |
+| `SMTP_*`             | Email SMTP configuration              |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for alert delivery |
+| `CELERY_BROKER_URL`  | Celery broker URL                     |
 
 ### Scheduler Intervals
 
-| Variable                           | Default | Description                                 |
-| ---------------------------------- | ------- | ------------------------------------------- |
-| `RSS_COLLECTOR_INTERVAL_SECONDS`   | `60`    | RSS collector run frequency (seconds)       |
-| `PRICE_COLLECTOR_INTERVAL_SECONDS` | `120`   | Price collector run frequency (seconds)     |
+| Variable                           | Default | Description                                    |
+| ---------------------------------- | ------- | ---------------------------------------------- |
+| `RSS_COLLECTOR_INTERVAL_SECONDS`   | `60`    | RSS collector run frequency (seconds)          |
+| `PRICE_COLLECTOR_INTERVAL_SECONDS` | `120`   | Price collector run frequency (seconds)        |
 | `TRADE_RESOLVER_INTERVAL_SECONDS`  | `120`   | Trade outcome resolver run frequency (seconds) |
 
 ### On-Chain Collector
 
-| Variable                        | Default   | Description                                                       |
-| ------------------------------- | --------- | ----------------------------------------------------------------- |
-| `QUICKNODE_URL`                 | —         | Ethereum WebSocket endpoint (QuickNode / Alchemy / Infura)        |
-| `MIN_TRANSACTION_VALUE_USD`     | `10000`   | Minimum USD value required to publish an on-chain event           |
-| `HIGH_PRIORITY_THRESHOLD_USD`   | `100000`  | Transactions at or above this value are auto-marked HIGH          |
-| `MEDIUM_PRIORITY_THRESHOLD_USD` | `10000`   | Transactions at or above this value are auto-marked MEDIUM        |
-| `MIN_ETH_AMOUNT`                | `100`     | Minimum ETH units required to capture a native transfer           |
-| `MIN_STABLECOIN_AMOUNT`         | `1000000` | Minimum stablecoin units required to capture a transfer           |
-| `MAX_SWAP_LOGS_PER_CYCLE`       | `500`     | Cap on DEX swap logs processed per collection cycle               |
-| `CONFIRMATION_BLOCKS`           | `12`      | Block confirmations required before processing a transaction      |
-| `ONCHAIN_MAX_RETRIES`           | `3`       | Max Web3 connection retries on failure                            |
-| `ONCHAIN_RETRY_DELAY`           | `5`       | Seconds between connection retries                                |
+| Variable                        | Default   | Description                                                  |
+| ------------------------------- | --------- | ------------------------------------------------------------ |
+| `QUICKNODE_URL`                 | —         | Ethereum WebSocket endpoint (QuickNode / Alchemy / Infura)   |
+| `MIN_TRANSACTION_VALUE_USD`     | `10000`   | Minimum USD value required to publish an on-chain event      |
+| `HIGH_PRIORITY_THRESHOLD_USD`   | `100000`  | Transactions at or above this value are auto-marked HIGH     |
+| `MEDIUM_PRIORITY_THRESHOLD_USD` | `10000`   | Transactions at or above this value are auto-marked MEDIUM   |
+| `MIN_ETH_AMOUNT`                | `100`     | Minimum ETH units required to capture a native transfer      |
+| `MIN_STABLECOIN_AMOUNT`         | `1000000` | Minimum stablecoin units required to capture a transfer      |
+| `MAX_SWAP_LOGS_PER_CYCLE`       | `500`     | Cap on DEX swap logs processed per collection cycle          |
+| `CONFIRMATION_BLOCKS`           | `12`      | Block confirmations required before processing a transaction |
+| `ONCHAIN_MAX_RETRIES`           | `3`       | Max Web3 connection retries on failure                       |
+| `ONCHAIN_RETRY_DELAY`           | `5`       | Seconds between connection retries                           |
 
 ### Agent B Backfill
 
-| Variable                  | Default        | Description                                        |
-| ------------------------- | -------------- | -------------------------------------------------- |
-| `AGENT_B_POLL_INTERVAL`   | `5`            | Polling interval in seconds (backfill mode only)   |
-| `AGENT_B_BATCH_SIZE`      | `50`           | Max events to enrich per backfill batch            |
-| `AGENT_B_SCAN_SIZE`       | `250`          | Candidate window size scanned per batch            |
-| `AGENT_B_PRIORITY_FILTER` | `HIGH,MEDIUM`  | Priority levels targeted by the backfill           |
+| Variable                  | Default       | Description                                      |
+| ------------------------- | ------------- | ------------------------------------------------ |
+| `AGENT_B_POLL_INTERVAL`   | `5`           | Polling interval in seconds (backfill mode only) |
+| `AGENT_B_BATCH_SIZE`      | `50`          | Max events to enrich per backfill batch          |
+| `AGENT_B_SCAN_SIZE`       | `250`         | Candidate window size scanned per batch          |
+| `AGENT_B_PRIORITY_FILTER` | `HIGH,MEDIUM` | Priority levels targeted by the backfill         |
 
 ---
 
@@ -366,7 +366,7 @@ Agent B enriches every on-chain event with wallet intelligence and persists prof
 | HIGH_PERFORMER   | ≥ 80%    | Consistently profitable; automatically triggers a priority boost |
 | MEDIUM_PERFORMER | 50–79%   | Above-average trading performance                                |
 | LOW_PERFORMER    | < 50%    | Below-average or insufficient trade history                      |
-| UNVERIFIED       | —        | New or unseen wallet with fewer than five confirmed trades        |
+| UNVERIFIED       | —        | New or unseen wallet with fewer than five confirmed trades       |
 
 **Behavior Clusters** — `ACCUMULATOR`, `TRADER`, `LIQUIDATOR`, `ARBITRAGEUR`, `BOT`, `WHALE`, `UNKNOWN`
 
@@ -408,11 +408,11 @@ Each cycle executes three strategies in order: ERC20 `Transfer` log scanning, kn
 
 The following scripts are run manually from the project root as one-off or diagnostic operations.
 
-| Script                    | Purpose                                                                   | Usage                                                  |
-| ------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `backfill_trades.py`      | Backfills `TradeRecord` rows from historical `ProcessedEvent` data        | `python backfill_trades.py --limit 10000`              |
-| `trade_backlog_report.py` | Reports unresolved trade backlog grouped by wallet address                | `python trade_backlog_report.py [--limit N] [--json]`  |
-| `agent_b_polling.py`      | Backfills Agent B profiling for events that missed inline enrichment      | `python agent_b_polling.py --backfill`                 |
+| Script                    | Purpose                                                              | Usage                                                 |
+| ------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------- |
+| `backfill_trades.py`      | Backfills `TradeRecord` rows from historical `ProcessedEvent` data   | `python backfill_trades.py --limit 10000`             |
+| `trade_backlog_report.py` | Reports unresolved trade backlog grouped by wallet address           | `python trade_backlog_report.py [--limit N] [--json]` |
+| `agent_b_polling.py`      | Backfills Agent B profiling for events that missed inline enrichment | `python agent_b_polling.py --backfill`                |
 
 ---
 
@@ -421,20 +421,20 @@ The following scripts are run manually from the project root as one-off or diagn
 AETERNA supports multiple deployment targets:
 
 - **Docker Compose** — `docker-compose up -d` for self-hosted deployments
-- **Fly.io** — Configuration in `fly.toml`
-- **Render** — Configuration in `render.yml`
+- **Fly.io** — Configuration in `fly.toml` for the on-chain publisher worker only
+- **Render** — Configuration in `render.yml` for the API plus the dedicated RabbitMQ consumer
 - **Production Docker** — `make build-prod` for a production-optimized image
 
 ### Docker Services
 
-| Service         | Image                            | Purpose                         |
-| --------------- | -------------------------------- | ------------------------------- |
-| `app`           | Custom (Dockerfile)              | FastAPI application server      |
-| `celery_worker` | Custom (Dockerfile)              | Celery worker for async tasks   |
-| `celery_beat`   | Custom (Dockerfile)              | Celery beat for scheduled tasks |
-| `postgres`      | postgres:15-alpine               | Primary relational database     |
-| `redis`         | redis:7-alpine                   | Caching and deduplication       |
-| `rabbitmq`      | rabbitmq:3.12-management-alpine  | Message broker                  |
+| Service         | Image                           | Purpose                         |
+| --------------- | ------------------------------- | ------------------------------- |
+| `app`           | Custom (Dockerfile)             | FastAPI application server      |
+| `celery_worker` | Custom (Dockerfile)             | Celery worker for async tasks   |
+| `celery_beat`   | Custom (Dockerfile)             | Celery beat for scheduled tasks |
+| `postgres`      | postgres:15-alpine              | Primary relational database     |
+| `redis`         | redis:7-alpine                  | Caching and deduplication       |
+| `rabbitmq`      | rabbitmq:3.12-management-alpine | Message broker                  |
 
 ---
 

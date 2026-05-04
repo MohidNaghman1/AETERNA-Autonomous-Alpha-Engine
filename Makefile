@@ -112,6 +112,18 @@ shell: ## Access app shell/bash
 celery-logs: ## View celery worker logs
 	docker-compose logs -f celery_worker
 
+consumer: ## Run the RabbitMQ consumer locally
+	python -m app.modules.ingestion.application.consumer
+
+consumer-logs: ## View consumer logs when running in docker-compose
+	docker-compose logs -f app
+
+consumer: ## Run the RabbitMQ consumer locally
+	python -m app.modules.ingestion.application.consumer
+
+consumer-logs: ## View consumer logs when running in docker-compose
+	docker-compose logs -f app
+
 celery-purge: ## Purge all tasks from queue
 	docker-compose exec celery_worker celery -A app.modules.ingestion.infrastructure.celery_app purge -f
 
