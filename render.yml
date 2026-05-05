@@ -62,7 +62,7 @@ services:
     autoDeploy: true
     branch: main
 
-    startCommand: python -m app.modules.ingestion.application.consumer
+    startCommand: sh /app/start.sh consumer
 
     envVars:
       - key: SERVICE_TYPE
