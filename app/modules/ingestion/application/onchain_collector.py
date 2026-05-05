@@ -350,7 +350,9 @@ def _prune_token_weth_cache() -> None:
     """Drop expired token-weth cache entries and trim size."""
     now = time.time()
     expired = [
-        token for token, (_, expires_at) in token_weth_price_cache.items() if now >= expires_at
+        token
+        for token, (_, expires_at) in token_weth_price_cache.items()
+        if now >= expires_at
     ]
     for token in expired:
         token_weth_price_cache.pop(token, None)
@@ -999,7 +1001,7 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
 
                 # Decode sqrtPriceX96 -> price ratio
                 price_raw = Decimal(sqrt_price_x96) / Decimal(2**96)
-                price_raw = price_raw ** 2
+                price_raw = price_raw**2
 
                 pool_tokens = _get_pool_tokens(pool_addr)
                 if not pool_tokens:

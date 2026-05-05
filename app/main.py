@@ -49,9 +49,7 @@ PRICE_COLLECTOR_INTERVAL_SECONDS = int(
 SERVICE_TYPE = os.getenv("SERVICE_TYPE", "api").strip().lower()
 # Enable background workers by default (RSS, Price, RabbitMQ consumer, Alert consumer)
 # Disable via ENABLE_BACKGROUND_TASKS=false if running on platform with separate worker processes
-ENABLE_BACKGROUND_TASKS = env_flag(
-    "ENABLE_BACKGROUND_TASKS", default=True
-)
+ENABLE_BACKGROUND_TASKS = env_flag("ENABLE_BACKGROUND_TASKS", default=True)
 
 # Granular toggles so collectors and consumers can be split into dedicated processes.
 ENABLE_ALERT_CONSUMER = env_flag("ENABLE_ALERT_CONSUMER", default=True)
@@ -130,7 +128,9 @@ async def lifespan(app: FastAPI):
             alert_consumer.start()
             print("[STARTUP] Alert consumer started")
         elif not ENABLE_ALERT_CONSUMER:
-            logger.info("[STARTUP] AlertConsumer disabled by ENABLE_ALERT_CONSUMER=false")
+            logger.info(
+                "[STARTUP] AlertConsumer disabled by ENABLE_ALERT_CONSUMER=false"
+            )
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start AlertConsumer: {e}")
         print(f"[STARTUP] ⚠️ Alert consumer failed to start: {e}")
@@ -144,7 +144,7 @@ async def lifespan(app: FastAPI):
                 """Run blocking consumer with restart logic on crash."""
                 retry_count = 0
                 max_initial_retries = 5
-                
+
                 while True:
                     try:
                         print(
@@ -161,11 +161,11 @@ async def lifespan(app: FastAPI):
                             f"[CONSUMER-THREAD] ❌ Consumer crashed (attempt {retry_count}): {type(e).__name__}: {str(e)[:100]}"
                         )
                         logger.error(f"[CONSUMER-THREAD] RabbitMQ consumer error: {e}")
-                        
+
                         # Only print full trace on first few retries to avoid spam
                         if retry_count <= 2:
                             traceback.print_exc()
-                        
+
                         # Exponential backoff: 5s, 10s, 20s... up to 60s
                         wait_time = min(5 * (2 ** (retry_count - 1)), 60)
                         print(f"[CONSUMER-THREAD] Retrying in {wait_time}s...")
@@ -179,10 +179,14 @@ async def lifespan(app: FastAPI):
                 "[STARTUP] ✅ RabbitMQ blocking consumer started in background thread with auto-restart"
             )
         elif not ENABLE_EVENT_CONSUMER:
-            logger.info("[STARTUP] RabbitMQ event consumer disabled by ENABLE_EVENT_CONSUMER=false")
+            logger.info(
+                "[STARTUP] RabbitMQ event consumer disabled by ENABLE_EVENT_CONSUMER=false"
+            )
     except Exception as e:
         logger.error(f"[STARTUP] Failed to start RabbitMQ consumer thread: {e}")
-        print(f"[STARTUP] ⚠️ Consumer thread failed to initialize, app will continue without it")
+        print(
+            f"[STARTUP] ⚠️ Consumer thread failed to initialize, app will continue without it"
+        )
         # Don't crash the app if thread creation fails
 
     # Start Scheduled Collectors
@@ -190,7 +194,9 @@ async def lifespan(app: FastAPI):
     try:
         if ENABLE_SCHEDULED_COLLECTORS:
             executors = {
-                "default": ThreadPoolExecutor(max_workers=20)  # Allow 20 concurrent jobs
+                "default": ThreadPoolExecutor(
+                    max_workers=20
+                )  # Allow 20 concurrent jobs
             }
             job_defaults = {
                 "coalesce": True,
@@ -242,7 +248,9 @@ async def lifespan(app: FastAPI):
                 "[STARTUP] ✅ WALLET PROFILE PERSISTENCE: Enabled via enrich_event_with_agent_b() in consumer"
             )
         else:
-            logger.info("[STARTUP] Scheduled collectors disabled by ENABLE_SCHEDULED_COLLECTORS=false")
+            logger.info(
+                "[STARTUP] Scheduled collectors disabled by ENABLE_SCHEDULED_COLLECTORS=false"
+            )
     except Exception as e:
         logger.error(f"[STARTUP] Scheduler initialization failed: {e}")
         print(f"[STARTUP] ⚠️ Scheduler failed to initialize: {e}")
