@@ -89,7 +89,7 @@ services:
         value: events
       # Backlog catch-up tuning; lower INTELLIGENCE_POLL_EVERY_N_BATCHES to 1 after queue is drained.
       - key: CONSUMER_BATCH_SIZE
-        value: 250
+        value: 1000
       - key: INTELLIGENCE_POLL_EVERY_N_BATCHES
         value: 99999
 

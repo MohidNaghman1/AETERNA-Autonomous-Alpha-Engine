@@ -51,13 +51,14 @@ RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
 DLQ_QUEUE = os.getenv("RABBITMQ_DLQ_QUEUE", "events_dlq")
 MAX_RETRIES = int(os.getenv("RABBITMQ_MAX_RETRIES", "3"))
 
-# Batch settings - tune these for your DB throughput
-BATCH_SIZE = int(os.getenv("CONSUMER_BATCH_SIZE", "500"))
+# Batch settings - tune these for your DB throughput.
+# Larger batches reduce RabbitMQ round-trips and speed up queue draining.
+BATCH_SIZE = int(os.getenv("CONSUMER_BATCH_SIZE", "1000"))
 
-# Run the intelligence poll every N flushed batches. Set higher values to drain
-# a large backlog faster, then lower again once caught up.
+# Run the intelligence poll every N flushed batches. Higher values let the
+# consumer spend more time draining RabbitMQ before doing expensive downstream work.
 INTELLIGENCE_POLL_EVERY_N_BATCHES = max(
-    1, int(os.getenv("INTELLIGENCE_POLL_EVERY_N_BATCHES", "1"))
+    1, int(os.getenv("INTELLIGENCE_POLL_EVERY_N_BATCHES", "10"))
 )
 
 _flushed_batch_count = 0
