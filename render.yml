@@ -91,7 +91,7 @@ services:
       - key: CONSUMER_BATCH_SIZE
         value: 1000
       - key: INTELLIGENCE_POLL_EVERY_N_BATCHES
-        value: 9999
+        value: 99999
 
 databases:
   - name: Aeterna
