@@ -579,19 +579,6 @@ async def get_eth_price() -> float:
         return eth_price_cache["price"]
 
 
-async def wei_to_usd(amount_wei: int, decimals: int = 18) -> float:
-    """Convert Wei to USD equivalent using live price."""
-    try:
-        if decimals == 18:
-            eth_price = await get_eth_price()
-            return float(Decimal(amount_wei) / Decimal(10**decimals)) * eth_price
-        else:
-            return float(Decimal(amount_wei) / Decimal(10**decimals))
-    except Exception as e:
-        logger.error(f"Error converting to USD: {e}")
-        return 0.0
-
-
 # ============================================================================
 # THRESHOLD-BASED PRIORITY DETERMINATION
 # ============================================================================
@@ -1354,11 +1341,14 @@ def process_erc20_transfer_event(
         if isinstance(data_hex, bytes):
             data_hex = data_hex.hex()
         data_hex = str(data_hex or "")
-        amount = (
-            int(data_hex, 16)
-            if data_hex and data_hex.strip().lower() not in ("0x", "")
-            else 0
-        )
+        try:
+            amount = (
+                int(data_hex, 16)
+                if data_hex and data_hex.strip().lower() not in ("0x", "")
+                else 0
+            )
+        except ValueError:
+            amount = 0
 
         token_address = log_entry.get("address", "").lower()
         token = get_token_symbol(token_address)
@@ -1696,6 +1686,7 @@ def monitor_large_transfers():
         try:
             blocks_to_scan = 10  # Scan last 10 blocks for transactions
             eth_price = get_eth_price_sync()
+            s3_published = 0
 
             for block_offset in range(1, blocks_to_scan + 1):
                 block_num = current_block - block_offset
@@ -1771,6 +1762,7 @@ def monitor_large_transfers():
                                         published = publish_event(event)
                                         if published:
                                             published_tx_hashes.add(normalized_tx_hash)
+                                            s3_published += 1
 
                         except Exception as e:
                             logger.debug(f"[ETH] Error processing transaction: {e}")
@@ -1785,6 +1777,12 @@ def monitor_large_transfers():
 
         except Exception as e:
             logger.warning(f"[MONITOR] Error in block scanning strategy: {e}")
+        finally:
+            if s3_published > 0:
+                logger.info(
+                    f"[ETH] Published {s3_published} block-scan ETH transfer events"
+                )
+                events_found_total += s3_published
 
         logger.info("[MONITOR] ========================================")
         logger.info(f"[MONITOR] MONITORING CYCLE COMPLETE")
