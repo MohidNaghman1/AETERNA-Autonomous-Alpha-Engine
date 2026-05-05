@@ -53,7 +53,7 @@ MAX_RETRIES = int(os.getenv("RABBITMQ_MAX_RETRIES", "3"))
 
 # Batch settings - tune these for your DB throughput.
 # Larger batches reduce RabbitMQ round-trips and speed up queue draining.
-BATCH_SIZE = int(os.getenv("CONSUMER_BATCH_SIZE", "1000"))
+BATCH_SIZE = int(os.getenv("CONSUMER_BATCH_SIZE", "2000"))
 
 # Run the intelligence poll every N flushed batches. Higher values let the
 # consumer spend more time draining RabbitMQ before doing expensive downstream work.
