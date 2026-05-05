@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-SERVICE_TYPE=${SERVICE_TYPE:-worker}
+SERVICE_TYPE=${1:-${SERVICE_TYPE:-worker}}
 
 echo "=== Starting service: $SERVICE_TYPE ==="
 
