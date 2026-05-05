@@ -62,7 +62,7 @@ services:
     autoDeploy: true
     branch: main
 
-    startCommand: sh /app/start.sh consumer
+    startCommand: python -m app.modules.ingestion.application.consumer
 
     envVars:
       - key: SERVICE_TYPE
@@ -89,7 +89,7 @@ services:
         value: events
       # Backlog catch-up tuning; lower INTELLIGENCE_POLL_EVERY_N_BATCHES to 1 after queue is drained.
       - key: CONSUMER_BATCH_SIZE
-        value: 1000
+        value: 250
       - key: INTELLIGENCE_POLL_EVERY_N_BATCHES
         value: 99999
 
