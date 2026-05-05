@@ -186,6 +186,15 @@ def flush_batch(channel):
             EVENTS_PROCESSED.labels(collector="consumer").inc(len(_batch_orms))
             logger.info(f"[BATCH] ✅ Committed {len(_batch_orms)} events to EventORM")
 
+            # ACK as soon as the durable event rows are committed.
+            # The downstream intelligence/trade writes are best-effort and
+            # should not keep RabbitMQ messages unacked while they run.
+            for tag in _batch_tags:
+                try:
+                    channel.basic_ack(delivery_tag=tag)
+                except Exception as e:
+                    logger.error(f"[BATCH] ACK failed for tag {tag}: {e}")
+
             _flushed_batch_count += 1
 
             # Score events and persist wallet profiles via intelligence pipeline
@@ -234,13 +243,6 @@ def flush_batch(channel):
                     trade_db.close()
             except Exception as e:
                 logger.error(f"[BATCH] ⚠️ Trade upsert error (non-blocking): {e}")
-
-            # ACK all successfully committed messages
-            for tag in _batch_tags:
-                try:
-                    channel.basic_ack(delivery_tag=tag)
-                except Exception as e:
-                    logger.error(f"[BATCH] ACK failed for tag {tag}: {e}")
 
         except Exception as e:
             logger.error(f"[BATCH] ❌ DB bulk insert failed: {e}")
