@@ -107,6 +107,40 @@ class OnChainConfig:
         os.getenv("WEB3_INIT_MAX_BACKOFF_SECONDS", "60")
     )
 
+    @classmethod
+    def refresh_from_env(cls) -> None:
+        """Refresh configuration from environment variables at runtime."""
+        cls.QUICKNODE_URL = os.getenv("QUICKNODE_URL", "")
+        cls.MAX_RETRIES = int(os.getenv("ONCHAIN_MAX_RETRIES", "3"))
+        cls.RETRY_DELAY = int(os.getenv("ONCHAIN_RETRY_DELAY", "5"))
+        cls.MIN_ETH_AMOUNT = int(os.getenv("MIN_ETH_AMOUNT", "100"))
+        cls.MIN_STABLECOIN_AMOUNT = int(os.getenv("MIN_STABLECOIN_AMOUNT", "1000000"))
+        cls.MIN_TRANSACTION_VALUE_USD = int(
+            os.getenv("MIN_TRANSACTION_VALUE_USD", "10000")
+        )
+        cls.HIGH_PRIORITY_THRESHOLD_USD = int(
+            os.getenv("HIGH_PRIORITY_THRESHOLD_USD", "100000")
+        )
+        cls.MEDIUM_PRIORITY_THRESHOLD_USD = int(
+            os.getenv("MEDIUM_PRIORITY_THRESHOLD_USD", "10000")
+        )
+        cls.LOW_PRIORITY_THRESHOLD_USD = int(
+            os.getenv("LOW_PRIORITY_THRESHOLD_USD", "5000")
+        )
+        cls.CONFIRMATION_BLOCKS = int(os.getenv("CONFIRMATION_BLOCKS", "12"))
+        cls.RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")
+        cls.RPC_CALLS_PER_SECOND = int(os.getenv("RPC_CALLS_PER_SECOND", "100"))
+        cls.MAX_SWAP_LOGS_PER_CYCLE = int(os.getenv("MAX_SWAP_LOGS_PER_CYCLE", "500"))
+        cls.SWAP_PROCESS_DELAY_SECONDS = float(
+            os.getenv("SWAP_PROCESS_DELAY_SECONDS", "0.05")
+        )
+        cls.WEB3_INIT_COOLDOWN_SECONDS = float(
+            os.getenv("WEB3_INIT_COOLDOWN_SECONDS", "5")
+        )
+        cls.WEB3_INIT_MAX_BACKOFF_SECONDS = float(
+            os.getenv("WEB3_INIT_MAX_BACKOFF_SECONDS", "60")
+        )
+
 
 # Token Addresses (Ethereum Mainnet) - Lowercase for consistent lookups
 STABLECOIN_ADDRESSES = {
@@ -114,6 +148,13 @@ STABLECOIN_ADDRESSES = {
     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
     "0x6b175474e89094c44da98b954eedeac495271d0f": "DAI",
     "0x056fd409e1d7a124bd7017459dfea2f387b6d5cd": "GUSD",
+}
+
+STABLECOIN_DECIMALS = {
+    "USDT": 6,
+    "USDC": 6,
+    "DAI": 18,
+    "GUSD": 2,
 }
 
 KNOWN_TOKENS = frozenset(STABLECOIN_ADDRESSES.values()) | {
@@ -223,6 +264,24 @@ POOL_TOKEN_ABI = [
     },
 ]
 
+FACTORY_V3_ABI = [
+    {
+        "name": "getPool",
+        "outputs": [{"type": "address", "name": ""}],
+        "inputs": [
+            {"type": "address", "name": "tokenA"},
+            {"type": "address", "name": "tokenB"},
+            {"type": "uint24", "name": "fee"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+MAX_POOL_TOKENS_CACHE = 5000
+MAX_TOKEN_META_CACHE = 5000
+MAX_TOKEN_WETH_CACHE = 5000
+
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -259,7 +318,7 @@ def _decode_hex_words(data_hex: Any) -> list[int]:
     else:
         data_hex = str(data_hex)
 
-    data_hex = data_hex.strip().lower()
+    data_hex = str(data_hex).strip().lower()
     if data_hex.startswith("hexbytes("):
         data_hex = data_hex.replace("hexbytes('", "").replace("')", "")
 
@@ -277,6 +336,25 @@ def _decode_hex_words(data_hex: Any) -> list[int]:
     except ValueError:
         return []
     return words
+
+
+def _trim_cache(cache: Dict[Any, Any], max_size: int) -> None:
+    """Trim a dict-like cache to max_size by removing oldest entries."""
+    if max_size <= 0:
+        return
+    while len(cache) > max_size:
+        cache.pop(next(iter(cache)))
+
+
+def _prune_token_weth_cache() -> None:
+    """Drop expired token-weth cache entries and trim size."""
+    now = time.time()
+    expired = [
+        token for token, (_, expires_at) in token_weth_price_cache.items() if now >= expires_at
+    ]
+    for token in expired:
+        token_weth_price_cache.pop(token, None)
+    _trim_cache(token_weth_price_cache, MAX_TOKEN_WETH_CACHE)
 
 
 def _signed_256(value: int) -> int:
@@ -323,8 +401,9 @@ def _get_token_metadata(token_address: str) -> Tuple[str, int]:
     # Fast path for tracked stablecoins
     stable_symbol = STABLECOIN_ADDRESSES.get(token_addr)
     if stable_symbol:
-        decimals = 18 if stable_symbol == "DAI" else 6
+        decimals = STABLECOIN_DECIMALS.get(stable_symbol, 6)
         token_meta_cache[token_addr] = (stable_symbol, decimals)
+        _trim_cache(token_meta_cache, MAX_TOKEN_META_CACHE)
         return stable_symbol, decimals
 
     symbol = "UNKNOWN"
@@ -346,6 +425,7 @@ def _get_token_metadata(token_address: str) -> Tuple[str, int]:
         logger.debug(f"[SWAP] Token metadata lookup failed for {token_addr}: {e}")
 
     token_meta_cache[token_addr] = (symbol, decimals)
+    _trim_cache(token_meta_cache, MAX_TOKEN_META_CACHE)
     return symbol, decimals
 
 
@@ -391,8 +471,7 @@ def _get_tx_from_address(tx_hash: str) -> str:
 
     tx = w3.eth.get_transaction(tx_hash)
     from_address = str(tx.get("from", "") or "").lower()
-    if len(tx_from_cache) > 5000:
-        tx_from_cache.clear()
+    _trim_cache(tx_from_cache, 5000)
     tx_from_cache[tx_hash] = from_address
     return from_address
 
@@ -404,8 +483,7 @@ def _get_block_timestamp(block_number: int) -> int:
 
     block = w3.eth.get_block(block_number)
     block_ts = int(block.get("timestamp", int(time.time())))
-    if len(block_timestamp_cache) > 1000:
-        block_timestamp_cache.clear()
+    _trim_cache(block_timestamp_cache, 1000)
     block_timestamp_cache[block_number] = block_ts
     return block_ts
 
@@ -434,6 +512,7 @@ def _get_pool_tokens(pool_address: str) -> Optional[Tuple[str, str]]:
             token0 = pool_contract.functions.token0().call().lower()
             token1 = pool_contract.functions.token1().call().lower()
             pool_tokens_cache[pool_addr] = (token0, token1)
+            _trim_cache(pool_tokens_cache, MAX_POOL_TOKENS_CACHE)
             # Clear negative-cache marker on recovery.
             pool_lookup_failure_cache.pop(pool_addr, None)
             return token0, token1
@@ -682,6 +761,15 @@ def normalize_transfer_event(
     """Normalize a blockchain transfer event to unified schema."""
 
     try:
+        if usd_value == 0.0:
+            logger.debug(
+                "[TRANSFER] Zero-USD transfer %s->%s tx=%s - skipping before publish",
+                from_address,
+                to_address,
+                tx_hash,
+            )
+            return None
+
         if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
 
@@ -801,14 +889,13 @@ def normalize_dex_swap_event(
 
     try:
         if usd_value == 0.0:
-            if token_in not in KNOWN_TOKENS and token_out not in KNOWN_TOKENS:
-                logger.debug(
-                    "[SWAP] Zero-USD meme swap %s->%s tx=%s - skipping (no price oracle)",
-                    token_in,
-                    token_out,
-                    tx_hash if "tx_hash" in dir() else "?",
-                )
-                return None
+            logger.debug(
+                "[SWAP] Zero-USD swap %s->%s tx=%s - skipping before publish",
+                token_in,
+                token_out,
+                tx_hash,
+            )
+            return None
 
         if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             return None
@@ -892,6 +979,7 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
         return 1.0
 
     # Check cache (60s TTL for positive/valid results)
+    _prune_token_weth_cache()
     cached = token_weth_price_cache.get(token_addr)
     if cached:
         price_eth, expires_at = cached
@@ -899,24 +987,11 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
             return price_eth
 
     factory_v3 = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
-    factory_v3_abi = [
-        {
-            "name": "getPool",
-            "outputs": [{"type": "address", "name": ""}],
-            "inputs": [
-                {"type": "address", "name": "tokenA"},
-                {"type": "address", "name": "tokenB"},
-                {"type": "uint24", "name": "fee"},
-            ],
-            "stateMutability": "view",
-            "type": "function",
-        }
-    ]
     fee_tiers = [3000, 500, 10000]  # 0.3%, 0.05%, 1%
 
     try:
         factory = w3.eth.contract(
-            address=Web3.to_checksum_address(factory_v3), abi=factory_v3_abi
+            address=Web3.to_checksum_address(factory_v3), abi=FACTORY_V3_ABI
         )
         weth = Web3.to_checksum_address(WETH_MAINNET)
         token_cs = Web3.to_checksum_address(token_addr)
@@ -936,7 +1011,8 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
                     continue
 
                 # Decode sqrtPriceX96 -> price ratio
-                price_raw = (sqrt_price_x96 / (2**96)) ** 2
+                price_raw = Decimal(sqrt_price_x96) / Decimal(2**96)
+                price_raw = price_raw ** 2
 
                 pool_tokens = _get_pool_tokens(pool_addr)
                 if not pool_tokens:
@@ -945,12 +1021,14 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
                 weth_is_token0 = token0 == WETH_MAINNET
 
                 # Adjust for decimal difference (token_decimals vs WETH 18)
-                decimal_adjustment = 10 ** (18 - token_decimals)
+                decimal_adjustment = Decimal(10) ** (18 - token_decimals)
 
                 if weth_is_token0:
                     # price_raw is token1/token0 (token per WETH)
                     price_in_eth = (
-                        (1.0 / price_raw) / decimal_adjustment if price_raw > 0 else 0.0
+                        (Decimal(1) / price_raw) / decimal_adjustment
+                        if price_raw > 0
+                        else Decimal(0)
                     )
                 else:
                     # price_raw is token0/token1 (token per WETH)
@@ -958,10 +1036,10 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
 
                 if price_in_eth > 0:
                     token_weth_price_cache[token_addr] = (
-                        price_in_eth,
+                        float(price_in_eth),
                         time.time() + 60,
                     )
-                    return price_in_eth
+                    return float(price_in_eth)
 
             except Exception:
                 continue
@@ -971,11 +1049,15 @@ def _get_token_price_via_weth(token_addr: str, token_decimals: int) -> float:
 
     # Negative cache (shorter)
     token_weth_price_cache[token_addr] = (0.0, time.time() + 30)
+    _prune_token_weth_cache()
     return 0.0
 
 
 def process_dex_swap_log_event(
-    log_entry: Dict[str, Any], stats: Dict[str, int]
+    log_entry: Dict[str, Any],
+    stats: Dict[str, int],
+    published_tx_hashes: Optional[set[str]] = None,
+    swap_tx_hashes: Optional[set[str]] = None,
 ) -> bool:
     """Decode and publish DEX swap log as trade-eligible event."""
     try:
@@ -1082,24 +1164,33 @@ def process_dex_swap_log_event(
         tx_hash_raw = log_entry.get("transactionHash", "")
         tx_hash = _normalize_tx_hash(tx_hash_raw)
 
+        if not tx_hash:
+            stats["rejected_no_txhash"] = stats.get("rejected_no_txhash", 0) + 1
+            return False
+
+        if published_tx_hashes is not None and tx_hash in published_tx_hashes:
+            stats["rejected_duplicate_tx"] = stats.get("rejected_duplicate_tx", 0) + 1
+            logger.debug(
+                "[SWAP] Skipping tx %s because it was already published this cycle",
+                tx_hash,
+            )
+            return False
+
         if usd_value == 0.0:
             logger.debug(
-                "[SWAP] No USD valuation for %s->%s tx=%s — publishing with usd_value=0",
+                "[SWAP] No USD valuation for %s->%s tx=%s — dropping (zero-value event)",
                 token_in_symbol,
                 token_out_symbol,
                 tx_hash[:10],
             )
-            stats["published_zero_usd"] = stats.get("published_zero_usd", 0) + 1
+            stats["rejected_zero_usd"] = stats.get("rejected_zero_usd", 0) + 1
+            return False
 
         if usd_value > 0 and usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             stats["rejected_below_threshold"] = (
                 stats.get("rejected_below_threshold", 0) + 1
             )
             return False
-        if not tx_hash:
-            stats["rejected_no_txhash"] = stats.get("rejected_no_txhash", 0) + 1
-            return False
-
         try:
             wallet_address = _get_tx_from_address(tx_hash)
         except Exception as e:
@@ -1144,6 +1235,10 @@ def process_dex_swap_log_event(
             )
             published = publish_event(event)
             if published:
+                if published_tx_hashes is not None:
+                    published_tx_hashes.add(tx_hash)
+                if swap_tx_hashes is not None:
+                    swap_tx_hashes.add(tx_hash)
                 stats["published"] = stats.get("published", 0) + 1
             else:
                 stats["rejected_publish"] = stats.get("rejected_publish", 0) + 1
@@ -1210,7 +1305,7 @@ def publish_event(event: Event) -> bool:
 def process_erc20_transfer_event(
     log_entry: Dict[str, Any],
     swap_tx_hashes: Optional[set[str]] = None,
-    published_transfer_tx_hashes: Optional[set[str]] = None,
+    published_tx_hashes: Optional[set[str]] = None,
 ) -> bool:
     """
     Process ERC20 Transfer event log from blockchain.
@@ -1233,21 +1328,17 @@ def process_erc20_transfer_event(
 
         # EARLY EXIT: if this tx is already a DEX swap in this cycle,
         # skip transfer leg publication to avoid duplicate semantic events.
+        # NOTE: swap_tx_hashes is intentionally populated only for swaps that
+        # actually publish, so rejected/zero-USD swaps don't suppress transfers.
         if swap_tx_hashes and tx_hash in swap_tx_hashes:
             logger.debug(
                 f"[ERC20] Skipping transfer {tx_hash[:10]}... (swap tx detected this cycle)"
             )
             return False
 
-        logger.debug(
-            f"[ERC20-DEDUP] tx_hash={tx_hash} | raw_type={type(tx_hash_raw).__name__} | in_published_set={bool(published_transfer_tx_hashes and tx_hash in published_transfer_tx_hashes)}"
-        )
-
-        # EARLY EXIT: if a transfer event for this tx was already published in this cycle,
-        # skip additional transfer logs from the same transaction.
-        if published_transfer_tx_hashes and tx_hash in published_transfer_tx_hashes:
+        if published_tx_hashes and tx_hash in published_tx_hashes:
             logger.debug(
-                f"[ERC20] Skipping transfer {tx_hash[:10]}... (already published for tx this cycle)"
+                f"[ERC20] Skipping transfer {tx_hash[:10]}... (tx already published this cycle)"
             )
             return False
 
@@ -1262,14 +1353,17 @@ def process_erc20_transfer_event(
         data_hex = log_entry.get("data", "0x")
         if isinstance(data_hex, bytes):
             data_hex = data_hex.hex()
-        amount = int(data_hex, 16) if data_hex and data_hex != "0x" else 0
+        data_hex = str(data_hex or "")
+        amount = (
+            int(data_hex, 16)
+            if data_hex and data_hex.strip().lower() not in ("0x", "")
+            else 0
+        )
 
         token_address = log_entry.get("address", "").lower()
         token = get_token_symbol(token_address)
 
-        # Get token decimals (6 for USDT/USDC/GUSD, 18 for DAI/ETH)
-        # DAI: 0x6b175474e89094c44da98b954eedeac495271d0f
-        token_decimals = 18 if token == "DAI" else (6 if token != "ETH" else 18)
+        token_decimals = STABLECOIN_DECIMALS.get(token, 18)
 
         # Convert to USD (stablecoins typically 1:1)
         token_amount = float(Decimal(amount) / Decimal(10**token_decimals))
@@ -1284,6 +1378,10 @@ def process_erc20_transfer_event(
             logger.debug(
                 f"[ERC20] Skipping {token} transfer: ${usd_value:,.0f} < ${OnChainConfig.MIN_TRANSACTION_VALUE_USD:,.0f}"
             )
+            # Still mark the tx as seen so other stablecoin token loops
+            # don't redundantly re-process the same transaction hash.
+            if published_tx_hashes is not None:
+                published_tx_hashes.add(tx_hash)
             return False
 
         # Get block timestamp
@@ -1310,9 +1408,14 @@ def process_erc20_transfer_event(
 
         if event:
             published = publish_event(event)
-            if published and published_transfer_tx_hashes is not None:
-                published_transfer_tx_hashes.add(tx_hash)
+            # Mark tx as seen regardless of publish outcome so subsequent
+            # stablecoin loop iterations (e.g. DAI after USDC) don't
+            # re-process the same transaction hash.
+            if published_tx_hashes is not None:
+                published_tx_hashes.add(tx_hash)
             return published
+        if published_tx_hashes is not None:
+            published_tx_hashes.add(tx_hash)
         return False
 
     except Exception as e:
@@ -1320,15 +1423,24 @@ def process_erc20_transfer_event(
         return False
 
 
-def process_exchange_transaction(tx_hash: str) -> bool:
+def process_exchange_transaction(
+    tx_hash: str, published_tx_hashes: Optional[set[str]] = None
+) -> bool:
     """
     Process exchange transaction (ETH transfer to/from known exchange).
     Gets full TX details and normalizes for storage.
     """
     try:
+        tx_hash = _normalize_tx_hash(tx_hash)
+
+        if published_tx_hashes and tx_hash in published_tx_hashes:
+            logger.debug(
+                f"[ETH] Skipping {tx_hash[:10]}... (tx already published this cycle)"
+            )
+            return False
+
         # Get transaction details
         tx = w3.eth.get_transaction(tx_hash)
-        receipt = w3.eth.get_transaction_receipt(tx_hash)
 
         from_address = tx.get("from", "0x").lower()
         to_address = (tx.get("to", "") or "0x").lower()
@@ -1343,6 +1455,12 @@ def process_exchange_transaction(tx_hash: str) -> bool:
             f"[ETH] Transfer: {eth_amount:.2f} ETH (~${usd_value:,.0f}) | TX: {tx_hash[:10]}..."
         )
 
+        if usd_value == 0.0:
+            logger.debug(
+                f"[ETH] Skipping ETH transfer: zero USD value | TX: {tx_hash[:10]}..."
+            )
+            return False
+
         # Filter by minimum value
         if usd_value < OnChainConfig.MIN_TRANSACTION_VALUE_USD:
             logger.debug(
@@ -1351,7 +1469,7 @@ def process_exchange_transaction(tx_hash: str) -> bool:
             return False
 
         # Get block timestamp
-        block_number = receipt.get("blockNumber", 0)
+        block_number = tx.get("blockNumber", 0)
         block_timestamp = int(time.time())
 
         try:
@@ -1373,7 +1491,10 @@ def process_exchange_transaction(tx_hash: str) -> bool:
         )
 
         if event:
-            return publish_event(event)
+            published = publish_event(event)
+            if published and published_tx_hashes is not None:
+                published_tx_hashes.add(tx_hash)
+            return published
         return False
 
     except Exception as e:
@@ -1391,6 +1512,7 @@ def monitor_large_transfers():
         return
 
     events_found_total = 0
+    published_tx_hashes: set[str] = set()
 
     try:
         logger.info("[MONITOR] === monitor_large_transfers() entered ===")
@@ -1429,16 +1551,15 @@ def monitor_large_transfers():
 
             logger.info(f"[SWAP] Found {len(swap_logs)} candidate swap logs")
 
-            # Build tx-hash suppression set for later transfer-leg filtering.
-            for swap_log in swap_logs:
-                tx_hash = _normalize_tx_hash(swap_log.get("transactionHash"))
-                if tx_hash:
-                    swap_tx_hashes.add(tx_hash)
-
             swap_published = 0
             swap_stats: Dict[str, int] = {}
             for swap_log in swap_logs:
-                if process_dex_swap_log_event(swap_log, swap_stats):
+                if process_dex_swap_log_event(
+                    swap_log,
+                    swap_stats,
+                    published_tx_hashes=published_tx_hashes,
+                    swap_tx_hashes=swap_tx_hashes,
+                ):
                     swap_published += 1
                 if OnChainConfig.SWAP_PROCESS_DELAY_SECONDS > 0:
                     time.sleep(OnChainConfig.SWAP_PROCESS_DELAY_SECONDS)
@@ -1469,8 +1590,6 @@ def monitor_large_transfers():
             f"[MONITOR] Creating ERC20 Transfer filter for {len(STABLECOIN_ADDRESSES)} stablecoins..."
         )
         logger.info(f"[MONITOR] Transfer signature: {transfer_signature.hex()}")
-        published_transfer_tx_hashes: set[str] = set()
-
         # Query each stablecoin separately to avoid timeout errors
         for token_addr, token_symbol in STABLECOIN_ADDRESSES.items():
             try:
@@ -1501,7 +1620,7 @@ def monitor_large_transfers():
                     if process_erc20_transfer_event(
                         log_event,
                         swap_tx_hashes=swap_tx_hashes,
-                        published_transfer_tx_hashes=published_transfer_tx_hashes,
+                        published_tx_hashes=published_tx_hashes,
                     ):
                         token_published += 1
 
@@ -1543,6 +1662,25 @@ def monitor_large_transfers():
                             f"[ETH] Found {len(tx_logs)} transaction logs involving {EXCHANGE_ADDRESSES[exchange_addr]}"
                         )
 
+                        unique_tx_hashes = {
+                            _normalize_tx_hash(log.get("transactionHash"))
+                            for log in tx_logs
+                        }
+                        tx_published = 0
+                        for tx_hash in unique_tx_hashes:
+                            if not tx_hash:
+                                continue
+                            if process_exchange_transaction(
+                                tx_hash, published_tx_hashes=published_tx_hashes
+                            ):
+                                tx_published += 1
+
+                        if tx_published > 0:
+                            logger.info(
+                                f"[ETH] Published {tx_published} exchange ETH transfer events"
+                            )
+                            events_found_total += tx_published
+
                 except Exception as e:
                     logger.debug(f"[ETH] Could not query logs for {exchange_addr}: {e}")
                 finally:
@@ -1574,11 +1712,17 @@ def monitor_large_transfers():
                     ]:  # Limit to first 10 txs per block
                         try:
                             # Get transaction details
-                            normalized_tx_hash = (
-                                tx_hash.hex()
-                                if isinstance(tx_hash, bytes)
-                                else str(tx_hash)
-                            )
+                            normalized_tx_hash = _normalize_tx_hash(tx_hash)
+
+                            if not normalized_tx_hash:
+                                continue
+
+                            if normalized_tx_hash in published_tx_hashes:
+                                logger.debug(
+                                    f"[ETH] Skipping {normalized_tx_hash[:10]}... (tx already published this cycle)"
+                                )
+                                continue
+
                             tx = w3.eth.get_transaction(normalized_tx_hash)
 
                             if not tx:
@@ -1624,7 +1768,9 @@ def monitor_large_transfers():
                                     )
 
                                     if event:
-                                        publish_event(event)
+                                        published = publish_event(event)
+                                        if published:
+                                            published_tx_hashes.add(normalized_tx_hash)
 
                         except Exception as e:
                             logger.debug(f"[ETH] Error processing transaction: {e}")
@@ -1662,6 +1808,8 @@ async def run_collector_async() -> bool:
     logger.info("=" * 60)
     logger.info("Starting On-Chain Collector (REAL MONITORING)")
     logger.info("=" * 60)
+
+    OnChainConfig.refresh_from_env()
 
     global publisher
     start_time = time.time()

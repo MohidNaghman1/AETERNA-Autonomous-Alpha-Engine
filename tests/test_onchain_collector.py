@@ -5,7 +5,7 @@ from datetime import datetime
 from app.modules.ingestion.application import onchain_collector
 
 
-def test_normalize_dex_swap_event_allows_zero_usd_passthrough(monkeypatch):
+def test_normalize_dex_swap_event_rejects_zero_usd(monkeypatch):
     monkeypatch.setattr(
         onchain_collector.OnChainConfig, "MIN_TRANSACTION_VALUE_USD", 10000
     )
@@ -24,9 +24,22 @@ def test_normalize_dex_swap_event_allows_zero_usd_passthrough(monkeypatch):
         block_timestamp=int(datetime(2026, 4, 18, 10, 0, 0).timestamp()),
     )
 
-    assert event is not None
-    assert event.content["usd_value"] == 0.0
-    assert event.content["transaction_type"] == "swap"
+    assert event is None
+
+
+def test_normalize_transfer_event_rejects_zero_usd():
+    event = onchain_collector.normalize_transfer_event(
+        tx_hash="0xtxhash3",
+        from_address="0xfrom",
+        to_address="0xto",
+        amount=0,
+        token="USDC",
+        token_decimals=6,
+        usd_value=0.0,
+        block_timestamp=int(datetime(2026, 4, 18, 10, 0, 0).timestamp()),
+    )
+
+    assert event is None
 
 
 def test_normalize_dex_swap_event_rejects_priced_below_threshold(monkeypatch):
