@@ -1258,9 +1258,6 @@ def publish_event(event: Event) -> bool:
             logger.debug(f"Duplicate event detected: {event.id}")
             return False
 
-        # Mark as seen
-        mark_as_seen(event.id)
-
         # Ensure publisher is initialized
         if not publisher:
             logger.error("Publisher not initialized")
@@ -1277,6 +1274,7 @@ def publish_event(event: Event) -> bool:
         )
 
         if publisher.publish(event_json):  # ← Pass JSON string
+            mark_as_seen(event.id)
             logger.info(
                 f"[OK] Published event: {event.id[:8]}... ({event.source}:{event.type})"
             )

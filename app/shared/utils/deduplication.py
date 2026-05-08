@@ -13,9 +13,8 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-# Placeholder: Load from .env or settings
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-DEDUP_TTL_SECONDS = 3600  # 1 hour
+DEDUP_TTL_SECONDS = int(os.getenv("DEDUP_TTL_SECONDS", "3600"))  # 1 hour
 
 # Redis connection (singleton, optional)
 _redis = None
@@ -65,7 +64,7 @@ def hash_content(content: str) -> str:
 
 
 def is_duplicate(content: str) -> bool:
-    """Check if content/ID exists (duplicate in 24-hour window).
+    """Check if content/ID exists within the configured dedup window.
 
     Tries Redis first, falls back to in-memory cache if unavailable.
 
@@ -77,7 +76,7 @@ def is_duplicate(content: str) -> bool:
         content: Event content to check OR event ID for direct lookup
 
     Returns:
-        bool: True if seen in the past 24 hours, False otherwise
+        bool: True if seen in the configured TTL window, False otherwise
     """
     # If content is short (looks like an ID), use it directly
     # Otherwise hash it for content comparison
@@ -102,14 +101,14 @@ def is_duplicate(content: str) -> bool:
     return cache_key in _memory_cache
 
 
-def mark_as_seen(content: str, ttl_seconds: int = 86400) -> None:
-    """Store content/ID with configurable TTL (default 24 hours).
+def mark_as_seen(content: str, ttl_seconds: int = DEDUP_TTL_SECONDS) -> None:
+    """Store content/ID with configurable TTL.
 
     Tries Redis first, falls back to in-memory cache if unavailable.
 
     Args:
         content: Event content to mark as seen OR event ID
-        ttl_seconds: Time-to-live in seconds (default 86400 = 24 hours)
+        ttl_seconds: Time-to-live in seconds
     """
     # If content is short (looks like an ID), use it directly
     if len(content) < 50 and not any(c in content for c in [" ", "\n", "\t"]):
