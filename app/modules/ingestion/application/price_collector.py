@@ -1,6 +1,6 @@
 """
 Price Data Collector for CoinGecko API.
-- Polls top 100 cryptocurrencies every 60 seconds
+- Polls top cryptocurrencies every 5 minutes by default
 - Calculates price changes (1h, 24h), detects significant moves (>5%)
 - Normalizes to unified Event schema
 - Publishes to RabbitMQ
@@ -26,7 +26,7 @@ from app.shared.utils.data_extractors import (
 from app.shared.utils.validators import validate_event as validate_event_schema
 
 COINGECKO_API = "https://api.coingecko.com/api/v3/coins/markets"
-POLL_INTERVAL = 60  # seconds
+POLL_INTERVAL = int(os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "300"))
 RETRY_ATTEMPTS = 3
 
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "events")

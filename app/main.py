@@ -44,7 +44,7 @@ def env_flag(name: str, default: bool) -> bool:
 
 RSS_COLLECTOR_INTERVAL_SECONDS = int(os.getenv("RSS_COLLECTOR_INTERVAL_SECONDS", "60"))
 PRICE_COLLECTOR_INTERVAL_SECONDS = int(
-    os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "120")
+    os.getenv("PRICE_COLLECTOR_INTERVAL_SECONDS", "300")
 )
 SERVICE_TYPE = os.getenv("SERVICE_TYPE", "api").strip().lower()
 # Enable background workers by default (RSS, Price, RabbitMQ consumer, Alert consumer)

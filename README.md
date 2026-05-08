@@ -130,7 +130,7 @@ flowchart TD
 
 ### Pipeline Flow
 
-1. **Collection** — RSS (60s), Price (120s), and on-chain collectors run on scheduled intervals, capturing large ERC20 transfers and Uniswap V2/V3 DEX swap activity.
+1. **Collection** — RSS (60s), Price (300s), and on-chain collectors run on scheduled intervals, capturing large ERC20 transfers and Uniswap V2/V3 DEX swap activity.
 2. **Normalization** — Raw data is cleaned, standardized, and deduplicated via Redis.
 3. **Queueing** — Deduplicated events are published to RabbitMQ.
 4. **Ingestion** — A blocking RabbitMQ consumer (`run_consumer`) processes messages with at-least-once delivery guarantees. Events are ACKed only after a successful database commit; failures trigger NACK and automatic requeue with a 5-second restart delay.
@@ -273,7 +273,7 @@ Copy `.env.example` to `.env` and populate the following variables.
 | Variable                           | Default | Description                                    |
 | ---------------------------------- | ------- | ---------------------------------------------- |
 | `RSS_COLLECTOR_INTERVAL_SECONDS`   | `60`    | RSS collector run frequency (seconds)          |
-| `PRICE_COLLECTOR_INTERVAL_SECONDS` | `120`   | Price collector run frequency (seconds)        |
+| `PRICE_COLLECTOR_INTERVAL_SECONDS` | `300`   | Price collector run frequency (seconds)        |
 | `TRADE_RESOLVER_INTERVAL_SECONDS`  | `120`   | Trade outcome resolver run frequency (seconds) |
 
 ### On-Chain Collector

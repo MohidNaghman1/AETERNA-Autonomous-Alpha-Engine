@@ -17,7 +17,7 @@ celery_app.conf.beat_schedule = {
     },
     "run-price-collector": {
         "task": "app.modules.ingestion.application.tasks.run_price_collector",
-        "schedule": crontab(minute="*/1"),  # Every minute
+        "schedule": crontab(minute="*/5"),  # Every 5 minutes
     },
     "run-onchain-collector": {
         "task": "app.modules.ingestion.application.tasks.run_onchain_collector",
