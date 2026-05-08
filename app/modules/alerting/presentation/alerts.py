@@ -253,9 +253,16 @@ async def get_alerts_query(
     Returns:
         List of Alert ORM objects with related events
     """
-    # Get both user's personal alerts AND system broadcast alerts (user_id=None)
+    # Get both user's personal alerts AND system broadcast alerts (user_id=None).
+    # Join events once so alert history follows the event clock, not just the
+    # alert-generation clock. This keeps backfilled alerts from floating above
+    # fresher market/on-chain events.
     query = select(AlertORM).where(
         (AlertORM.user_id == user_id) | (AlertORM.user_id.is_(None))
+    ).join(
+        EventORM,
+        AlertORM.event_id == EventORM.id,
+        isouter=True,
     )
 
     # Apply filters
@@ -267,13 +274,11 @@ async def get_alerts_query(
     if priority:
         filters.append(AlertORM.priority == priority)
 
-    # Track if we've joined EventORM to avoid duplicate joins
-    event_joined = False
+    # EventORM is already joined above for ordering and optional filters.
+    event_joined = True
 
     # Filter by entity - requires joining with events and checking mentions in content
     if entity:
-        query = query.join(EventORM, AlertORM.event_id == EventORM.id, isouter=True)
-        event_joined = True
         # Check if entity exists in the event's mentions array
         # This is a simplified filter - assumes mentions field exists in JSON content
         filters.append(
@@ -324,8 +329,10 @@ async def get_alerts_query(
     if filters:
         query = query.where(and_(*filters))
 
-    # Order by creation time (newest first)
-    query = query.order_by(desc(AlertORM.created_at))
+    # Order by source event time first, then alert creation time. Alert rows can
+    # be created later during backfills/retries, but users usually expect the
+    # newest underlying event first.
+    query = query.order_by(desc(EventORM.timestamp), desc(AlertORM.created_at))
 
     # Apply pagination
     query = query.offset(skip).limit(min(limit, 100))

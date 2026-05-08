@@ -5,6 +5,8 @@ Tests alert creation, filtering, update, and user interaction flows.
 
 import pytest
 
+from app.modules.alerting.presentation.alerts import get_alerts_query
+
 
 @pytest.mark.asyncio
 async def test_alert_history_requires_authentication(client):
@@ -174,3 +176,34 @@ async def test_alert_date_filtering(client):
     )
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_alert_history_query_orders_by_event_timestamp():
+    class FakeScalarResult:
+        def all(self):
+            return []
+
+    class FakeResult:
+        def scalars(self):
+            return FakeScalarResult()
+
+    class FakeDb:
+        statement = None
+
+        async def execute(self, statement):
+            self.statement = statement
+            return FakeResult()
+
+    db = FakeDb()
+
+    await get_alerts_query(db=db, user_id=123, limit=2)
+
+    compiled = str(db.statement.compile(compile_kwargs={"literal_binds": True}))
+    order_by = compiled.split("ORDER BY", 1)[1]
+
+    assert "events.timestamp DESC" in order_by
+    assert "alerts.created_at DESC" in order_by
+    assert order_by.index("events.timestamp DESC") < order_by.index(
+        "alerts.created_at DESC"
+    )
