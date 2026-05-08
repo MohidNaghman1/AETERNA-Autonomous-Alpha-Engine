@@ -54,6 +54,9 @@ MAX_RETRIES = int(os.getenv("RABBITMQ_MAX_RETRIES", "3"))
 # Batch settings - tune these for your DB throughput.
 # Larger batches reduce RabbitMQ round-trips and speed up queue draining.
 BATCH_SIZE = int(os.getenv("CONSUMER_BATCH_SIZE", "2000"))
+BATCH_FLUSH_INTERVAL_SECONDS = int(
+    os.getenv("CONSUMER_BATCH_FLUSH_INTERVAL_SECONDS", "10")
+)
 
 # Run the intelligence poll every N flushed batches. Higher values let the
 # consumer spend more time draining RabbitMQ before doing expensive downstream work.
@@ -170,6 +173,39 @@ _batch_orms = []  # EventORM objects ready to bulk-insert
 _batch_tags = []  # delivery tags to ACK on success
 _batch_dlq = []  # (body, error, retry_count) to DLQ on flush
 _batch_dlq_tags = []  # delivery tags for DLQ messages (ACK after DLQ send)
+
+
+def flush_pending_batch(channel):
+    """Flush buffered messages so low-volume queues do not wait for BATCH_SIZE."""
+    if _batch_orms or _batch_dlq:
+        logger.info(
+            "[CONSUMER] Timed flush: %s valid events, %s DLQ messages",
+            len(_batch_orms),
+            len(_batch_dlq),
+        )
+        flush_batch(channel)
+
+
+def schedule_periodic_flush(connection, channel):
+    """Schedule recurring batch flushes on pika's connection event loop."""
+
+    def _flush_and_reschedule():
+        try:
+            flush_pending_batch(channel)
+        except Exception as e:
+            logger.error(f"[CONSUMER] Timed flush failed: {e}", exc_info=True)
+        finally:
+            try:
+                if getattr(channel, "is_open", True) and getattr(
+                    connection, "is_open", True
+                ):
+                    connection.call_later(
+                        BATCH_FLUSH_INTERVAL_SECONDS, _flush_and_reschedule
+                    )
+            except Exception as e:
+                logger.error(f"[CONSUMER] Failed to reschedule timed flush: {e}")
+
+    connection.call_later(BATCH_FLUSH_INTERVAL_SECONDS, _flush_and_reschedule)
 
 
 def flush_batch(channel):
@@ -357,9 +393,10 @@ def run_consumer():
     # prefetch = BATCH_SIZE so RabbitMQ sends exactly one batch worth at a time
     channel.basic_qos(prefetch_count=BATCH_SIZE)
     channel.basic_consume(queue=RABBITMQ_QUEUE, on_message_callback=process_event)
+    schedule_periodic_flush(connection, channel)
 
     logger.info(
-        f"[CONSUMER] Listening on '{RABBITMQ_QUEUE}' | batch_size={BATCH_SIZE} | heartbeat=600s"
+        f"[CONSUMER] Listening on '{RABBITMQ_QUEUE}' | batch_size={BATCH_SIZE} | flush_interval={BATCH_FLUSH_INTERVAL_SECONDS}s | heartbeat=600s"
     )
 
     try:
