@@ -1,0 +1,6 @@
+entity_id,name,entity_type,wallet_address,verified,verification_sources,reliability_score,description,website,twitter_handle,total_capital_tracked_usd,total_transactions
+ent_binance_hot_1,Binance Hot Wallet,cex,0x28c6c06298d514db089934071355e5743bf21d60,true,etherscan;arkham,0.98,Publicly labeled Binance hot wallet,https://www.binance.com,binance,1500000000,250000
+ent_coinbase_custody_1,Coinbase Custody,exchange,0x503828976d22510aad0201ac7ec88293211d23da,true,etherscan;nansen,0.97,Known Coinbase-controlled custody wallet,https://www.coinbase.com,coinbase,950000000,180000
+ent_jump_trading_1,Jump Trading,market_maker,0x9507c04b10486547584c37bcbd931b2a4fee9a41,true,arkham;manual,0.93,Market making wallet attributed to Jump Trading,https://www.jumptrading.com,,420000000,92000
+ent_example_mm_1,Example Market Maker,market-maker,0x2222222222222222222222222222222222222222,false,dune,0.88,Example market maker row for local dry-run validation,,,275000000,54000
+ent_example_whale_1,Example Whale,whale,0x1111111111111111111111111111111111111111,false,dune,0.72,Example unlabeled whale wallet for dry-run testing,,,12500000,4100
