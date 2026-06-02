@@ -319,7 +319,7 @@ except Exception as e:
     )
 
 
-@app.api_route("/", methods=["GET", "HEAD"], operation_id="root_endpoint")
+@app.api_route("/", methods=["GET"], operation_id="root_endpoint")
 def read_root():
     return {"message": "Welcome to AETERNA Autonomous Alpha Engine API"}
 
