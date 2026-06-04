@@ -111,7 +111,9 @@ def load_seed_entities(csv_path: Path) -> dict[str, SeedEntity]:
         required = {"entity_id", "name", "entity_type", "wallet_address"}
         missing = required - set(reader.fieldnames or [])
         if missing:
-            raise ValueError(f"Missing required CSV columns: {', '.join(sorted(missing))}")
+            raise ValueError(
+                f"Missing required CSV columns: {', '.join(sorted(missing))}"
+            )
 
         for row_number, row in enumerate(reader, start=2):
             entity_id = _clean(row.get("entity_id"))
@@ -147,7 +149,9 @@ def load_seed_entities(csv_path: Path) -> dict[str, SeedEntity]:
                 )
 
             entity.wallets.add(wallet)
-            entity.verification_sources.update(_sources(row.get("verification_sources")))
+            entity.verification_sources.update(
+                _sources(row.get("verification_sources"))
+            )
 
     return entities
 
@@ -165,7 +169,11 @@ def _profile_confidence(entity: SeedEntity) -> float:
 
 def upsert_entities(entities: Iterable[SeedEntity], dry_run: bool = False) -> dict:
     entities = list(entities)
-    stats = {"entities_created": 0, "entities_updated": 0, "wallet_profiles_upserted": 0}
+    stats = {
+        "entities_created": 0,
+        "entities_updated": 0,
+        "wallet_profiles_upserted": 0,
+    }
     now = datetime.utcnow()
 
     if dry_run:
@@ -180,7 +188,11 @@ def upsert_entities(entities: Iterable[SeedEntity], dry_run: bool = False) -> di
     db = SessionLocal()
     try:
         for entity in entities:
-            existing = db.query(EntityORM).filter(EntityORM.entity_id == entity.entity_id).first()
+            existing = (
+                db.query(EntityORM)
+                .filter(EntityORM.entity_id == entity.entity_id)
+                .first()
+            )
             wallets = sorted(entity.wallets)
             sources = sorted(entity.verification_sources)
 
@@ -191,7 +203,9 @@ def upsert_entities(entities: Iterable[SeedEntity], dry_run: bool = False) -> di
                 existing.entity_type = entity.entity_type
                 existing.description = entity.description or existing.description
                 existing.website = entity.website or existing.website
-                existing.twitter_handle = entity.twitter_handle or existing.twitter_handle
+                existing.twitter_handle = (
+                    entity.twitter_handle or existing.twitter_handle
+                )
                 existing.verified = entity.verified
                 existing.verification_sources = sorted(
                     set(existing.verification_sources or []) | set(sources)
@@ -264,7 +278,9 @@ def upsert_entities(entities: Iterable[SeedEntity], dry_run: bool = False) -> di
 
                 profile.entity_type = entity.entity_type
                 profile.entity_name = entity.name
-                profile.confidence_score = max(profile.confidence_score or 0.0, confidence)
+                profile.confidence_score = max(
+                    profile.confidence_score or 0.0, confidence
+                )
                 profile.updated_at = now
                 stats["wallet_profiles_upserted"] += 1
 
@@ -280,7 +296,9 @@ def upsert_entities(entities: Iterable[SeedEntity], dry_run: bool = False) -> di
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed Agent B known wallet labels")
     parser.add_argument("--csv", required=True, type=Path, help="CSV file to import")
-    parser.add_argument("--dry-run", action="store_true", help="Validate without writing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Validate without writing"
+    )
     args = parser.parse_args()
 
     entities_by_id = load_seed_entities(args.csv)

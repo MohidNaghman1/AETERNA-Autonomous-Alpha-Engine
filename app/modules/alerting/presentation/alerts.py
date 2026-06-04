@@ -257,12 +257,14 @@ async def get_alerts_query(
     # Join events once so alert history follows the event clock, not just the
     # alert-generation clock. This keeps backfilled alerts from floating above
     # fresher market/on-chain events.
-    query = select(AlertORM).where(
-        (AlertORM.user_id == user_id) | (AlertORM.user_id.is_(None))
-    ).join(
-        EventORM,
-        AlertORM.event_id == EventORM.id,
-        isouter=True,
+    query = (
+        select(AlertORM)
+        .where((AlertORM.user_id == user_id) | (AlertORM.user_id.is_(None)))
+        .join(
+            EventORM,
+            AlertORM.event_id == EventORM.id,
+            isouter=True,
+        )
     )
 
     # Apply filters
